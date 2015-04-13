@@ -423,7 +423,7 @@ let xxx_once f s =
     if not (Hashtbl.mem _already_printed s)
     then begin
       Hashtbl.add _already_printed s true;
-      f ("(ONCE) " ^ s);
+      f ("(ONCE) " ^ s)
     end
 
 let pr2_once s = xxx_once pr2 s
@@ -659,7 +659,7 @@ let profile_start category = failwith "todo"
 let profile_end category = failwith "todo"
 
 
-(* subtil: don't forget to give all argumens to f, otherwise partial app
+(* subtil: don't forget to give all arguments to f, otherwise partial app
  * and will profile nothing.
  *
  * todo: try also detect when complexity augment each time, so can
@@ -907,7 +907,7 @@ let b = oneof [always true; always false] ()
 let b = frequency [3, always true; 2, always false] ()
 *)
 
-(* cant do this:
+(* cannot do this:
  *    let rec (lg: ('a gen) -> ('a list) gen) = fun gen -> oneofl [[]; lg gen ()]
  * nor
  *    let rec (lg: ('a gen) -> ('a list) gen) = fun gen -> oneof [always []; lg gen]
@@ -1085,7 +1085,7 @@ let print_list pr xs =
     print_string "]";
   end
 
-(* specialised
+(* specialized
 let (string_of_list: char list -> string) =
   List.fold_left (fun acc x -> acc^(Char.escaped x)) ""
 *)
@@ -1180,7 +1180,7 @@ let t = macro_expand "type 'a bintree = Leaf of 'a | Branch of ('a bintree * 'a 
 (* Composition/Control *)
 (*****************************************************************************)
 
-(* I like the obj.func object notation. In OCaml cant use '.' so I use +>
+(* I like the obj.func object notation. In OCaml cannot use '.' so I use +>
  *
  * update: it seems that F# agrees with me :) but they use |>
  *)
@@ -1384,7 +1384,7 @@ let release_file_lock filename =
 
 
 (*****************************************************************************)
-(* Error managment *)
+(* Error management *)
 (*****************************************************************************)
 
 exception Todo
@@ -1413,7 +1413,7 @@ let myassert cond = if cond then () else failwith "assert error"
  *
  * The need for printf make me force to name stuff :(
  * How avoid ? use 'it' special keyword ?
- * In fact dont have to name it, use +> (fun v -> ...)  so when want
+ * In fact don't have to name it, use +> (fun v -> ...)  so when want
  * erase debug just have to erase one line.
  *)
 let warning s v = (pr2 ("Warning: " ^ s ^ "; value = " ^ (Dumper.dump v)); v)
@@ -1428,7 +1428,7 @@ let exn_to_s exn =
 let string_of_exn exn = exn_to_s exn
 
 
-(* want or of merd, but cant cos cant put die ... in b (strict call) *)
+(* want or of merd, but cannot cos cannot put die ... in b (strict call) *)
 let (|||) a b = try a with _ -> b
 
 (* emacs/lisp inspiration, (vouillon does that too in unison I think) *)
@@ -1479,7 +1479,7 @@ let _init_gc_stack =
 
 
 
-(* if process a big set of files then dont want get overflow in the middle
+(* if process a big set of files then don't want get overflow in the middle
  * so for this we are ready to spend some extra time at the beginning that
  * could save far more later.
  *)
@@ -1524,7 +1524,7 @@ let check_stack_nbfiles nbfiles =
  * why not use strings and do stuff like the following
  * 'if (get_config "verbose_parsing") then ...'
  * Because I want to make the interface for flags easier for the code
- * that use it. The programmer should not be bothered wether this
+ * that use it. The programmer should not be bothered whether this
  * flag is set via args cmd line or a config file, so I want to make it
  * as simple as possible, just use a global plain caml ref variable.
  *
@@ -1542,7 +1542,7 @@ let check_stack_nbfiles nbfiles =
  * and so have to wait for parse_options, which in turn need the options
  * spec, so circle.
  *
- * Also I dont want to mix code with data structures, so it's better that the
+ * Also I don't want to mix code with data structures, so it's better that the
  * options variable contain just a few stuff and have no side effects except
  * setting global variables.
  *
@@ -1557,7 +1557,7 @@ let check_stack_nbfiles nbfiles =
  * todo? isn't unison or scott-mcpeak-lib-in-cil handles that kind of
  * stuff better ? That is the need to localize command line argument
  * while still being able to gathering them. Same for logging.
- * Similiar to the type prof = PALL | PNONE | PSOME of string list.
+ * Similar to the type prof = PALL | PNONE | PSOME of string list.
  * Same spirit of fine grain config in log4j ?
  *
  * todo? how mercurial/cvs/git manage command line options ? because they
@@ -1768,7 +1768,7 @@ let (=$=) : string -> string -> bool = (=)
 let (=:=) : bool   -> bool   -> bool = (=)
 
 (* the evil generic (=). I define another symbol to more easily detect
- * it, cos the '=' sign is syntaxically overloaded in caml. It is also
+ * it, cos the '=' sign is syntactically overloaded in caml. It is also
  * used to define function.
  *)
 let (=*=) = (=)
@@ -2346,7 +2346,7 @@ let lowercase = String.lowercase
 
 let quote s = "\"" ^ s ^ "\""
 
-(* easier to have this to be passed as hof, because ocaml dont have
+(* easier to have this to be passed as hof, because ocaml don't have
  * haskell "section" operators
  *)
 let null_string s =
@@ -2402,7 +2402,7 @@ let size_ko i =
  *
  * Dynamic programming technique
  * base:
- * D(i,0) = i  for all i (cos to go from S1[1..i] to 0 characteres of S2 you have to delete all characters from S1[1..i]
+ * D(i,0) = i  for all i (cos to go from S1[1..i] to 0 characters of S2 you have to delete all characters from S1[1..i]
  * D(0,j) = j  for all j (cos j characters must be inserted)
  * recurrence:
  * D(i,j) = min([D(i-1, j)+1, D(i, j - 1 + 1), D(i-1, j-1) + t(i,j)])
@@ -2491,7 +2491,14 @@ let adjust_ext_if_needed filename ext =
   then failwith "I need an extension such as .c not just c";
 
   if not (filename =~ (".*\\" ^ ext))
-  then filename ^ ext
+  then
+    if Sys.file_exists filename
+    then filename
+    else
+      begin
+	pr2 ("Warning: extending nonstandard filename: "^filename);
+	filename ^ ext
+      end
   else filename
 
 
@@ -2772,7 +2779,7 @@ let string_of_unix_time ?(langage=English) tm =
 
   let wday = wday_str_of_int ~langage tm.Unix.tm_wday in
 
-  spf "%02d/%03s/%04d (%s) %02d:%02d:%02d" d mon y wday h min s
+  spf "%02d/%3s/%04d (%s) %02d:%02d:%02d" d mon y wday h min s
 
 (* ex: 21/Jul/2008 (Lun) 21:25:12 *)
 let unix_time_of_string s =
@@ -2810,7 +2817,7 @@ let short_string_of_unix_time ?(langage=English) tm =
 
   let wday = wday_str_of_int ~langage tm.Unix.tm_wday in
 
-  spf "%02d/%03s/%04d (%s)" d mon y wday
+  spf "%02d/%3s/%04d (%s)" d mon y wday
 
 
 let string_of_unix_time_lfs time =
@@ -3080,7 +3087,7 @@ let (lines_with_nl: string -> string list) = fun s ->
   (time_func (fun () -> Str.split_delim (Str.regexp "\n") s)) +> lines_aux
 
 (* in fact better make it return always complete lines, simplify *)
-(*  Str.split, but lines "\n1\n2\n" dont return the \n and forget the first \n => split_delim better than split *)
+(*  Str.split, but lines "\n1\n2\n" don't return the \n and forget the first \n => split_delim better than split *)
 (* +> List.map (fun s -> s ^ "\n") but add an \n even at the end => lines_aux *)
 (* old: slow
   let chars = list_of_string s in
@@ -3121,7 +3128,7 @@ let cat_orig file =
   let chan = open_in file in
   let rec cat_orig_aux ()  =
     try
-      (* cant do input_line chan::aux() cos ocaml eval from right to left ! *)
+      (* cannot do input_line chan::aux() cos ocaml eval from right to left ! *)
       let l = input_line chan in
       l :: cat_orig_aux ()
     with End_of_file -> [] in
@@ -3131,7 +3138,7 @@ let cat_orig file =
 let cat file =
   let chan = open_in file in
   let rec cat_aux acc ()  =
-      (* cant do input_line chan::aux() cos ocaml eval from right to left ! *)
+      (* cannot do input_line chan::aux() cos ocaml eval from right to left ! *)
     let (b, l) = try (true, input_line chan) with End_of_file -> (false, "") in
     if b
     then cat_aux (l::acc) ()
@@ -3149,7 +3156,7 @@ let interpolate str =
     cat "/tmp/caml"
   end
 
-(* could do a print_string but printf dont like print_string *)
+(* could do a print_string but printf don't like print_string *)
 let echo s = printf "%s" s; flush stdout; s
 
 let usleep s = for i = 1 to s do () done
@@ -3195,6 +3202,19 @@ let cmd_to_list command =
 let process_output_to_list = cmd_to_list
 let cmd_to_list_and_status = process_output_to_list2
 
+let file_to_stdout file =
+  let i = open_in file in
+  let rec loop _ =
+    Printf.printf "%s\n" (input_line i); loop() in
+  try loop() with End_of_file -> close_in i
+
+let file_to_stderr file =
+  let i = open_in file in
+  let rec loop _ =
+    Printf.eprintf "%s\n" (input_line i); loop() in
+  try loop() with End_of_file -> close_in i
+
+
 (* now in prelude:
  * let command2 s = ignore(Sys.command s)
  *)
@@ -3228,7 +3248,7 @@ let read_file_orig file = cat file +> unlines
 let read_file file =
   let ic = open_in file  in
   let size = in_channel_length ic in
-  let buf = String.create size in
+  let buf = Bytes.create size in
   really_input ic buf 0 size;
   close_in ic;
   buf
@@ -3308,7 +3328,7 @@ let (readdir_to_dir_size_list: string -> (string * int) list) = fun path ->
 
 (* could be in control section too *)
 
-(* Why a use_cache argument ? because sometimes want disable it but dont
+(* Why a use_cache argument ? because sometimes want disable it but don't
  * want put the cache_computation funcall in comment, so just easier to
  * pass this extra option.
  *)
@@ -3364,7 +3384,7 @@ let cache_computation_robust2
 	let _ = Sys.command
 	    (Printf.sprintf "mkdir -p %s" (Filename.dirname file_cache)) in
 	(file_cache,dependencies_cache) in
-  
+
   let dependencies =
     (* could do md5sum too *)
     ((file::need_no_changed_files) +> List.map (fun f -> f, filemtime f),
@@ -3397,7 +3417,7 @@ let cache_computation_robust_in_dir a b c d e f =
 
 
 
-(* dont forget that cmd_to_list call bash and so pattern may contain
+(* don't forget that cmd_to_list call bash and so pattern may contain
  * '*' symbols that will be expanded, so can do  glob "*.c"
  *)
 let glob pattern =
@@ -3529,7 +3549,11 @@ let (with_open_outfile_append: filename -> (((string -> unit) * out_channel) -> 
  * question: can we have a signal and so exn when in a exn handler ?
  *)
 
-let interval_timer = ref true
+let interval_timer = ref (
+  try
+    ignore(Unix.getitimer Unix.ITIMER_VIRTUAL);
+    true
+  with Unix.Unix_error(_, _, _) -> false)
 
 let timeout_function timeoutval = fun f ->
   try
@@ -3658,6 +3682,13 @@ let rec zip xs ys =
   | (_,[]) -> failwith "zip: not same length"
   | (x::xs,y::ys) -> (x,y)::zip xs ys
 
+let rec combine4 : 'a list -> 'b list -> 'c list -> 'd list ->
+                      ('a * 'b * 'c * 'd) list
+  = fun a b c d -> match (a,b,c,d) with
+  | ([],[],[],[])             -> []
+  | (w::ws,x::xs,y::ys,z::zs) -> (w,x,y,z)::combine4 ws xs ys zs
+  | ___else___                -> invalid_arg "combine4: not same length"
+
 let rec zip_safe xs ys =
   match (xs,ys) with
   | ([],_) -> []
@@ -3698,7 +3729,7 @@ let _ = example (drop 3 [1;2;3;4] =*= [4])
 
 let rec drop_while p = function
   | [] -> []
-  | x::xs -> if p x then drop_while p xs else x::xs	
+  | x::xs -> if p x then drop_while p xs else x::xs
 
 
 let rec drop_until p xs =
@@ -3753,7 +3784,7 @@ let _ = example
   (exclude_but_keep_attached (fun x -> x =|= 3) [3;3;1;3;2;3;3;3] =*=
       [(1,[3;3]);(2,[3])])
 
-let (group_by_post: ('a -> bool) -> 'a list -> ('a list * 'a) list * 'a list)=
+let group_by_post: ('a -> bool) -> 'a list -> ('a list * 'a) list * 'a list =
  fun f xs ->
    let rec aux_filter grouped_acc acc = function
    | [] ->
@@ -3783,7 +3814,7 @@ let _ = example
       ([1;1], [(3,[2]); (3,[4;5]); (3,[6;6;6])]))
 
 
-let (split_when: ('a -> bool) -> 'a list -> 'a list * 'a * 'a list) =
+let split_when: ('a -> bool) -> 'a list -> 'a list * 'a * 'a list =
  fun p l ->
   let rec loop acc = function
   | []    -> raise Not_found
@@ -4335,7 +4366,7 @@ let rec realCombinaison = function
       res2 ++ res ++ [[a]]
 
 (* genere toutes les combinaisons possible de paire      *)
-(* par exemple combinaison [1;2;4] -> [1, 2; 1, 4; 2, 4] *)
+(* par example combinaison [1;2;4] -> [1, 2; 1, 4; 2, 4] *)
 let rec combinaison = function
   | [] -> []
   | [a] -> []
@@ -4569,9 +4600,13 @@ let ($=$) = equal_set
 (* as $+$ but do not check for memberness, allow to have set of func *)
 let ($@$) = fun a b -> a @ b
 
-let rec nub = function
-    [] -> []
-  | x::xs -> if List.mem x xs then nub xs else x::(nub xs)
+let rec nub l =
+  let l = List.sort compare l in
+  let rec loop = function
+      [] -> []
+    | x::((y::_) as xs) when x =*= y -> loop xs
+    | x::xs -> x :: loop xs in
+  loop l
 
 (*****************************************************************************)
 (* Set as normal list *)
@@ -4716,7 +4751,7 @@ let assoc_with_err_msg k l =
 module IntMap = Map.Make
     (struct
       type t = int
-      let compare = compare
+      let compare (x : int) (y : int) = Pervasives.compare x y
     end)
 let intmap_to_list m = IntMap.fold (fun id v acc -> (id, v) :: acc) m []
 let intmap_string_of_t f a = "<Not Yet>"
@@ -4724,7 +4759,12 @@ let intmap_string_of_t f a = "<Not Yet>"
 module IntIntMap = Map.Make
     (struct
       type t = int * int
-      let compare = compare
+      let compare ((x1, y1) : int * int) ((x2, y2) : int * int) =
+	let cmp_x = Pervasives.compare x1 x2 in
+	if cmp_x <> 0 then
+	  cmp_x
+	else
+	  Pervasives.compare y1 y2
 end)
 
 let intintmap_to_list m = IntIntMap.fold (fun id v acc -> (id, v) :: acc) m []
@@ -5204,7 +5244,7 @@ let rec (equal: 'a graph -> 'a graph -> bool) = fun g1 g2 ->
        List.mem (List.assoc i1 conv, List.assoc i2 conv) arcs2)
      arcs1
       && (List.length arcs1 = List.length arcs2)
-    (* could think that only forall is needed, but need check same lenth too*)
+    (* could think that only forall is needed, but need check same length too*)
   with _ -> false
 
 let (display: 'a graph -> ('a -> unit) -> unit) = fun g display_func ->
@@ -5227,7 +5267,7 @@ let (display_dot: 'a graph -> ('a -> string) -> unit)= fun (nodes,arcs) func ->
   close_out file;
   let status = Unix.system "viewdot test.dot" in
   ()
-(* todo: faire = graphe (int can change !!! => cant make simply =)
+(* todo: faire = graphe (int can change !!! => cannot make simply =)
    reassign number first !!
  *)
 
@@ -5522,7 +5562,7 @@ let full_charpos_to_pos2 = fun filename ->
 
   let size = (filesize filename + 2) in
 
-    let arr = Array.create size  (0,0) in
+    let arr = Array.make size  (0,0) in
 
     let chan = open_in filename in
 
@@ -5777,7 +5817,7 @@ let print_total_score score =
 
 let print_score score =
   score +> hash_to_list +> List.iter (fun (k, v) ->
-    pr2 (sprintf "% s --> %s" k (string_of_score_result v))
+    pr2 (sprintf "%s --> %s" k (string_of_score_result v))
   );
   print_total_score score;
   ()
@@ -6094,7 +6134,7 @@ let main_boilerplate f =
       Sys.set_signal Sys.sigint (Sys.Signal_handle   (fun _ ->
         pr2 "C-c intercepted, will do some cleaning before exiting";
         (* But if do some try ... with e -> and if do not reraise the exn,
-         * the bubble never goes at top and so I cant really C-c.
+         * the bubble never goes at top and so I cannot really C-c.
          *
          * A solution would be to not raise, but do the erase_temp_file in the
          * syshandler, here, and then exit.
@@ -6137,8 +6177,6 @@ let md5sum_of_string s =
       (*pr2 s;*)
       s
   | _ -> failwith "md5sum_of_string wrong output"
-
-
 
 let with_pr2_to_string f =
   let file = new_temp_file "pr2" "out" in

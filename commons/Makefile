@@ -1,35 +1,18 @@
-# Copyright 2013, Inria
-# Suman Saha, Julia Lawall, Gilles Muller
-# This file is part of Hector.
-#
-# Hector is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, according to version 2 of the License.
-#
-# Hector is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Hector.  If not, see <http://www.gnu.org/licenses/>.
-#
-# The authors reserve the right to distribute this or future versions of
-# Hector under other licenses.
-
-
-include ../make_config
-
 ##############################################################################
 # Variables
 ##############################################################################
+
+# The main library
+ifneq ($(MAKECMDGOALS),distclean)
+include ../Makefile.config
+endif
 
 TARGET=commons
 
 # note: if you add a file (a .mli or .ml), dont forget to redo a 'make depend'
 MYSRC=	commands.ml                              \
 	common.ml common_extra.ml                \
-	objet.ml                                 \
+	interfaces.ml objet.ml                   \
 	ocollection.ml                           \
 	seti.ml                                  \
 	oset.ml oassoc.ml osequence.ml ograph.ml \
@@ -44,7 +27,26 @@ MYSRC=	commands.ml                              \
 	ocollection/oassocid.ml			 \
 	oarray.ml				 \
 	ocollection/ograph2way.ml		 \
-	ograph_simple.ml
+	ograph_simple.ml ograph_extended.ml	 \
+	glimpse.ml parser_combinators.ml
+
+MLI_FILES=\
+  common.mli \
+  oarray.mli \
+  oassoc.mli \
+  objet.mli \
+  ocollection.mli \
+  ograph_extended.mli \
+  ograph.mli \
+  ograph_simple.mli \
+  osequence.mli \
+  oset.mli \
+  parser_combinators.mli
+
+ifeq ($(COMPILE_EMBEDDED_BYTES_MODULE),yes)
+	MYSRC+=bytes.ml
+	MLI_FILES+=bytes.mli
+endif
 
 # src from other authors, got from the web or caml hump
 SRC=ocamlextra/dumper.ml
@@ -59,6 +61,50 @@ SYSLIBS=str.cma bigarray.cma unix.cma
 
 INCLUDEDIRS=ocamlextra ocollection
 SUBDIRS=ocamlextra ocollection
+
+#-----------------------------------------------------------------------------
+# Other common (thin wrapper) libraries
+#-----------------------------------------------------------------------------
+
+#format: XXXSRC, XXXINCLUDE, XXXSYSLIBS
+
+#gdbm
+MYGDBMSRC=ocollection/oassocdbm.ml
+GDBMSYSLIBS=dbm.cma
+
+#berkeley db (ocamlbdb)
+MYBDBSRC=ocollection/oassocbdb.ml ocollection/oassocbdb_string.ml
+BDBINCLUDES=-I ../ocamlbdb
+BDBSYSLIBS=bdb.cma
+
+
+#lablgtk (ocamlgtk)
+MYGUISRC=gui.ml
+GUIINCLUDES=-I +lablgtk2 -I +lablgtksourceview -I ../ocamlgtk/src
+GUISYSLIBS=lablgtk.cma lablgtksourceview.cma
+
+#pycaml (ocamlpython)
+MYPYSRC=python.ml
+PYINCLUDES=-I ../ocamlpython -I ../../ocamlpython
+PYSYSLIBS=python.cma
+
+#ocamlmpi
+MYMPISRC=distribution.ml
+MPIINCLUDES=-I ../ocamlmpi -I ../../ocamlmpi -I +ocamlmpi
+MPISYSLIBS=mpi.cma
+
+#binprot
+MYBINSRC=bin_common.ml
+BININCLUDES=-I ../ocamltarzan/lib-binprot -I ../../ocamltarzan/lib-binprot
+
+#-----------------------------------------------------------------------------
+# Other stuff
+#-----------------------------------------------------------------------------
+
+#backtrace
+MYBACKTRACESRC=backtrace.ml
+BACKTRACEINCLUDES=-I $(shell $(OCAMLC) -where)
+
 
 ##############################################################################
 # Generic variables
@@ -128,7 +174,107 @@ endif
 # Other commons libs target
 ##############################################################################
 
-all_libs:
+all_libs: gdbm bdb gui mpi backtrace
+
+#-----------------------------------------------------------------------------
+gdbm: commons_gdbm.cma
+gdbm.opt: commons_gdbm.cmxa
+
+commons_gdbm.cma: $(MYGDBMSRC:.ml=.cmo)
+	$(OCAMLC_CMD) -a -o $@ $^
+
+commons_gdbm.cmxa: $(MYGDBMSRC:.ml=.cmx)
+	$(OCAMLOPT_CMD) -a -o $@ $^
+
+
+#-----------------------------------------------------------------------------
+bdb:
+	$(MAKE) INCLUDESEXTRA="$(BDBINCLUDES)" commons_bdb.cma
+bdb.opt:
+	$(MAKE) INCLUDESEXTRA="$(BDBINCLUDES)" commons_bdb.cmxa
+
+commons_bdb.cma: $(MYBDBSRC:.ml=.cmo)
+	$(OCAMLC_CMD) -a -o $@ $^
+
+commons_bdb.cmxa: $(MYBDBSRC:.ml=.cmx)
+	$(OCAMLOPT_CMD) -a -o $@ $^
+
+
+
+#-----------------------------------------------------------------------------
+gui:
+	$(MAKE) INCLUDESEXTRA="$(GUIINCLUDES)" commons_gui.cma
+gui.opt:
+	$(MAKE) INCLUDESEXTRA="$(GUIINCLUDES)" commons_gui.cmxa
+
+commons_gui.cma: $(MYGUISRC:.ml=.cmo)
+	$(OCAMLC_CMD) -a -o $@ $^
+
+commons_gui.cmxa: $(MYGUISRC:.ml=.cmx)
+	$(OCAMLOPT_CMD) -a -o $@ $^
+
+
+
+#-----------------------------------------------------------------------------
+mpi:
+	$(MAKE) INCLUDESEXTRA="$(MPIINCLUDES)" commons_mpi.cma
+mpi.opt:
+	$(MAKE) INCLUDESEXTRA="$(MPIINCLUDES)" commons_mpi.cmxa
+
+commons_mpi.cma: $(MYMPISRC:.ml=.cmo)
+	$(OCAMLC_CMD) -a -o $@ $^
+
+commons_mpi.cmxa: $(MYMPISRC:.ml=.cmx)
+	$(OCAMLOPT_CMD) -a -o $@ $^
+
+#alias
+distribution: mpi
+distribution.opt: mpi.opt
+
+
+
+#-----------------------------------------------------------------------------
+python:
+	$(MAKE) INCLUDESEXTRA="$(PYINCLUDES)" commons_python.cma
+python.opt:
+	$(MAKE) INCLUDESEXTRA="$(PYINCLUDES)" commons_python.cmxa
+
+
+commons_python.cma: $(MYPYSRC:.ml=.cmo)
+	$(OCAMLC_CMD) -a -o $@ $^
+
+commons_python.cmxa: $(MYPYSRC:.ml=.cmx)
+	$(OCAMLOPT_CMD) -a -o $@ $^
+
+#-----------------------------------------------------------------------------
+backtrace: commons_backtrace.cma
+backtrace.opt: commons_backtrace.cmxa
+
+backtrace_c.o: backtrace_c.c
+	$(CC) $(BACKTRACEINCLUDES) -c $^
+
+commons_backtrace.cma: $(MYBACKTRACESRC:.ml=.cmo) backtrace_c.o
+	$(OCAMLMKLIB) -o commons_backtrace $^
+
+commons_backtrace.cmxa: $(MYBACKTRACESRC:.ml=.cmx) backtrace_c.o
+	$(OCAMLMKLIB) -o commons_backtrace  $^
+
+clean::
+	rm -f dllcommons_backtrace.so
+
+
+
+#-----------------------------------------------------------------------------
+binprot:
+	$(MAKE) INCLUDESEXTRA="$(BININCLUDES)" commons_bin.cma
+binprot.opt:
+	$(MAKE) INCLUDESEXTRA="$(BININCLUDES)" commons_bin.cmxa
+
+commons_bin.cma: $(MYBINSRC:.ml=.cmo)
+	$(OCAMLC_CMD) -a -o $@ $^
+
+commons_bin.cmxa: $(MYBINSRC:.ml=.cmx)
+	$(OCAMLOPT_CMD) -a -o $@ $^
 
 ##############################################################################
 # The global "features" lib wrapper
@@ -195,9 +341,13 @@ clean::
 distclean: clean
 	rm -f commands.ml
 
-.PHONEY: depend
+.PHONY: depend
 .depend depend:
-	$(OCAMLDEP_CMD) *.mli *.ml  > .depend
+ifeq ($(COMPILE_EMBEDDED_BYTES_MODULE),yes)
+	$(OCAMLDEP_CMD) $(MLI_FILES) $(MYSRC)  > .depend
+else
+	$(OCAMLDEP_CMD) $(MLI_FILES) $(MYSRC) | sed 's/bytes\.cm[a-z]\{1,\}//g' > .depend
+endif
 	for i in $(SUBDIRS); do $(OCAMLDEP_CMD) $$i/*.ml $$i/*.mli >> .depend; done
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -207,3 +357,5 @@ ifneq ($(FEATURE_OCAMLBUILD),yes)
 endif
 endif
 endif
+
+include ../Makefile.common

@@ -1,26 +1,3 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
-
-
-# 0 "./common.mli"
 (*###########################################################################*)
 (* Globals *)
 (*###########################################################################*)
@@ -90,7 +67,7 @@ val save_tmp_files : bool ref
 type filename = string
 type dirname = string
 
-(* Trick in case you dont want to do an 'open Common' while still wanting
+(* Trick in case you don't want to do an 'open Common' while still wanting
  * more pervasive types than the one in Pervasives. Just do the selective
  * open Common.BasicType.
  *)
@@ -458,7 +435,7 @@ val cache_computation :
  *)
 val cache_computation_robust :
   filename ->
-  string (* extension for marshalled object *) ->
+  string (* extension for marshaled object *) ->
   (filename list * 'x) ->
   string (* extension for marshalled dependencies *) ->
   (unit -> 'a) ->
@@ -468,7 +445,7 @@ val cache_computation_robust_in_dir :
   string option (* destination directory *) -> filename ->
   string (* extension for marshalled object *) ->
   (filename list * 'x) ->
-  string (* extension for marshalled dependencies *) ->
+  string (* extension for marshaled dependencies *) ->
   (unit -> 'a) ->
   'a
 
@@ -625,7 +602,7 @@ val (=*=): 'a -> 'a -> bool
  * val (=): unit -> unit -> bool
  *
  * But it will not forbid you to use caml functions like List.find, List.mem
- * which internaly use this convenient but evolution-unfriendly (=)
+ * which internally use this convenient but evolution-unfriendly (=)
 *)
 
 
@@ -1099,6 +1076,9 @@ val process_output_to_list : string -> string list
 val cmd_to_list :            string -> string list (* alias *)
 val cmd_to_list_and_status : string -> string list * Unix.process_status
 
+val file_to_stdout : string -> unit
+val file_to_stderr : string -> unit
+
 val command2 : string -> unit
 val _batch_mode: bool ref
 val command2_y_or_no : string -> bool
@@ -1215,6 +1195,8 @@ val acc_map : ('a -> 'b) -> 'a list -> 'b list
 
 
 val zip : 'a list -> 'b list -> ('a * 'b) list
+val combine4 : 'a list -> 'b list -> 'c list -> 'd list ->
+                  ('a * 'b * 'c * 'd) list
 val zip_safe : 'a list -> 'b list -> ('a * 'b) list
 val unzip : ('a * 'b) list -> 'a list * 'b list
 
@@ -1569,16 +1551,30 @@ module IntMap :
     type +'a t
     val empty : 'a t
     val is_empty : 'a t -> bool
+    val mem : key -> 'a t -> bool
     val add : key -> 'a -> 'a t -> 'a t
+    val singleton : key -> 'a -> 'a t
     val find : key -> 'a t -> 'a
     val remove : key -> 'a t -> 'a t
-    val mem : key -> 'a t -> bool
-    val iter : (key -> 'a -> unit) -> 'a t -> unit
-    val map : ('a -> 'b) -> 'a t -> 'b t
-    val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
-    val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+    val merge : (key -> 'a option -> 'b option -> 'c option) ->
+      'a t -> 'b t -> 'c t
     val compare : ('a -> 'a -> int) -> 'a t -> 'a t -> int
     val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+    val iter : (key -> 'a -> unit) -> 'a t -> unit
+    val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+    val for_all : (key -> 'a -> bool) -> 'a t -> bool
+    val exists : (key -> 'a -> bool) -> 'a t -> bool
+    val filter : (key -> 'a -> bool) -> 'a t -> 'a t
+    val partition: (key -> 'a -> bool) -> 'a t -> 'a t * 'a t
+    val cardinal : 'a t -> int
+    val bindings : 'a t -> (key * 'a) list
+    val min_binding : 'a t -> key * 'a
+    val max_binding : 'a t -> key * 'a
+    val choose : 'a t -> key * 'a
+    val split : key -> 'a t -> 'a t * 'a option * 'a t
+    val find : key -> 'a t -> 'a
+    val map : ('a -> 'b) -> 'a t -> 'b t
+    val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
   end
 val intmap_to_list : 'a IntMap.t -> (IntMap.key * 'a) list
 val intmap_string_of_t : 'a -> 'b -> string
@@ -1589,16 +1585,30 @@ module IntIntMap :
     type +'a t
     val empty : 'a t
     val is_empty : 'a t -> bool
+    val mem : key -> 'a t -> bool
     val add : key -> 'a -> 'a t -> 'a t
+    val singleton : key -> 'a -> 'a t
     val find : key -> 'a t -> 'a
     val remove : key -> 'a t -> 'a t
-    val mem : key -> 'a t -> bool
-    val iter : (key -> 'a -> unit) -> 'a t -> unit
-    val map : ('a -> 'b) -> 'a t -> 'b t
-    val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
-    val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+    val merge : (key -> 'a option -> 'b option -> 'c option) ->
+      'a t -> 'b t -> 'c t
     val compare : ('a -> 'a -> int) -> 'a t -> 'a t -> int
     val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+    val iter : (key -> 'a -> unit) -> 'a t -> unit
+    val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+    val for_all : (key -> 'a -> bool) -> 'a t -> bool
+    val exists : (key -> 'a -> bool) -> 'a t -> bool
+    val filter : (key -> 'a -> bool) -> 'a t -> 'a t
+    val partition: (key -> 'a -> bool) -> 'a t -> 'a t * 'a t
+    val cardinal : 'a t -> int
+    val bindings : 'a t -> (key * 'a) list
+    val min_binding : 'a t -> key * 'a
+    val max_binding : 'a t -> key * 'a
+    val choose : 'a t -> key * 'a
+    val split : key -> 'a t -> 'a t * 'a option * 'a t
+    val find : key -> 'a t -> 'a
+    val map : ('a -> 'b) -> 'a t -> 'b t
+    val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
   end
 val intintmap_to_list : 'a IntIntMap.t -> (IntIntMap.key * 'a) list
 val intintmap_string_of_t : 'a -> 'b -> string
@@ -1702,7 +1712,7 @@ val tree_iter : ('a -> unit) -> 'a tree -> unit
 
 
 (*****************************************************************************)
-(* N-ary tree with updatable childrens *)
+(* N-ary tree with updatable children *)
 (*****************************************************************************)
 
 (* no empty tree, must have one root at least *)
@@ -1961,7 +1971,7 @@ val error_message_short : filename -> (string * int) -> string
 val error_messagebis : filename -> (string * int) -> int -> string
 
 (*****************************************************************************)
-(* Scope managment (cocci) *)
+(* Scope management (cocci) *)
 (*****************************************************************************)
 
 (* for example of use, see the code used in coccinelle *)

@@ -10,6 +10,8 @@ scripts/spatch.byte
 *.[ao]
 *.annot
 *.pyc
+*.mllib
+*.mldylib
 
 *~
 .depend
