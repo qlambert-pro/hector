@@ -75,6 +75,7 @@ $(TARGET).top: $(OBJS) $(LIBS)
 
 clean::
 	rm -f $(TARGET).top
+	rm -f .depend
 
 
 

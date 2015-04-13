@@ -152,8 +152,7 @@ let anonymous str = file := str
 
 let _ =
   Arg.parse options anonymous "";
- let home = Sys.getenv "HOME" in
- (if !macros = "" then macros := (home^"/coccinelle/standard.h"));
+ if !macros = "" then macros := ("/usr/local/share/coccinelle/standard.h");
  Parse_c.init_defs_builtins !macros;
  (match !org_file with Some x -> Org.parse_org x | _ -> ());
  Common.print_to_stderr := !verbose;

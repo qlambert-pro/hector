@@ -42,15 +42,15 @@ SYSLIBS=str.cma unix.cma $(SEXPSYSCMA)
 LIBS=commons/commons.cma \
      globals/globals.cma \
      parsing_c/parsing_c.cma \
-     var_dec/var_dec.cma var_dec.cma definition/definition.cma report/report.cma errorhandling/errorhandling.cma  fault_finder/fault_finder.cma interproc/interproc.cma def_chain/def_chain.cma pointer_linked/pointer_linked.cma rm_true_positives/rm_true_positives.cma rr_op_finder/rr_op_finder.cma analyzer/analyzer.cma
+     var_dec/var_dec.cma var_dec.cma definition/definition.cma report/report.cma errorhandling/errorhandling.cma interproc/interproc.cma pointer_linked/pointer_linked.cma rm_true_positives/rm_true_positives.cma rr_op_finder/rr_op_finder.cma analyzer/analyzer.cma
 
 #used for clean: and depend: and a little for rec & rec.opt
 MAKESUBDIRS=commons \
  globals \
- parsing_c var_dec definition report errorhandling  fault_finder interproc def_chain  pointer_linked rm_true_positives  rr_op_finder analyzer
+ parsing_c var_dec definition report errorhandling interproc pointer_linked rm_true_positives rr_op_finder analyzer
 INCLUDEDIRS=commons commons/ocamlextra \
  globals \
- parsing_c  var_dec definition report errorhandling  fault_finder interproc def_chain pointer_linked rm_true_positives rr_op_finder analyzer
+ parsing_c var_dec definition report errorhandling interproc pointer_linked rm_true_positives rr_op_finder analyzer
 
 ##############################################################################
 # Generic variables
@@ -162,6 +162,7 @@ $(EXEC).top: $(LIBS) $(OBJS)
 
 clean::
 	rm -f $(TARGET) $(TARGET).opt $(TARGET).top
+	rm -f .depend
 
 
 .PHONY:: configure

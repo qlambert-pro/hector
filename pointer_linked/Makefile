@@ -31,14 +31,12 @@ SRC=pointer_linked.ml
 INCLUDES = -I ../commons -I ../commons/ocamlextra -I ../globals -I ../parsing_c -I ./ \
            -I ../definition \
            -I ../errorhandling \
-           -I ../def_chain  \
            -I ../interproc 
 
 LIBS=../commons/commons.cma ../globals/globals.cma \
      ../parsing_c/parsing_c.cma \
      ../definition/definition.cma \
      ../errorhandling/errorhandling.cma \
-     ../def_chain/def_chain.cma \
      ../interproc/interproc.cma
 
 SYSLIBS= str.cma unix.cma
@@ -83,6 +81,7 @@ $(TARGET).top: $(OBJS) $(LIBS)
 
 clean::
 	rm -f $(TARGET).top
+	rm -f .depend
 
 
 

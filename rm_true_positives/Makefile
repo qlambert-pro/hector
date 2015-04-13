@@ -32,7 +32,6 @@ INCLUDES = -I ../commons -I ../commons/ocamlextra -I ../globals -I ../parsing_c 
            -I ../var_dec \
            -I ../definition \
            -I ../errorhandling \
-           -I ../def_chain  \
            -I ../interproc \
            -I ../pointer_linked
 
@@ -41,7 +40,6 @@ LIBS=../commons/commons.cma ../globals/globals.cma \
      ../var_dec/var_dec.cma \
      ../definition/definition.cma \
      ../errorhandling/errorhandling.cma \
-     ../def_chain/def_chain.cma \
      ../interproc/interproc.cma \
      ../pointer_linked/pointer_linked.cma
 
@@ -87,7 +85,7 @@ $(TARGET).top: $(OBJS) $(LIBS)
 
 clean::
 	rm -f $(TARGET).top
-
+	rm -f .depend
 
 
 ##############################################################################
