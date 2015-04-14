@@ -1,26 +1,3 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
-
-
-# 0 "./visitor_c.mli"
 open Ast_c
 
 type visitor_c = {
@@ -38,11 +15,16 @@ type visitor_c = {
   kfield     : (field -> unit)        * visitor_c -> field       -> unit;
 
   kcppdirective: (cpp_directive -> unit) * visitor_c -> cpp_directive -> unit;
+  kifdefdirective : (ifdef_directive -> unit) * visitor_c -> ifdef_directive -> unit;
   kdefineval :   (define_val -> unit)    * visitor_c -> define_val    -> unit;
   kstatementseq: (statement_sequencable   -> unit) * visitor_c -> statement_sequencable   -> unit;
 
 
+  knode:
+    (Control_flow_c.node -> unit) * visitor_c -> Control_flow_c.node -> unit;
   ktoplevel: (toplevel -> unit) * visitor_c -> toplevel -> unit;
+  kfragment: (string_fragment -> unit) * visitor_c -> string_fragment -> unit;
+  kformat: (string_format -> unit) * visitor_c -> string_format -> unit;
 
   kinfo      : (info        -> unit)  * visitor_c -> info        -> unit;
 }
@@ -62,6 +44,12 @@ val vk_inis_splitted :
     visitor_c -> (initialiser, il) Common.either list -> unit
 val vk_name      : visitor_c -> name -> unit
 val vk_def       : visitor_c -> definition  -> unit
+val vk_node      : visitor_c -> Control_flow_c.node -> unit
+val vk_string_fragment : visitor_c -> string_fragment -> unit
+val vk_string_fragments : visitor_c -> string_fragment list -> unit
+val vk_string_fragments_splitted :
+    visitor_c -> (string_fragment, il) Common.either list -> unit
+val vk_string_format : visitor_c -> string_format -> unit
 val vk_info      : visitor_c -> info -> unit
 val vk_toplevel : visitor_c -> toplevel -> unit
 val vk_program  : visitor_c -> program -> unit
@@ -85,7 +73,13 @@ val vk_cst : visitor_c -> ((constant, string) Common.either wrap) -> unit
 
 val vk_define_params_splitted :
   visitor_c -> (string Ast_c.wrap, il) Common.either list -> unit
+val vk_pragmainfo : visitor_c -> pragmainfo -> unit
+val vk_ident_list_splitted : visitor_c -> (name, il) Common.either list -> unit
 
+val vk_exec_code_list_splitted :
+    visitor_c -> (exec_code, il) Common.either list -> unit
+val vk_attrs_splitted :
+    visitor_c -> (attribute, il) Common.either list -> unit
 
 
 (* ------------------------------------------------------------------------ *)
@@ -102,14 +96,19 @@ type visitor_c_s = {
   kini_s       : initialiser    inout * visitor_c_s -> initialiser    inout;
 
   kcppdirective_s : (cpp_directive inout * visitor_c_s) -> cpp_directive inout;
+  kifdefdirective_s : (ifdef_directive inout * visitor_c_s) -> ifdef_directive inout;
   kdefineval_s : (define_val inout * visitor_c_s) -> define_val inout;
   kstatementseq_s: (statement_sequencable inout * visitor_c_s) -> statement_sequencable inout;
   kstatementseq_list_s:
     (statement_sequencable list inout * visitor_c_s) -> statement_sequencable list inout;
 
+  knode_s      :
+    Control_flow_c.node inout * visitor_c_s -> Control_flow_c.node    inout;
   ktoplevel_s  : toplevel inout * visitor_c_s -> toplevel inout;
 
-  kinfo_s      : info           inout * visitor_c_s -> info           inout;
+  kfragment_s  : string_fragment inout * visitor_c_s -> string_fragment inout;
+  kformat_s    : string_format   inout * visitor_c_s -> string_format   inout;
+  kinfo_s      : info            inout * visitor_c_s -> info            inout;
   }
 
 val default_visitor_c_s : visitor_c_s
@@ -131,8 +130,17 @@ val vk_inis_splitted_s :
 val vk_def_s : visitor_c_s -> definition -> definition
 val vk_name_s : visitor_c_s -> name -> name
 val vk_toplevel_s : visitor_c_s -> toplevel -> toplevel
+val vk_string_fragment_s : visitor_c_s -> string_fragment -> string_fragment
+val vk_string_fragments_s :
+    visitor_c_s -> string_fragment list -> string_fragment list
+val vk_string_fragments_splitted_s :
+    visitor_c_s ->
+      (string_fragment, il) Common.either list ->
+	(string_fragment, il) Common.either list
+val vk_string_format_s : visitor_c_s -> string_format -> string_format
 val vk_info_s : visitor_c_s -> info -> info
 val vk_ii_s : visitor_c_s -> info list -> info list
+val vk_node_s : visitor_c_s -> Control_flow_c.node -> Control_flow_c.node
 val vk_program_s  : visitor_c_s -> program -> program
 
 val vk_arguments_s : visitor_c_s -> argument wrap2 list -> argument wrap2 list
@@ -154,7 +162,6 @@ val vk_params_splitted_s :
   (parameterType, il) Common.either list
 
 
-
 val vk_param_s : visitor_c_s -> parameterType -> parameterType
 
 val vk_define_params_splitted_s :
@@ -162,11 +169,26 @@ val vk_define_params_splitted_s :
   (string Ast_c.wrap, il) Common.either list ->
   (string Ast_c.wrap, il) Common.either list
 
+val vk_pragmainfo_s : visitor_c_s -> pragmainfo -> pragmainfo
+val vk_ident_list_splitted_s :
+  visitor_c_s ->
+  (name, il) Common.either list ->
+  (name, il) Common.either list
+
 val vk_enum_fields_s : visitor_c_s -> enumType -> enumType
 val vk_enum_fields_splitted_s : visitor_c_s ->
   (oneEnumType, il) Common.either list ->
   (oneEnumType, il) Common.either list
 val vk_struct_field_s : visitor_c_s -> field -> field
 val vk_struct_fields_s : visitor_c_s -> field list -> field list
+
+val vk_exec_code_list_splitted_s :
+    visitor_c_s ->
+      (exec_code, il) Common.either list ->
+	(exec_code, il) Common.either list
+val vk_attrs_splitted_s :
+    visitor_c_s ->
+      (attribute, il) Common.either list ->
+	(attribute, il) Common.either list
 
 val vk_cst_s : visitor_c_s -> ((constant, string) Common.either wrap) inout

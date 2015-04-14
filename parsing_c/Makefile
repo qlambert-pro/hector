@@ -1,24 +1,6 @@
-# Copyright 2013, Inria
-# Suman Saha, Julia Lawall, Gilles Muller
-# This file is part of Hector.
-#
-# Hector is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, according to version 2 of the License.
-#
-# Hector is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Hector.  If not, see <http://www.gnu.org/licenses/>.
-#
-# The authors reserve the right to distribute this or future versions of
-# Hector under other licenses.
-
-
-include ../make_config
+ifneq ($(MAKECMDGOALS),distclean)
+include ../Makefile.config
+endif
 
 ##############################################################################
 # Variables
@@ -27,23 +9,33 @@ TARGET=parsing_c
 
 # - type_cocci.ml ast_cocci.ml  # + unparse_hrule
 SRC= token_annot.ml flag_parsing_c.ml parsing_stat.ml \
- token_c.ml ast_c.ml \
+ parse_printf.ml \
+ token_c.ml ast_c.ml control_flow_c.ml \
  visitor_c.ml lib_parsing_c.ml \
+ control_flow_c_build.ml \
  pretty_print_c.ml \
  semantic_c.ml lexer_parser.ml parser_c.ml lexer_c.ml \
- token_helpers.ml token_views_c.ml \
+ parse_string_c.ml token_helpers.ml token_views_c.ml \
  cpp_token_c.ml  \
  parsing_hacks.ml \
  cpp_analysis_c.ml \
  parsing_recovery_c.ml parsing_consistency_c.ml \
- parse_c.ml type_c.ml \
+ danger.ml parse_c.ml type_c.ml \
  cpp_ast_c.ml \
- type_annoter_c.ml
+ type_annoter_c.ml comment_annotater_c.ml \
+ compare_c.ml \
+ test_parsing_c.ml
 
-LIBS=../commons/commons.cma ../globals/globals.cma
+
+
+# control_flow_c also had coccinelle dependencies.
+# old: parsing_c now depends on cocci_parser because in addition to decorate
+# the token in Ast_c with some parse info, we now also make some place to
+# welcome some mcodekind of Ast_cocci.
+LIBS=../commons/commons.cma ../globals/globals.cma \
 
 INCLUDESDEP= -I ../commons -I ../commons/ocamlextra -I ../commons/ocollection \
-  -I ../globals
+  -I ../globals 
 
 INCLUDES=$(INCLUDESDEP) $(TARZANINCLUDE)
 
@@ -109,6 +101,36 @@ endif
 
 
 ##############################################################################
+# Pad's rules
+##############################################################################
+# visitor_c.ml lib_parsing_c.ml \
+# type_annoter_c.ml  \
+# statistics_c.ml  \
+# pretty_print_c.ml unparse_c.ml \
+# test_parsing_c.ml
+#toreput: compare_c.ml ast_to_flow.ml
+
+COREPARSING= flag_parsing_c.ml parsing_stat.ml \
+ ast_c.ml control_flow_c.ml \
+ semantic_c.ml lexer_parser.ml parser_c.mly lexer_c.mll \
+ token_helpers.ml parsing_hacks.ml parse_c.ml
+
+locparsing:
+	wc -l $(COREPARSING)
+
+locindiv:
+	wc -l lexer_c.mll
+	wc -l parser_c.mly
+	wc -l parsing_hacks.ml
+	wc -l ast_c.ml
+	wc -l parse_c.ml
+
+##############################################################################
+# Literate Programming rules
+##############################################################################
+
+
+##############################################################################
 # Generic rules
 ##############################################################################
 
@@ -129,7 +151,11 @@ clean::
 distclean: clean
 
 .depend depend: lexer_c.ml parser_c.ml parser_c.mli
+ifeq ($(COMPILE_EMBEDDED_BYTES_MODULE),yes)
 	$(OCAMLDEP_CMD) *.mli *.ml > .depend
+else
+	$(OCAMLDEP_CMD) *.mli *.ml | sed "s%\.\./commons/bytes\.cm.%%g" > .depend
+endif
 
 ifneq ($(MAKECMDGOALS),clean)
 ifneq ($(MAKECMDGOALS),distclean)
@@ -138,3 +164,5 @@ ifneq ($(FEATURE_OCAMLBUILD),yes)
 endif
 endif
 endif
+
+include ../Makefile.common

@@ -43,7 +43,7 @@ open Common
  *
  * convention: I often use 'ii' for the name of a list of info.
  *
- * Sometimes we want to add someting at the beginning or at the end
+ * Sometimes we want to add something at the beginning or at the end
  * of a construct. For 'function' and 'decl' we want to add something
  * to their left and for 'if' 'while' et 'for' and so on at their right.
  * We want some kinds of "virtual placeholders" that represent the start or
@@ -90,13 +90,20 @@ type parse_info =
   | AbstractLineTok of Common.parse_info (* local to the abstracted thing *)
  (* with sexp *)
 
+(* for tokens that are shared in the C ast, and thus require care
+when transforming *)
+type danger = DangerStart | DangerEnd | Danger | NoDanger
+
 type info = {
   pinfo : parse_info;
+
   (* set in comment_annotater_c.ml *)
   comments_tag: comments_around ref;
 
   (* annotations on the token (mutable) *)
-  mutable annots_tag: Token_annot.annots
+  mutable annots_tag: Token_annot.annots;
+
+  danger: danger ref;
 
   (* todo? token_info : sometimes useful to know what token it was *)
   }
@@ -123,12 +130,12 @@ and 'a wrap3 = 'a * il (* * evotype*)
  * as concatenated strings can be used not only for identifiers and for
  * declarators, but also for fields, for labels, etc.
  *
- * Note: because now the info is embeded in the name, the info for
+ * Note: because now the info is embedded in the name, the info for
  * expression like Ident, or types like Typename, are not anymore
  * stored in the expression or type. Hence if you assume this,
  * which was true before, you are now wrong. So never write code like
  * let (unwrape,_), ii = e  and use 'ii' believing it contains
- * the local ii to e. If you want to do that, use the appropiate
+ * the local ii to e. If you want to do that, use the appropriate
  * wrapper get_local_ii_of_expr_inlining_ii_of_name.
  *)
 and name =
@@ -152,9 +159,9 @@ and name =
  * from scratch, because many stuff are just sugar.
  *
  * invariant: Array and FunctionType have also typeQualifier but they
- * dont have sense. I put this to factorise some code. If you look in
+ * don't have sense. I put this to factorise some code. If you look in
  * the grammar, you see that we can never specify const for the array
- * himself (but we can do it for pointer) or function, we always
+ * itself (but we can do it for pointer) or function, we always
  * have in the action rule of the grammar a { (nQ, FunctionType ...) }.
  *
  *
@@ -175,6 +182,7 @@ and fullType = typeQualifier * typeC
 
   | Pointer         of fullType
   | Array           of constExpression option * fullType
+  | Decimal         of constExpression * constExpression option
   | FunctionType    of functionType
 
   | Enum            of string option * enumType
@@ -245,7 +253,7 @@ and fullType = typeQualifier * typeC
 
         (* before unparser, I didn't have a FieldDeclList but just a Field. *)
          and field_declaration  =
-           | FieldDeclList of fieldkind wrap2 list (* , *) wrap  (* ; *)
+           | FieldDeclList of fieldkind wrap2 list (* , *) wrap (*; fakestart*)
 
           (* At first I thought that a bitfield could be only Signed/Unsigned.
            * But it seems that gcc allow char i:4. C rule must say that you
@@ -301,6 +309,7 @@ and expression = (expressionbis * exp_info ref (* semantic: *)) wrap3
   | Ident          of name (* todo? more semantic info such as LocalFunc *)
 
   | Constant       of constant
+  | StringConstant of string_fragment list * string (*src string*) * isWchar
   | FunCall        of expression * argument wrap2 (* , *) list
   (* gccext: x ? /* empty */ : y <=> x ? x : y;  hence the 'option' below *)
   | CondExpr       of expression * expression option * expression
@@ -364,6 +373,7 @@ and expression = (expressionbis * exp_info ref (* semantic: *)) wrap3
     | Char   of (string * isWchar) (* normally it is equivalent to Int *)
     | Int    of (string * intType)
     | Float  of (string * floatType)
+    | DecimalConst of (string * string * string)
 
     and isWchar = IsWchar | IsChar
 
@@ -387,10 +397,21 @@ and expression = (expressionbis * exp_info ref (* semantic: *)) wrap3
 
  and constExpression = expression (* => int *)
 
+and string_fragment = string_fragment_bis wrap
+
+and string_fragment_bis =
+  ConstantFragment of string
+| FormatFragment of string_format (* format *)
+
+and string_format = string_format_bis wrap
+
+and string_format_bis =
+  ConstantFormat of string
+
 (* ------------------------------------------------------------------------- *)
 (* C statement *)
 (* ------------------------------------------------------------------------- *)
-(* note: that assignement is not a statement but an expression;
+(* note: that assignment is not a statement but an expression;
  * wonderful C langage.
  *
  * note: I use 'and' for type definition cos gccext allow statement as
@@ -416,13 +437,12 @@ and statement = statementbis wrap3
 
   (* cppext: *)
   | MacroStmt
-
-
+  | Exec of exec_code list
 
   and labeled = Label   of name * statement
               | Case    of expression * statement
               | CaseRange of expression * expression * statement (* gccext: *)
-	      |	Default of statement
+              |	Default of statement
 
   (* cppext:
    * old: compound = (declaration list * statement list)
@@ -472,6 +492,10 @@ and statement = statementbis wrap3
   and selection     =
    | If     of expression * statement * statement
    | Switch of expression * statement
+   (* #ifdef A if e S1 else #endif S2 *)
+   | Ifdef_Ite of expression * statement * statement
+   (* #ifdef A if e S1 else #else S2 #endif S3 *)
+   | Ifdef_Ite2 of expression * statement * statement * statement
 
 
   and iteration     =
@@ -494,6 +518,11 @@ and statement = statementbis wrap3
       and colon_option = colon_option_bis wrap
           and colon_option_bis = ColonMisc | ColonExpr of expression
 
+  and exec_code_bis =
+    ExecEval of expression
+  | ExecToken
+
+  and exec_code = exec_code_bis wrap
 
 (* ------------------------------------------------------------------------- *)
 (* Declaration *)
@@ -542,7 +571,7 @@ and declaration =
 
      (* fullType is the type used if the type should be converted to
 	an assignment.  It can be adjusted in the type annotation
-	phase when typedef information is availalble *)
+	phase when typedef information is available *)
      and initialiser = initialiserbis wrap
        and initialiserbis =
           | InitExpr of expression
@@ -589,7 +618,8 @@ and definition = definitionbis wrap (* ( ) { } fakestart sto *)
 and cpp_directive =
   | Define of define
   | Include of includ
-  | PragmaAndCo of il
+  | Pragma of string wrap * pragmainfo
+  | OtherDirective of il
 (*| Ifdef ? no, ifdefs are handled differently, cf ifdef_directive below *)
 
 and define = string wrap (* #define s eol *) * (define_kind * define_val)
@@ -608,14 +638,12 @@ and define = string wrap (* #define s eol *) * (define_kind * define_val)
      | DefineFunction of definition
      | DefineInit of initialiser (* in practice only { } with possible ',' *)
 
-     | DefineMulti of statement list 
+     | DefineMulti of statement list
 
      | DefineText of string wrap
      | DefineEmpty
 
      | DefineTodo
-
-
 
 and includ =
   { i_include: inc_file wrap; (* #include s *)
@@ -626,11 +654,11 @@ and includ =
     (* cf cpp_ast_c.ml. set to None at parsing time. *)
     i_content: (Common.filename (* full path *) * program) option;
   }
- and inc_file =
+and inc_file =
   | Local    of inc_elem list
   | NonLocal of inc_elem list
   | Weird of string (* ex: #include SYSTEM_H *)
-  and inc_elem = string
+and inc_elem = string
 
  (* cocci: to tag the first of #include <xx/> and last of #include <yy/>
   *
@@ -641,21 +669,48 @@ and includ =
   *
   * This is set after parsing, in cocci.ml, in update_rel_pos.
   *)
- and include_rel_pos = {
+and include_rel_pos = {
    first_of : string list list;
    last_of :  string list list;
  }
 
-
+and pragmainfo =
+    PragmaTuple of argument wrap2 (* , *) list wrap
+  | PragmaIdList of name wrap2 list (* no commas, wrap2 is always empty *)
 
 (* todo? to specialize if someone need more info *)
 and ifdef_directive = (* or and 'a ifdefed = 'a list wrap *)
   | IfdefDirective of (ifdefkind * matching_tag) wrap
   and ifdefkind =
-    | Ifdef (* todo? of string ? of formula_cpp ? *)
-    | IfdefElseif (* same *)
-    | IfdefElse (* same *)
+    | Ifdef of ifdef_guard
+    | IfdefElseif of ifdef_guard
+    | IfdefElse
     | IfdefEndif
+    (** Guards for #if conditionals
+     *
+     * Having #if guards in the AST is useful for cpp-aware analyses, or to
+     * later add support for matching against #ifS.
+     *
+     * General #if guards are stored as a string in a [Gif_str] constructor.
+     * A traversal of the syntax tree with a parsing function would transform
+     * these into the parsed [Gif] form.
+     *
+     * NOTE that there is no actually guaranteee that a traversal will
+     * eliminate all [Gif_str] constructors, since the parsing function may
+     * fail.
+     *
+     * See [Parsing #if guards] to know why this design choice.
+     *
+     * @author Iago Abal
+     *)
+  and ifdef_guard = Gifdef  of macro_symbol (* #ifdef *)
+                  | Gifndef of macro_symbol (* #ifndef *)
+                  | Gif_str of string       (* #if <string to be parsed> *)
+                  | Gif     of expression   (* #if *)
+                  | Gnone   (* ignored #if condition: TIfdefBool,
+                             * TIfdefMisc, and TIfdefVersion
+                             *)
+  and macro_symbol = string
   (* set in Parsing_hacks.set_ifdef_parenthize_info. It internally use
    * a global so it means if you parse the same file twice you may get
    * different id. I try now to avoid this pb by resetting it each
@@ -665,7 +720,33 @@ and ifdef_directive = (* or and 'a ifdefed = 'a list wrap *)
     IfdefTag of (int (* tag *) * int (* total with this tag *))
 
 
-
+(* Note [Parsing #if guards]
+ *
+ * What I wanted to do:
+ * The lexer should tokenize the #if guard, we use the TDefEOL-trick to
+ * mark the end of the guard, and finally we add a rule to the ocamlyacc
+ * parser.
+ *
+ * Problem:
+ * The [lookahead] pass in [Parsing_hacks] assumes that an #if header is
+ * a single token. The above solution breaks that assumption. So, when an
+ * #if appears in some weird position, [lookahead] will comment out the #if
+ * token, but not any subsequent token of the guard. It seems doable to
+ * modify [lookahead] to handle this new situation, but this seems a complex
+ * and delicate function to touch, and (who knows) we may break something
+ * else. Also note that [TCommentCpp] only takes one [info], so we would
+ * need to combine all the [info]s of an #if into one.
+ *
+ * What I finally did:
+ * The safest way I found is to save the #if guard in the [TIfdef] token as
+ * a (yet-to-be-parsed) string. This is enough to reason about, or match
+ * against, simple and most-common #ifdef and #ifndef conditionals. (Rough
+ * estimate: 80% of #if conditionals in Linux are #if[n]def.) But the
+ * AST for #if guards can still be easily obtained by traversing the syntax
+ * tree with a parsing function.
+ *
+ * @author Iago Abal
+ *)
 
 
 (* ------------------------------------------------------------------------- *)
@@ -692,6 +773,7 @@ and toplevel =
 
 (* ------------------------------------------------------------------------- *)
 and program = toplevel list
+
 
 (*****************************************************************************)
 (* C comments *)
@@ -753,18 +835,16 @@ let emptyComments= {
   mafter2 = [];
 }
 
-
 (* for include, some meta information needed by cocci *)
 let noRelPos () =
   ref (None: include_rel_pos option)
 let noInIfdef () =
   ref false
 
-
 (* When want add some info in ast that does not correspond to
  * an existing C element.
  * old: or when don't want 'synchronize' on it in unparse_c.ml
- * (now have other mark for tha matter).
+ * (now have other mark for the matter).
  *)
 let no_virt_pos = ({str="";charpos=0;line=0;column=0;file=""},-1)
 
@@ -772,6 +852,7 @@ let fakeInfo pi  =
   { pinfo = FakeTok ("",no_virt_pos);
     annots_tag = Token_annot.empty;
     comments_tag = ref emptyComments;
+    danger = ref NoDanger;
   }
 
 let noii = []
@@ -937,6 +1018,9 @@ let compare_posl (l1,c1) (l2,c2) =
     0 -> c2 - c1
   | r -> r
 
+let info_to_fixpos ii =
+  failwith "unexpected abstract"
+
 (* cocci: *)
 let is_test (e : expression) =
   let (_,info), _ = e in
@@ -967,11 +1051,13 @@ let al_info tokenindex x =
 	 str = str_of_info x});
     annots_tag = Token_annot.empty;
     comments_tag = ref emptyComments;
+    danger = ref NoDanger;
   }
 
 let semi_al_info x =
   { x with
     comments_tag = ref emptyComments;
+    danger = ref NoDanger;
   }
 
 let magic_real_number = -10
@@ -986,6 +1072,7 @@ let real_al_info x =
 	 str = str_of_info x});
     annots_tag = Token_annot.empty;
     comments_tag = ref emptyComments;
+    danger = ref NoDanger;
   }
 
 let al_comments x =
@@ -994,6 +1081,7 @@ let al_comments x =
   let al_com (x,i) =
     (x,{i with Common.charpos = magic_real_number;
 	 Common.line = magic_real_number;
+	 Common.file = "";
 	 Common.column = magic_real_number}) in
   {mbefore = []; (* duplicates mafter of the previous token *)
    mafter = List.map al_com (keep_cpp x.mafter);
@@ -1011,12 +1099,14 @@ let al_info_cpp tokenindex x =
 	 str = str_of_info x});
     annots_tag = Token_annot.empty;
     comments_tag = ref (al_comments !(x.comments_tag));
+    danger = ref NoDanger;
   }
 
 let semi_al_info_cpp x =
   { x with
     annots_tag = Token_annot.empty;
     comments_tag = ref (al_comments !(x.comments_tag));
+    danger = ref NoDanger;
   }
 
 let real_al_info_cpp x =
@@ -1029,6 +1119,7 @@ let real_al_info_cpp x =
 	 str = str_of_info x});
     annots_tag = Token_annot.empty;
     comments_tag =  ref (al_comments !(x.comments_tag));
+    danger = ref NoDanger;
   }
 
 
@@ -1041,7 +1132,7 @@ let real_al_info_cpp x =
  * a list where the comma are on their own. f(1,2,2) was
  * [(1,[]); (2,[,]); (2,[,])] and become [1;',';2;',';2].
  *
- * Used in cocci_vs_c.ml, to have a more direct correspondance between
+ * Used in cocci_vs_c.ml, to have a more direct correspondence between
  * the ast_cocci of julia and ast_c.
  *)
 let rec (split_comma: 'a wrap2 list -> ('a, il) either list) =
@@ -1063,8 +1154,13 @@ let rec (unsplit_comma: ('a, il) either list -> 'a wrap2 list) =
   | Right ii::_ ->
       raise (Impossible 59)
 
+let (split_nocomma: 'a list -> ('a, il) either list) = function l ->
+  List.map (function x -> Left x) l
 
-
+let (unsplit_nocomma: ('a, il) either list -> 'a list) = function l ->
+  l +>
+  List.map
+    (function Left x -> x | Right x -> failwith "not possible")
 
 (*****************************************************************************)
 (* Helpers, could also be put in lib_parsing_c.ml instead *)
@@ -1188,4 +1284,7 @@ let put_annot_info info key value =
 (* to check if an annotation has such a token *)
 let get_annot_info info key =
   Token_annot.get_annot info.annots_tag key
+
+let get_comments_before info = (!(info.comments_tag)).mbefore
+let get_comments_after info = (!(info.comments_tag)).mafter
 

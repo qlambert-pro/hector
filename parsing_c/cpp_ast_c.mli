@@ -1,26 +1,3 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
-
-
-# 0 "./cpp_ast_c.mli"
 type cpp_option =
   | I of Common.dirname
   | D of string * string option
@@ -57,10 +34,6 @@ val cpp_expand_include:
   ?depth_limit:int option ->
   ?threshold_cache_nb_files:int ->
   cpp_option list -> Common.dirname (* start point for relative paths *) ->
-  Ast_c.program -> Ast_c.program
-
-(* #ifdef *)
-val cpp_ifdef_statementize:
   Ast_c.program -> Ast_c.program
 
 (* #define *)

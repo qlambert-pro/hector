@@ -1,26 +1,3 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
-
-
-# 0 "./lexer_c.mll"
 {
 (* Yoann Padioleau
  *
@@ -90,6 +67,7 @@ let tokinfo lexbuf  =
    (* must generate a new ref each time, otherwise share *)
     annots_tag = Token_annot.empty;
     comments_tag = ref Ast_c.emptyComments;
+    danger = ref NoDanger;
   }
 
 (* cppext: must generate a new ref each time, otherwise share *)
@@ -97,6 +75,27 @@ let no_ifdef_mark () = ref (None: (int * int) option)
 
 let tok_add_s s ii = Ast_c.rewrap_str ((Ast_c.str_of_info ii) ^ s) ii
 
+let function_cpp_eat_until_nl cpp_eat_until_nl cpp_in_comment_eat_until_nl
+    parse_newline s lexbuf =
+  let splitted = Str.split_delim (Str.regexp_string "/*") s in
+  let check_continue s =
+      let splitted = Str.split_delim (Str.regexp "\\\\ *") s in
+      match splitted with
+	[_;""] ->
+          let s2 = parse_newline lexbuf in
+          let s3 = cpp_eat_until_nl lexbuf in
+	  s2 ^ s3
+      |	_ -> "" in
+    match List.rev splitted with
+      after_comment_start :: before_comment_start :: rest ->
+	let splitted2 =
+	  Str.split_delim (Str.regexp_string "*/") after_comment_start in
+	(match splitted2 with
+	  [bef;aft] -> check_continue s (* no unclosed comment *)
+	| _ ->
+	    let s2 = parse_newline lexbuf in
+	    s2^(cpp_in_comment_eat_until_nl lexbuf))
+    | _ -> check_continue s (* no comment *)
 
 (* opti: less convenient, but using a hash is faster than using a match *)
 let keyword_table = Common.hash_of_list [
@@ -198,6 +197,11 @@ let cpp_keyword_table = Common.hash_of_list [
   "delete",    (fun ii -> Tdelete ii);
   "using",     (fun ii -> TComment ii) ]
 
+let ibm_keyword_table = Common.hash_of_list [
+  "decimal",   (fun ii -> Tdecimal ii);
+  "EXEC",      (fun ii -> Texec ii);
+] 
+
 let error_radix s =
   ("numeric " ^ s ^ " constant contains digits beyond the radix:")
 
@@ -292,6 +296,7 @@ let pfract = dec+
 let sign = ['-' '+']
 let exp  = ['e''E'] sign? dec+
 let real = pent exp | ((pent? '.' pfract | pent '.' pfract? ) exp?)
+let ddecimal = ((pent? '.' pfract | pent '.' pfract? ))
 
 let id = letter (letter | digit) *
 
@@ -375,7 +380,6 @@ rule token = parse
    * http://gcc.gnu.org/onlinedocs/gcc/Pragmas.html
    *)
 
-  | "#" spopt "pragma"  sp  [^'\n' '\r']* ('\n' | "\r\n")
   | "#" spopt "ident"   sp  [^'\n' '\r']* ('\n' | "\r\n")
   | "#" spopt "line"    sp  [^'\n' '\r']* ('\n' | "\r\n")
   | "#" spopt "error"   sp  [^'\n' '\r']* ('\n' | "\r\n")
@@ -392,9 +396,9 @@ rule token = parse
 
 
 
-  (* ---------------------- *)
-  (* #define, #undef *)
-  (* ---------------------- *)
+  (* ------------------------ *)
+  (* #define, #undef, #pragma *)
+  (* ------------------------ *)
 
   (* the rest of the lexing/parsing of define is done in fix_tokens_define
    * where we parse until a TCppEscapedNewline and generate a TDefEol
@@ -405,6 +409,11 @@ rule token = parse
    * but I currently don't handle it cos I think it's bad code.
    *)
   | "#" [' ' '\t']* "undef" { TUndef (tokinfo lexbuf) }
+
+  (* note: in some cases can have stuff after the ident as in #undef XXX 50,
+   * but I currently don't handle it cos I think it's bad code.
+   *)
+  | ("#" [' ' '\t']* "pragma") { TPragma (tokinfo lexbuf) }
 
   (* ---------------------- *)
   (* #include *)
@@ -435,40 +444,66 @@ rule token = parse
   (* #ifdef *)
   (* ---------------------- *)
 
-  (* The ifdef_mark will be set later in Parsing_hacks.set_ifdef_parenthize_info
+  (* The ifdef_mark will be set later in
+   * Parsing_hacks.set_ifdef_parenthize_info
    * when working on the ifdef view.
    *)
 
   (* '0'+ because sometimes it is a #if 000 *)
-  | "#" [' ' '\t']* "if" [' ' '\t']* '0'+           (* [^'\n']*  '\n' *)
+  | "#" [' ' '\t']* "if" [' ' '\t']* '0'+ [^'\n']*
       { let info = tokinfo lexbuf in
-        TIfdefBool (false, no_ifdef_mark(), info)
-          (* +> tok_add_s (cpp_eat_until_nl lexbuf)*)
+        let s = tok lexbuf in
+        let rest =
+	  function_cpp_eat_until_nl cpp_eat_until_nl
+	    cpp_in_comment_eat_until_nl
+	    parse_newline s lexbuf in
+        TIfdefBool (false, no_ifdef_mark(), info +> tok_add_s rest)
       }
 
-  | "#" [' ' '\t']* "if" [' ' '\t']* '1'   (* [^'\n']*  '\n' *)
+  | "#" [' ' '\t']* "if" [' ' '\t']* '1' [^'\n']*
       { let info = tokinfo lexbuf in
-        TIfdefBool (true, no_ifdef_mark(), info)
-
+        let s = tok lexbuf in
+        let rest =
+	  function_cpp_eat_until_nl cpp_eat_until_nl
+	    cpp_in_comment_eat_until_nl
+	    parse_newline s lexbuf in
+        TIfdefBool (true, no_ifdef_mark(), info +> tok_add_s rest)
       }
 
  (* DO NOT cherry pick to lexer_cplusplus !!! often used for the extern "C" { *)
-  | "#" [' ' '\t']* "if" sp "defined" sp "(" spopt "__cplusplus" spopt ")" [^'\n' '\r']* ('\n' | "\r\n")
+  | "#" [' ' '\t']* "if" sp "defined" sp "(" spopt "__cplusplus" spopt ")"
+    [^'\n' '\r']*
       { let info = tokinfo lexbuf in
-        TIfdefMisc (false, no_ifdef_mark(), info)
+        let s = tok lexbuf in
+        let rest =
+	  function_cpp_eat_until_nl cpp_eat_until_nl
+	    cpp_in_comment_eat_until_nl
+	    parse_newline s lexbuf in
+        TIfdefMisc (false, no_ifdef_mark(), info +> tok_add_s rest)
       }
 
  (* DO NOT cherry pick to lexer_cplusplus !!! *)
-  | "#" [' ' '\t']* "ifdef" [' ' '\t']* "__cplusplus"   [^'\n']*  '\n'
+  | "#" [' ' '\t']* "ifdef" [' ' '\t']* "__cplusplus"   [^'\n']*
+      (* don't want the final newline *)
       { let info = tokinfo lexbuf in
-        TIfdefMisc (false, no_ifdef_mark(), info)
+        let s = tok lexbuf in
+        let rest =
+	  function_cpp_eat_until_nl cpp_eat_until_nl
+	    cpp_in_comment_eat_until_nl
+	    parse_newline s lexbuf in
+        TIfdefMisc (false, no_ifdef_mark(), info +> tok_add_s rest)
       }
 
   (* in glibc *)
-  | "#" spopt ("ifdef"|"if") sp "__STDC__"
+  | "#" spopt ("ifdef"|"if") sp "__STDC__"   [^'\n']*
+      (* hope that there are no comments in the ifdef line... *)
       { let info = tokinfo lexbuf in
-        TIfdefVersion (true, no_ifdef_mark(),
-                      info +> tok_add_s (cpp_eat_until_nl lexbuf))
+        let s = tok lexbuf in
+        let rest =
+	  function_cpp_eat_until_nl cpp_eat_until_nl
+	    cpp_in_comment_eat_until_nl
+	    parse_newline s lexbuf in
+        TIfdefVersion (true, no_ifdef_mark(), info +> tok_add_s rest)
       }
 
 
@@ -498,6 +533,7 @@ rule token = parse
 
   *)
 
+(*
   (* linuxext: must be before the generic rules for if and ifdef *)
   | "#" spopt "if" sp "("?  "LINUX_VERSION_CODE" sp (">=" | ">") sp
       { let info = tokinfo lexbuf in
@@ -512,7 +548,7 @@ rule token = parse
         TIfdefVersion (false, no_ifdef_mark(),
                       info +> tok_add_s (cpp_eat_until_nl lexbuf))
       }
-
+*)
 
 
 
@@ -523,26 +559,31 @@ rule token = parse
         then TIfdefBool (false, no_ifdef_mark(), tokinfo lexbuf)
         else if List.mem x !Flag_parsing_c.defined
         then TIfdefBool (true, no_ifdef_mark(), tokinfo lexbuf)
-        else TIfdef (no_ifdef_mark(), tokinfo lexbuf) }
+        else TIfdef (Gifdef x, no_ifdef_mark(), tokinfo lexbuf) }
   | "#" [' ''\t']* "ifndef" [' ''\t']+
      (((letter|digit) ((letter|digit)*)) as x) [' ''\t']*
       { if List.mem x !Flag_parsing_c.defined
         then TIfdefBool (false, no_ifdef_mark(), tokinfo lexbuf)
         else if List.mem x !Flag_parsing_c.undefined
         then TIfdefBool (true, no_ifdef_mark(), tokinfo lexbuf)
-        else TIfdef (no_ifdef_mark(), tokinfo lexbuf) }
+        else TIfdef (Gifndef x, no_ifdef_mark(), tokinfo lexbuf) }
   | "#" [' ''\t']* "if" [' ' '\t']+
       { let info = tokinfo lexbuf in
-        TIfdef (no_ifdef_mark(), info +> tok_add_s (cpp_eat_until_nl lexbuf))
+        let str_guard = cpp_eat_until_nl lexbuf in
+        TIfdef (Gif_str str_guard, no_ifdef_mark(), info +> tok_add_s str_guard)
       }
   | "#" [' ' '\t']* "if" '('
       { let info = tokinfo lexbuf in
-        TIfdef (no_ifdef_mark(), info +> tok_add_s (cpp_eat_until_nl lexbuf))
+        let str_guard = cpp_eat_until_nl lexbuf in
+        TIfdef (Gif_str str_guard, no_ifdef_mark(), info +> tok_add_s str_guard)
       }
-
   | "#" [' ' '\t']* "elif" [' ' '\t']+
       { let info = tokinfo lexbuf in
-        TIfdefelif (no_ifdef_mark(), info +> tok_add_s (cpp_eat_until_nl lexbuf))
+        let str_guard = cpp_eat_until_nl lexbuf in
+        TIfdefelif (Gif_str str_guard,
+                    no_ifdef_mark(),
+                    info +> tok_add_s str_guard
+                   )
       }
 
 
@@ -558,7 +599,9 @@ rule token = parse
   (* can be at eof *)
   (*| "#" [' ' '\t']* "endif"                { TEndif     (tokinfo lexbuf) }*)
 
-  | "#" [' ' '\t']* "else" ([' ' '\t' '\n'] | "\r\n")
+  | "#" [' ' '\t']* "else" (*([' ' '\t' '\n'] | "\r\n")*)
+      (* don't include trailing \n like for #if, etc
+      doesn't seem needed from crx.cocci, but good to be uniform *)
       { TIfdefelse (no_ifdef_mark(), tokinfo lexbuf) }
 
 
@@ -691,15 +734,25 @@ rule token = parse
         let s = tok lexbuf in
         Common.profile_code "C parsing.lex_ident" (fun () ->
 	  let tok =
-	    if !Flag.c_plus_plus 
+	    if !Flag.c_plus_plus
 	    then Common.optionise (fun () -> Hashtbl.find cpp_keyword_table s)
 	    else None in
 	  match tok with
 	    Some f -> f info
 	  | None ->
-              match Common.optionise (fun () -> Hashtbl.find keyword_table s)
-              with
-              | Some f -> f info
+	      let tok =
+		if !Flag.ibm
+		then
+		  Common.optionise (fun () -> Hashtbl.find ibm_keyword_table s)
+		else None in
+	      match tok with
+		Some f -> f info
+	      | None ->
+		  let tok =
+		    Common.optionise
+		      (fun () -> Hashtbl.find keyword_table s) in
+		  match tok with
+		  | Some f -> f info
 
            (* parse_typedef_fix.
             *    if Lexer_parser.is_typedef s
@@ -712,7 +765,7 @@ rule token = parse
             * now done in parse_c.ml.
             *)
 
-              | None -> TIdent (s, info)
+		  | None -> TIdent (s, info)
         )
       }
   (* gccext: apparently gcc allows dollar in variable names. found such
@@ -868,10 +921,29 @@ rule token = parse
       { TInt ((x, (Signed,CLongLong)), tokinfo lexbuf) }
   | (( decimal | hexa | octal) ['u' 'U'] ['l' 'L'] ['l' 'L']) as x
       { TInt ((x, (UnSigned,CLongLong)), tokinfo lexbuf) }
+  | (decimal ['d' 'D']) as x
+      { if !Flag.ibm
+      then
+	let len = string_of_int(String.length x - 1) in
+        TDecimal ((x,len,"0"), tokinfo lexbuf)
+      else
+	(pr2 ("LEXER: ZARB integer_string, certainly a macro:" ^ tok lexbuf);
+         TIdent (tok lexbuf, tokinfo lexbuf)) }
 
   | (real ['f' 'F']) as x { TFloat ((x, CFloat),      tokinfo lexbuf) }
   | (real ['l' 'L']) as x { TFloat ((x, CLongDouble), tokinfo lexbuf) }
   | (real as x)           { TFloat ((x, CDouble),     tokinfo lexbuf) }
+  (* How to make the following only available if !Flag.ibm *)
+  | (ddecimal ['d' 'D']) as x
+      { match Str.split_delim (Str.regexp_string ".") x with
+	[before;after] ->
+	  let lena = String.length after - 1 in
+	  let n = string_of_int (String.length before + lena) in
+	  let p = string_of_int lena in
+	  TDecimal ((x,n,p), tokinfo lexbuf)
+      |	_ ->
+	  pr2 ("LEXER: " ^ "bad decimal" ^ tok lexbuf);
+          TUnknown (tokinfo lexbuf) }
 
   | ['0'] ['0'-'9']+
       { pr2 ("LEXER: " ^ error_radix "octal" ^ tok lexbuf);
@@ -912,6 +984,7 @@ rule token = parse
 
 (*****************************************************************************)
 and char = parse
+  | "'"                                { "" } (* allow empty char *)
   | (_ as x)                           { String.make 1 x ^ restchars lexbuf }
   (* todo?: as for octal, do exception  beyond radix exception ? *)
   | (("\\" (oct | oct oct | oct oct oct)) as x     ) { x ^ restchars lexbuf }
@@ -938,6 +1011,9 @@ and char = parse
 
 and restchars = parse
   | "'"                                { "" }
+  | "\n"
+      { pr2 "LEXER: newline not expected in character";
+        tok lexbuf }
   | (_ as x)                           { String.make 1 x ^ restchars lexbuf }
   (* todo?: as for octal, do exception  beyond radix exception ? *)
   | (("\\" (oct | oct oct | oct oct oct)) as x     ) { x ^ restchars lexbuf }
@@ -1028,6 +1104,7 @@ and comment = parse
  * - have to recognize comments in cpp_eat_until_nl.
  *)
 
+(*
 and cpp_eat_until_nl = parse
   (* bugfix: *)
   | "/*"
@@ -1046,3 +1123,41 @@ and cpp_eat_until_nl = parse
      { let s = tok lexbuf in s ^ cpp_eat_until_nl lexbuf }
   | eof { pr2 "LEXER: end of file in cpp_eat_until_nl"; ""}
   | _   { let s = tok lexbuf in s ^ cpp_eat_until_nl lexbuf }
+*)
+
+and parse_newline = parse
+  ('\n' | "\r\n") { tok lexbuf }
+
+and cpp_in_comment_eat_until_nl = parse
+  [^ '\n']+
+  { let s = tok lexbuf in
+    let splitted = Str.split_delim (Str.regexp_string "*/") s in
+    let check_continue s =
+      let splitted = Str.split_delim (Str.regexp "\\\\ *") s in
+      match splitted with
+	[_;""] ->
+          let s2 = parse_newline lexbuf in
+          let s3 = cpp_eat_until_nl lexbuf in
+	  s ^ s2 ^ s3
+      |	_ -> s in
+    match List.rev splitted with
+      after_comment_start :: before_comment_start :: rest ->
+	let splitted2 =
+	  Str.split_delim (Str.regexp_string "/*") after_comment_start in
+	(match splitted2 with
+	  [bef;aft] ->
+	    let s2 = parse_newline lexbuf in
+	    s^s2^(cpp_in_comment_eat_until_nl lexbuf)
+	| _ -> (* no longer in comment *)
+	    check_continue s)
+    | _ ->
+	let s2 = parse_newline lexbuf in
+	s^s2^(cpp_in_comment_eat_until_nl lexbuf) (* still in comment *) }
+
+and cpp_eat_until_nl = parse
+  [^ '\n']+
+  { let s = tok lexbuf in
+    let rest =
+      function_cpp_eat_until_nl cpp_eat_until_nl cpp_in_comment_eat_until_nl
+	parse_newline s lexbuf in
+    s^rest }

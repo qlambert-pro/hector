@@ -1,26 +1,3 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
-
-
-# 0 "./parse_c.mli"
 (* The main function is parse_c_and_cpp. It uses globals in Lexer_Parser and
  * and also _defs below which often comes from a standard.h macro file.
  * cf also init_defs_xxx below.
@@ -46,15 +23,19 @@ val init_defs_builtins : Common.filename -> unit
 
 (* This is the main function *)
 val parse_c_and_cpp :
-    Common.filename (*cfile*) -> (program2 * Parsing_stat.parsing_stat)
+    bool (* true if format characters need to be parsed *) ->
+      Common.filename (*cfile*) ->
+	(program2 * Parsing_stat.parsing_stat)
 val parse_c_and_cpp_keep_typedefs :
     (string, Lexer_parser.identkind) Common.scoped_h_env option (*typedefs*) ->
       (string, Cpp_token_c.define_def) Hashtbl.t option (* macro defs *) ->
+      bool (* true if format characters need to be parsed *) ->
 	Common.filename (*cfile*) ->
 	  (extended_program2 * Parsing_stat.parsing_stat)
 
 (* use some .ast_raw memoized version, and take care if obsolete *)
 val parse_cache:
+    bool (* true if format characters need to be parsed *) ->
     Common.filename (*cfile*) -> (extended_program2 * Parsing_stat.parsing_stat)
 
 
@@ -96,3 +77,10 @@ val print_commentized       : Parser_c.token list -> unit
 
 val program_of_program2 : program2 -> Ast_c.program
 val with_program2: (Ast_c.program -> Ast_c.program) -> program2 -> program2
+
+
+(* ---------------------------------------------------------------------- *)
+(* custom error reporting function *)
+type parse_error_function = int -> Parser_c.token list -> (int * int) ->
+    string array -> int -> unit
+val set_parse_error_function : parse_error_function -> unit

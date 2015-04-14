@@ -117,13 +117,15 @@ let print_parsing_stat_list ?(verbose=false) = fun statxs ->
   in
   let gf, badf = float_of_int good, float_of_int bad in
   let passedf = float_of_int passed in
+  let total = gf +. badf +. passedf in
   pr (
   (sprintf "nb good = %d,  nb passed = %d " good passed) ^
-  (sprintf "=========> %f"  (100.0 *. (passedf /. gf)) ^ "% passed")
+  (sprintf "=========> %2.2f"  (100.0 *. (passedf /. total)) ^ "% passed")
    );
   pr (
   (sprintf "nb good = %d,  nb bad = %d " good bad) ^
-  (sprintf "=========> %f"  (100.0 *. (gf /. (gf +. badf))) ^ "% good"
+  (sprintf "=========> %2.2f"
+     (100.0 *. ((gf +. passedf) /. total)) ^ "% good or passed"
    )
   )
 
@@ -251,7 +253,7 @@ let nDefineInit = ref 0
 let nDefineOther = ref 0
 
 let nUndef = ref 0
-let nPragmaAndCo = ref 0
+let nOtherDirective = ref 0
 
 (* let nDirectiveTop = ref 0 *)
 let nDirectiveStmt = ref 0
@@ -325,7 +327,7 @@ let assoc_stat_number =
     "nDefineOther", nDefineOther;
 
     "nUndef", nUndef;
-    "nPragmaAndCo", nPragmaAndCo;
+    "nOtherDirective", nOtherDirective;
 
     "nDirectiveStmt", nDirectiveStmt;
     "nDirectiveStruct", nDirectiveStruct;

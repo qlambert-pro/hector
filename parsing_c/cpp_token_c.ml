@@ -1,17 +1,3 @@
-(* Yoann Padioleau
- *
- * Copyright (C) 2010, University of Copenhagen DIKU and INRIA.
- * Copyright (C) 2008, 2009 University of Urbana Champaign
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License (GPL)
- * version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * file license.txt for more details.
- *)
 open Common
 
 module TH = Token_helpers
@@ -41,7 +27,7 @@ open Token_views_c
  *   - (3) in an argument to a macro call as in   IDENT(if);
  * Case 1 is easy to fix in define_ident.
  * Case 2 is easy to fix in define_parse where detect such toks in
- * the parameter and then replace their occurence in the body in a Tident.
+ * the parameter and then replace their occurrence in the body in a Tident.
  * Case 3 is only an issue when the expanded token is not really use
  * as usual but use for instance in concatenation as in  a ## if
  * when expanded. In the case the grammar this time will not be happy
@@ -281,7 +267,7 @@ let rec (cpp_engine:
     (* expand only TIdent ? no cos the parameter of the macro
      * can actually be some 'register' so may have to look for
      * any tokens candidates for the expansion.
-     * Only subtelity is maybe dont expand the TDefineIdent.
+     * Only subtelity is maybe don't expand the TDefineIdent.
      *
      * update: in fact now the caller (define_parse) will have done
      * the job right and already replaced the macro parameter with a TIdent.
@@ -464,7 +450,7 @@ let rec apply_macro_defs
       (match params with
       | Params _ ->
           pr2 ("WEIRD: macro with params but no parens found: " ^ s);
-          (* dont apply the macro, perhaps a redefinition *)
+          (* don't apply the macro, perhaps a redefinition *)
           ()
       | NoParam ->
           (match body with

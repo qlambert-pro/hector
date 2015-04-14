@@ -54,7 +54,7 @@ let rec collec_all_fn = function
 
 let test_type_c infile =
   let (program2, _stat) =
-    Common.profile_code "parsing" (fun () -> Parse_c.parse_c_and_cpp infile) in
+    Common.profile_code "parsing" (fun () -> Parse_c.parse_c_and_cpp false infile) in
   let _program2 =
       Common.profile_code "type inference" (fun () -> 
     program2 

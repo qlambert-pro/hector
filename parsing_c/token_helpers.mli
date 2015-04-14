@@ -1,26 +1,5 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
 
-
-# 0 "./token_helpers.mli"
+open Parser_c
 
 val is_space               : Parser_c.token -> bool
 val is_just_comment        : Parser_c.token -> bool
@@ -35,11 +14,15 @@ val is_not_in_ast          : Parser_c.token -> bool
 
 
 val is_cpp_instruction     : Parser_c.token -> bool
+val is_cpp_endif           : Parser_c.token -> bool
 val is_gcc_token           : Parser_c.token -> bool
+val is_escaped_newline     : Parser_c.token -> bool
 
 val is_eof                 : Parser_c.token -> bool
 val is_eom                 : Parser_c.token -> bool
 
+val is_else                : Parser_c.token -> bool
+val is_if_or_else          : Parser_c.token -> bool
 val is_statement           : Parser_c.token -> bool
 val is_start_of_something  : Parser_c.token -> bool
 val is_binary_operator     : Parser_c.token -> bool
@@ -51,6 +34,14 @@ val is_obrace : Parser_c.token -> bool
 val is_cbrace : Parser_c.token -> bool
 
 val is_ident_like: Parser_c.token -> bool
+
+(* ---------------------------------------------------------------------- *)
+val match_simple_if_else
+      : token list -> (token * token list * token * token list) option
+val match_cpp_simple_ifdef_endif
+      : token list -> (token * token list * token * token list) option
+val match_cpp_simple_ifdef_else_endif : token list ->
+      (token * token list * token * token list * token * token list) option
 
 (* ---------------------------------------------------------------------- *)
 val info_of_tok : Parser_c.token -> Ast_c.info

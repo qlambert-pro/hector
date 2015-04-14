@@ -85,7 +85,8 @@ let mk_fulltype bt str =
     Ast_c.comments_tag = {contents =
         {Ast_c.mbefore = []; Ast_c.mafter = [];
          Ast_c.mbefore2 = []; Ast_c.mafter2 = []
-        }}}]
+        }};
+    Ast_c.danger = ref Ast_c.NoDanger;}]
 
 let (int_type: Ast_c.fullType) =
   (* Lib_parsing_c.al_type   (Parse_c.type_of_string "int")*)
@@ -104,6 +105,7 @@ let rec is_completed_and_simplified ty =
   | BaseType x  -> true
   | Pointer t -> is_completed_and_simplified t
   | Array (e, t) -> is_completed_and_simplified t
+  | Decimal (len, prec_opt) -> true
   | StructUnion (su, sopt, fields) ->
       (* recurse fields ? Normally actually don't want,
        * prefer to have a StructUnionName when it's possible *)
@@ -344,7 +346,7 @@ let lub op t1 t2 =
      * arithmetic are written with the pointer in the first position.
      *
      * Also when an expression contain a typedef, as in
-     * 'dma_addr + 1' where dma_addr was declared as a varialbe
+     * 'dma_addr + 1' where dma_addr was declared as a variable
      * of type dma_addr_t, then again I want to have in the lub
      * the typedef and it is often again in the first position.
      *

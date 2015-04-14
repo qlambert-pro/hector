@@ -95,17 +95,18 @@ let mk_token_extended x =
     new_tokens_before = [];
   }
 
-
 let rebuild_tokens_extented toks_ext =
-  let _tokens = ref [] in
-  toks_ext +> List.iter (fun tok ->
-    tok.new_tokens_before +> List.iter (fun x -> push2 x _tokens);
-    push2 tok.tok _tokens
-  );
-  let tokens = List.rev !_tokens in
-  (tokens +> acc_map mk_token_extended)
-
-
+  List.rev
+    (List.fold_left
+       (function prev ->
+	 function tok ->
+	   (mk_token_extended tok.tok) ::
+	   List.fold_left
+	     (function prev ->
+	       function bef ->
+		 (mk_token_extended bef)::prev)
+	     prev tok.new_tokens_before)
+       [] toks_ext)
 
 (* x list list, because x list separated by ',' *)
 type paren_grouped =
@@ -126,6 +127,20 @@ type brace_grouped =
  * x list list, because x list separated by #else or #elif
  *)
 type ifdef_grouped =
+  (*
+   * Example:
+   *
+   *     #ifdef A
+   *       x++;
+   *     #else
+   *       x--;
+   *     #endif
+   *
+   *   is represented as Ifdef ([[x++];[x--]],[#ifdef A;#else;#endif])
+   *   where x++ and x-- are NoIfdefLine.
+   *
+   * /Iago
+   *)
   | Ifdef     of ifdef_grouped list list * token_extended list
   | Ifdefbool of bool * ifdef_grouped list list * token_extended list
   | NotIfdefLine of token_extended list
@@ -233,25 +248,25 @@ let rec mk_ifdef xs =
   | x::xs ->
       (match x.tok with
       | TIfdef _ ->
-          let body, extra, xs = mk_ifdef_parameters [x] [] xs in
-          Ifdef (body, extra)::mk_ifdef xs
+          let body, extra, xs' = mk_ifdef_parameters [x] [] xs in
+          Ifdef (body, extra)::mk_ifdef xs'
       | TIfdefBool (b,_, _) ->
-          let body, extra, xs = mk_ifdef_parameters [x] [] xs in
+          let body, extra, xs' = mk_ifdef_parameters [x] [] xs in
 
           (* if not passing, then consider a #if 0 as an ordinary #ifdef *)
           if !Flag_parsing_c.if0_passing
-          then Ifdefbool (b, body, extra)::mk_ifdef xs
-          else Ifdef(body, extra)::mk_ifdef xs
+          then Ifdefbool (b, body, extra)::mk_ifdef xs'
+          else Ifdef(body, extra)::mk_ifdef xs'
 
       | TIfdefMisc (b,_,_) | TIfdefVersion (b,_,_) ->
-          let body, extra, xs = mk_ifdef_parameters [x] [] xs in
-          Ifdefbool (b, body, extra)::mk_ifdef xs
+          let body, extra, xs' = mk_ifdef_parameters [x] [] xs in
+          Ifdefbool (b, body, extra)::mk_ifdef xs'
 
 
       | _ ->
           (* todo? can have some Ifdef in the line ? *)
-          let line, xs = Common.span (fun y -> y.line =|= x.line) (x::xs) in
-          NotIfdefLine line::mk_ifdef xs
+          let line, xs' = Common.span (fun y -> y.line =|= x.line) (x::xs) in
+          NotIfdefLine line::mk_ifdef xs'
       )
 
 and mk_ifdef_parameters extras acc_before_sep xs =

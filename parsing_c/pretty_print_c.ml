@@ -16,6 +16,8 @@ open Common
 
 open Ast_c
 
+module F = Control_flow_c
+
 (*****************************************************************************)
 (* Wrappers *)
 (*****************************************************************************)
@@ -48,6 +50,10 @@ type pretty_printers = {
   ty              : Ast_c.fullType printer;
   type_with_ident : type_with_ident;
   toplevel        : Ast_c.toplevel printer;
+  fragment        : Ast_c.string_fragment printer;
+  fragment_list   : (Ast_c.string_fragment list) printer;
+  format          : Ast_c.string_format printer;
+  flow            : Control_flow_c.node printer
 }
 
 
@@ -88,12 +94,20 @@ let mk_pretty_printers
       opt +> List.iter (function x -> pr_elem x; pr_space());
       printer e) in
 
+  let pp_list2 printer l = (* no comma case *)
+    l +> List.iter printer in
+
   let rec pp_expression = fun ((exp, typ), ii) ->
     (match exp, ii with
     | Ident (ident),         []     -> pp_name ident
     (* only a MultiString can have multiple ii *)
-    | Constant (MultiString _), is     -> is +> List.iter pr_elem
+    | Constant (MultiString _), is     ->
+	is +> Common.print_between pr_space pr_elem
     | Constant (c),         [i]     -> pr_elem i
+    | StringConstant(s,os,w),  [i1;i2] ->
+	pr_elem i1;
+	s +> (List.iter pp_string_fragment);
+	pr_elem i2
     | FunCall  (e, es),     [i1;i2] ->
         pp_expression e; pr_elem i1;
 	pp_arg_list es;
@@ -147,13 +161,12 @@ let mk_pretty_printers
     | ParenExpr (e), [i1;i2] -> pr_elem i1; pp_expression e; pr_elem i2;
 
     | New   (None, t),     [i1] -> pr_elem i1; pp_argument t
-    | New   (Some ts, t),     [i1; i2; i3] -> 
+    | New   (Some ts, t),     [i1; i2; i3] ->
 	pr_elem i1; pr_elem i2; pp_arg_list ts; pr_elem i3; pp_argument t
     | Delete(t),     [i1] -> pr_elem i1; pp_expression t
 
-    | (Ident (_) | Constant _ | FunCall (_,_) | CondExpr (_,_,_)
-    | Sequence (_,_)
-    | Assignment (_,_,_)
+    | (Ident (_) | Constant _ | StringConstant _ | FunCall (_,_)
+    | CondExpr (_,_,_) | Sequence (_,_) | Assignment (_,_,_)
     | Postfix (_,_) | Infix (_,_) | Unary (_,_) | Binary (_,_,_)
     | ArrayAccess (_,_) | RecordAccess (_,_) | RecordPtAccess (_,_)
     | SizeOfExpr (_) | SizeOfType (_) | Cast (_,_)
@@ -174,7 +187,7 @@ let mk_pretty_printers
 	    pr_elem (Ast_c.fakeInfo() +> Ast_c.rewrap_str s)));
       pr_elem (Ast_c.fakeInfo() +> Ast_c.rewrap_str "*/");
     end
-     
+
   and pp_arg_list es = pp_list pp_argument es
 
   and pp_argument argument =
@@ -208,6 +221,24 @@ let mk_pretty_printers
         );
         pr_elem icp
 
+and pp_string_fragment (e,ii) =
+  match (e,ii) with
+    ConstantFragment(str), ii ->
+      let (i) = Common.tuple_of_list1 ii in
+      pr_elem i
+  | FormatFragment(fmt), ii ->
+      let (i) = Common.tuple_of_list1 ii in
+      pr_elem i;
+      pp_string_format fmt
+
+and pp_string_fragment_list sfl = pp_list2 pp_string_fragment sfl
+
+and pp_string_format (e,ii) =
+  match (e,ii) with
+    ConstantFormat(str), ii ->
+      let (i) = Common.tuple_of_list1 ii in
+      pr_elem i
+
 (* ---------------------- *)
   and pp_statement = fun st ->
     match Ast_c.get_st_and_ii st with
@@ -238,16 +269,25 @@ let mk_pretty_printers
            ';' hence the [] for ii *)
     | ExprStatement (Some e), [] -> pp_expression e;
     | Selection  (If (e, st1, st2)), i1::i2::i3::is ->
-        pr_elem i1; pr_space(); pr_elem i2; pp_expression e; pr_elem i3;
-	indent_if_needed st1 (function _ -> pp_statement st1);
-        (match (Ast_c.get_st_and_ii st2, is) with
-        | ((ExprStatement None, []), [])  -> ()
-        | ((ExprStatement None, []), [iifakend])  -> pr_elem iifakend
-        | _st2, [i4;iifakend] -> pr_elem i4;
-	    indent_if_needed st2 (function _ -> pp_statement st2);
-	    pr_elem iifakend
-        | x -> raise (Impossible 96)
-        )
+        pp_ifthen e st1 i1 i2 i3;
+        pp_else st2 is
+    | Selection  (Ifdef_Ite (e, st1, st2)), i1::i2::i3::i4::is ->
+        pr_elem i1;
+        pp_ifthen e st1 i2 i3 i4;
+        pp_else st2 is
+    | Selection (Ifdef_Ite2 (e, st1, st2, st3)), i1::i2::i3::i4::is ->
+        pr_elem i1;
+        pp_ifthen e st1 i2 i3 i4;
+        (* else #else S #endif *)
+	(match is with
+          [i4;i5;i6;iifakend] ->
+            pr_elem i4; (* else *)
+            pr_elem i5; (* #else *)
+            indent_if_needed st2 (function _ -> pp_statement st2);
+            pr_elem i6; (* #endif *)
+            indent_if_needed st3 (function _ -> pp_statement st3);
+            pr_elem iifakend
+	| _ -> raise (Impossible 90))
     | Selection  (Switch (e, st)), [i1;i2;i3;iifakend] ->
         pr_elem i1; pr_space(); pr_elem i2; pp_expression e; pr_elem i3;
 	indent_if_needed st (function _-> pp_statement st); pr_elem iifakend
@@ -321,16 +361,21 @@ let mk_pretty_printers
     | MacroStmt, ii ->
         ii +> List.iter pr_elem ;
 
+    | Exec(code), [exec;lang;sem] ->
+	pr_elem exec; pr_space(); pr_elem lang; pr_space();
+	pp_list2 pp_exec_code code; pr_elem sem
+
     | (Labeled (Case  (_,_))
     | Labeled (CaseRange  (_,_,_)) | Labeled (Default _)
     | Compound _ | ExprStatement _
     | Selection  (If (_, _, _)) | Selection  (Switch (_, _))
+    | Selection (Ifdef_Ite _) | Selection (Ifdef_Ite2 _)
     | Iteration  (While (_, _)) | Iteration  (DoWhile (_, _))
     | Iteration  (For (_, (_,_), (_, _), _))
     | Iteration  (MacroIteration (_,_,_))
     | Jump ((Continue|Break|Return)) | Jump (ReturnExpr _)
     | Jump (GotoComputed _)
-    | Decl _
+    | Decl _ | Exec _
 	), _ -> raise (Impossible 98)
 
   and pp_statement_seq = function
@@ -339,12 +384,32 @@ let mk_pretty_printers
     | CppDirectiveStmt cpp -> pp_directive cpp
     | IfdefStmt2 (ifdef, xxs) -> pp_ifdef_tree_sequence ifdef xxs
 
+  and pp_ifthen e st1 i1 i2 i3 =
+        (* if (<e>) *)
+        pr_elem i1; pr_space(); pr_elem i2; pp_expression e; pr_elem i3;
+        indent_if_needed st1 (function _ -> pp_statement st1);
+  and pp_else st2 is =
+        match (Ast_c.get_st_and_ii st2, is) with
+          | ((ExprStatement None, []), [])  -> ()
+          | ((ExprStatement None, []), [iifakend])  -> pr_elem iifakend
+          | _st2, [i4;iifakend] ->
+              pr_elem i4;
+              indent_if_needed st2 (function _ -> pp_statement st2);
+              pr_elem iifakend
+          | _st2, [i4;i5;iifakend] -> (* else #endif S *)
+              pr_elem i4;
+              pr_elem i5;
+              indent_if_needed st2 (function _ -> pp_statement st2);
+              pr_elem iifakend
+          | x -> raise (Impossible 96)
+
+
 (* ifdef XXX elsif YYY elsif ZZZ endif *)
   and pp_ifdef_tree_sequence ifdef xxs =
     match ifdef with
     | if1::ifxs ->
-	pp_ifdef if1;
-	pp_ifdef_tree_sequence_aux  ifxs xxs
+        pp_ifdef if1;
+        pp_ifdef_tree_sequence_aux  ifxs xxs
     | _ -> raise (Impossible 99)
 
 (* XXX elsif YYY elsif ZZZ endif *)
@@ -387,6 +452,11 @@ let mk_pretty_printers
 		pr_elem icpar
 	    | _ -> raise (Impossible 100)))
         ))
+
+  and pp_exec_code = function
+    ExecEval name, [colon] -> pr_elem colon; pp_expression name
+  | ExecToken, [tok] -> pr_elem tok
+  | _ -> raise (Impossible 101)
 
 
 (* ---------------------- *)
@@ -515,6 +585,13 @@ let mk_pretty_printers
           assert (List.length iis =|= 2);
           print_sto_qu_ty (sto, qu, iis);
 
+      | (Decimal(l,p), [dec;lp;cm;rp]) ->
+	  (* hope that sto before qu is right... cf print_sto_qu_ty *)
+	  let stoqulp = get_sto sto ++ (snd qu) ++ [dec] in
+	  Common.print_between pr_space pr_elem stoqulp;
+	  pr_elem lp; pp_expression l; pr_elem cm;
+	  do_option pp_expression p; pr_elem rp
+
       | (TypeName (name,typ), noii) ->
           assert (null noii);
           let (_s, iis) = get_s_and_info_of_name name in
@@ -549,7 +626,7 @@ let mk_pretty_printers
           | _ -> raise (Impossible 106)
 	  )
 
-      | (Pointer _ | (*ParenType _ |*) Array _ | FunctionType _
+      | (Pointer _ | (*ParenType _ |*) Array _ | FunctionType _ | Decimal _
             (* | StructUnion _ | Enum _ | BaseType _ *)
             (* | StructUnionName _ | EnumName _ | TypeName _  *)
             (* | TypeOfExpr _ | TypeOfType _ *)
@@ -557,7 +634,9 @@ let mk_pretty_printers
 
   and pp_field_list fields = fields +>  Common.print_between pr_nl pp_field
   and pp_field = function
-      DeclarationField(FieldDeclList(onefield_multivars,iiptvirg))->
+      DeclarationField
+	(FieldDeclList(onefield_multivars,[iiptvirg;ifakestart])) ->
+	pr_elem ifakestart;
         (match onefield_multivars with
           x::xs ->
 	    (* handling the first var. Special case, with the
@@ -565,7 +644,7 @@ let mk_pretty_printers
 
 	    (match x with
 	      (Simple (nameopt, typ)), iivirg ->
-              (* first var cant have a preceding ',' *)
+              (* first var cannot have a preceding ',' *)
 		assert (List.length iivirg =|= 0);
 		let identinfo =
                   match nameopt with
@@ -573,9 +652,9 @@ let mk_pretty_printers
                   | Some name -> Some (get_s_and_info_of_name name)
                 in
 		pp_type_with_ident identinfo None typ Ast_c.noattr;
-		
+
 	    | (BitField (nameopt, typ, iidot, expr)), iivirg ->
-                      (* first var cant have a preceding ',' *)
+                      (* first var cannot have a preceding ',' *)
 		assert (List.length iivirg =|= 0);
 		(match nameopt with
 		| None ->
@@ -620,9 +699,10 @@ let mk_pretty_printers
 
 	| [] -> raise (Impossible 108)
 	      ); (* onefield_multivars *)
-	assert (List.length iiptvirg =|= 1);
-	iiptvirg +> List.iter pr_elem;
+	pr_elem iiptvirg
 
+    | DeclarationField(FieldDeclList(onefield_multivars,_)) ->
+	failwith "wrong number of tokens"
 
     | MacroDeclField ((s, es), ii)  ->
         let (iis, lp, rp, iiend, ifakestart) =
@@ -650,7 +730,7 @@ let mk_pretty_printers
     | CppDirectiveStruct cpp -> pp_directive cpp
     | IfdefStruct ifdef -> pp_ifdef ifdef
 
-(* used because of DeclList, in    int i,*j[23];  we dont print anymore the
+(* used because of DeclList, in    int i,*j[23];  we don't print anymore the
    int before *j *)
   and (pp_type_with_ident_rest: (string * info) option ->
     fullType -> attribute list -> unit) =
@@ -671,6 +751,7 @@ let mk_pretty_printers
       | (StructUnion (_, sopt, fields),iis)     -> print_ident ident
       | (StructUnionName (s, structunion), iis) -> print_ident ident
       | (EnumName  s, iis)                      -> print_ident ident
+      | (Decimal _, iis)                        -> print_ident ident
       | (TypeName (_name,_typ), iis)            -> print_ident ident
       | (TypeOfExpr (e), iis)                   -> print_ident ident
       | (TypeOfType (e), iis)                   -> print_ident ident
@@ -776,6 +857,7 @@ let mk_pretty_printers
       | (StructUnion (_, sopt, fields),iis)  -> ()
       | (StructUnionName (s, structunion), iis) -> ()
       | (EnumName  s, iis) -> ()
+      | (Decimal(l,p), iis) -> ()
       | (TypeName (_name,_typ), iis) -> ()
 
       | TypeOfType _, _ -> ()
@@ -833,6 +915,7 @@ let mk_pretty_printers
     | (StructUnion (_, sopt, fields),iis)-> ()
     | (StructUnionName (s, structunion), iis) -> ()
     | (EnumName  s, iis) -> ()
+    | (Decimal(l,p), iis) -> ()
     | (TypeName (name,_typ), iis) -> ()
 
     | TypeOfType _, _ -> ()
@@ -1126,11 +1209,28 @@ and pp_init (init, iinit) =
 	define_val defval;
 	pr_elem ieol
 
-    | PragmaAndCo (ii) ->
-	List.iter pr_elem ii in
+    | Pragma ((s,ii), pragmainfo) ->
+	let (ipragma,iident,ieol) = Common.tuple_of_list3 ii in
+	pr_elem ipragma;
+	pr_elem iident;
+	pp_pragmainfo pragmainfo;
+	pr_elem ieol
 
+    | OtherDirective (ii) ->
+	List.iter pr_elem ii
 
-
+  and pp_pragmainfo = function
+      PragmaTuple(args,ii) ->
+	let (ilp,irp) = Common.tuple_of_list2 ii in
+	pr_elem ilp;
+	pp_arg_list args;
+        pr_elem irp
+    | PragmaIdList(ids) ->
+	let rec loop = function
+	    [] -> ()
+	  | [id,_] -> pp_name id
+	  | (id,_)::rest -> pp_name id; pr_space() in
+	loop ids in
 
   let rec pp_toplevel = function
     | Declaration decl -> pp_decl decl
@@ -1159,13 +1259,192 @@ and pp_init (init, iinit) =
 
     | IfdefTop ifdefdir -> pp_ifdef ifdefdir
 
-    | Namespace (tls, [i1; i2; i3; i4]) -> 
+    | Namespace (tls, [i1; i2; i3; i4]) ->
 	pr_elem i1; pr_elem i2; pr_elem i3;
 	List.iter pp_toplevel tls;
 	pr_elem i4;
     | (MacroTop _) | (Namespace _) -> raise (Impossible 120) in
 
 
+
+
+  let pp_flow n =
+    match F.unwrap n  with
+    | F.FunHeader ({f_name =idb;
+                     f_type = (rett, (paramst,(isvaargs,iidotsb)));
+                     f_storage = stob;
+                     f_body = body;
+                     f_attr = attrs},ii) ->
+
+		       assert(null body);
+      (*
+	 iif ii;
+	 iif iidotsb;
+	 attrs +> List.iter (vk_attribute bigf);
+	 vk_type bigf rett;
+	 paramst +> List.iter (fun (param, iicomma) ->
+         vk_param bigf param;
+         iif iicomma;
+	 );
+      *)
+		       pr2 "Def";
+
+
+    | F.Decl decl ->
+        (* vk_decl bigf decl *)
+	pr2 "Decl"
+
+    | F.ExprStatement (st, (eopt, ii)) ->
+	pp_statement (Ast_c.mk_st (ExprStatement eopt) ii)
+
+    | F.IfHeader (_, (e,ii))
+    | F.SwitchHeader (_, (e,ii))
+    | F.WhileHeader (_, (e,ii))
+    | F.DoWhileTail (e,ii) ->
+        (*
+           iif ii;
+           vk_expr bigf e
+        *)
+	pr2 "XXX";
+
+
+    | F.ForHeader (_st, ((first, (e2opt,i2), (e3opt,i3)), ii)) ->
+        (*
+           iif i1; iif i2; iif i3;
+           iif ii;
+           e1opt +> do_option (vk_expr bigf);
+           e2opt +> do_option (vk_expr bigf);
+           e3opt +> do_option (vk_expr bigf);
+        *)
+	pr2 "XXX"
+
+    | F.MacroIterHeader (_s, ((s,es), ii)) ->
+        (*
+           iif ii;
+           vk_argument_list bigf es;
+        *)
+	pr2 "XXX"
+
+
+    | F.ReturnExpr (_st, (e,ii)) ->
+        (* iif ii; vk_expr bigf e*)
+	pr2 "XXX"
+
+
+    | F.Case  (_st, (e,ii)) ->
+      (* iif ii; vk_expr bigf e *)
+	pr2 "XXX"
+
+    | F.CaseRange (_st, ((e1, e2),ii)) ->
+        (* iif ii; vk_expr bigf e1; vk_expr bigf e2 *)
+	pr2 "XXX"
+
+
+
+    | F.CaseNode i -> ()
+
+    | F.DefineExpr e  ->
+        (* vk_expr bigf e *)
+	pr2 "XXX"
+
+    | F.DefineType ft  ->
+        (* vk_type bigf ft *)
+	pr2 "XXX"
+
+    | F.DefineHeader ((s,ii), (defkind))  ->
+        (*
+           iif ii;
+           vk_define_kind bigf defkind;
+        *)
+	pr2 "XXX"
+
+
+    | F.DefineDoWhileZeroHeader (((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+
+    | F.PragmaHeader((s,ii), pragmainfo) ->
+	let (ipragma,iident,ieol) = Common.tuple_of_list3 ii in
+	pr_elem ipragma;
+	pr_elem iident;
+	pp_pragmainfo pragmainfo
+
+    | F.Include {i_include = (s, ii);} ->
+        (* iif ii; *)
+	pr2 "XXX"
+
+
+    | F.MacroTop (s, args, ii) ->
+        (* iif ii;
+           vk_argument_list bigf args *)
+	pr2 "XXX"
+
+
+    | F.Break    (st,((),ii),fromswitch) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.Continue (st,((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.Default  (st,((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.Return   (st,((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.Goto  (st, name, ((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.Label (st, name, ((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.EndStatement iopt ->
+        (* do_option infof iopt *)
+	pr2 "XXX"
+    | F.DoHeader (st, info) ->
+        (* infof info *)
+	pr2 "XXX"
+    | F.Else info ->
+        (* infof info *)
+	pr2 "XXX"
+    | F.SeqEnd (i, info) ->
+        (* infof info *)
+	pr2 "XXX"
+    | F.SeqStart (st, i, info) ->
+        (* infof info *)
+	pr2 "XXX"
+
+    | F.MacroStmt (st, ((),ii)) ->
+        (* iif ii *)
+	pr2 "XXX"
+    | F.Asm (st, (asmbody,ii)) ->
+        (*
+           iif ii;
+           vk_asmbody bigf asmbody
+        *)
+	pr2 "XXX"
+
+    | F.Exec(st,(code,ii)) -> pr2 "XXX"
+
+    | F.IfdefHeader (info) ->
+	pp_ifdef info
+    | F.IfdefElse (info) ->
+	pp_ifdef info
+    | F.IfdefEndif (info) ->
+	pp_ifdef info
+
+    | F.IfdefIteHeader _ii ->
+        pr2 "XXX"
+
+    | F.DefineTodo ->
+	pr2 "XXX"
+
+
+    | (F.TopNode|F.EndNode|
+      F.ErrorExit|F.Exit|F.Enter|F.LoopFallThroughNode|F.FallThroughNode|
+      F.AfterNode _|F.FalseNode|F.TrueNode _|F.InLoopNode|
+      F.Fake) ->
+        pr2 "YYY" in
 
 
   { expression = pp_expression;
@@ -1182,6 +1461,10 @@ and pp_init (init, iinit) =
     ty         = pp_type;
     type_with_ident = pp_type_with_ident;
     toplevel   = pp_toplevel;
+    fragment   = pp_string_fragment;
+    fragment_list = pp_string_fragment_list;
+    format     = pp_string_format;
+    flow       = pp_flow;
   }
 
 (*****************************************************************************)
@@ -1189,18 +1472,29 @@ and pp_init (init, iinit) =
 (* Here we do not use (mcode, env). It is a simple C pretty printer. *)
 let pr_elem info =
   let s = Ast_c.str_of_info info in
-  if !Flag_parsing_c.pretty_print_comment_info then begin
-    let before = !(info.comments_tag).mbefore in
-    if not (null before) then begin
-      pp "-->";
-      before +> List.iter (fun (comment_like, pinfo) ->
-        let s = pinfo.Common.str in
-        pp s
-      );
-      pp "<--";
-    end;
-  end;
-  pp s
+  if !Flag_parsing_c.pretty_print_comment_info
+  then
+    (match get_comments_before info with
+      [] -> ()
+    | before ->
+	pp "-->";
+	before +> List.iter (fun (comment_like, pinfo) ->
+          let s = pinfo.Common.str in
+          pp s
+	    );
+	pp "<--");
+  pp s;
+  if !Flag_parsing_c.pretty_print_comment_info
+  then
+    (match get_comments_after info with
+      [] -> ()
+    | before ->
+	pp "==>";
+	before +> List.iter (fun (comment_like, pinfo) ->
+          let s = pinfo.Common.str in
+          pp s
+	    );
+	pp "<==")
 
 let pr_space _ = Format.print_space()
 
@@ -1221,6 +1515,9 @@ let pp_statement_simple  = ppc.statement
 let pp_type_simple       = ppc.ty
 let pp_init_simple       = ppc.init
 let pp_toplevel_simple   = ppc.toplevel
+let pp_string_fragment_simple = ppc.fragment
+let pp_string_format_simple = ppc.format
+let pp_flow_simple       = ppc.flow
 
 
 let pp_elem_sp ~pr_elem ~pr_space =
@@ -1267,6 +1564,12 @@ let pp_type_gen ~pr_elem ~pr_space =
 let pp_type_with_ident_gen pr_elem pr_space =
   (pp_elem_sp pr_elem pr_space).type_with_ident
 
+let pp_string_fragment_list_gen ~pr_elem ~pr_space =
+  (pp_elem_sp pr_elem pr_space).fragment_list
+
+let pp_string_format_gen ~pr_elem ~pr_space =
+  (pp_elem_sp pr_elem pr_space).format
+
 let pp_program_gen ~pr_elem ~pr_space =
   (pp_elem_sp pr_elem pr_space).toplevel
 
@@ -1276,7 +1579,25 @@ let string_of_expression e =
     pp_expression_simple e
   )
 
+let string_of_ifdef_guard = function
+  | Gifdef s  -> "defined(" ^ s ^ ")"
+  | Gifndef s -> "!defined(" ^ s ^ ")"
+  | Gif_str s -> s
+  | Gif e     -> string_of_expression e
+  | Gnone     -> "0"
+
 let string_of_toplevel top =
   Common.format_to_string (fun () ->
     pp_toplevel_simple top
   )
+
+let (debug_info_of_node:
+       Ograph_extended.nodei -> Control_flow_c.cflow -> string) =
+  fun nodei flow ->
+    let node = flow#nodes#assoc nodei in
+    let s = Common.format_to_string (fun () ->
+      pp_flow_simple node
+    ) in
+    let pos = Lib_parsing_c.min_pinfo_of_node node in
+    (spf "%s(n%d)--> %s" (Common.string_of_parse_info_bis pos) nodei s)
+

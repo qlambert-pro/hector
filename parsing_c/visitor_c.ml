@@ -16,12 +16,13 @@ open Common
 
 
 open Ast_c
+module F = Control_flow_c
 
 (*****************************************************************************)
 (* Prelude *)
 (*****************************************************************************)
 
-(* todo? dont go in Include. Have a visitor flag ? disable_go_include ?
+(* todo? don't go in Include. Have a visitor flag ? disable_go_include ?
  * disable_go_type_annotation ?
  *)
 
@@ -123,7 +124,7 @@ let pr2, pr2_once = Common.mk_pr2_wrappers Flag_parsing_c.verbose_visit
  *      end in analysis#expr
  *
  * The problem is that you don't have control about what is generated
- * and in our case we sometimes dont want to visit too much. For instance
+ * and in our case we sometimes don't want to visit too much. For instance
  * our visitor don't recurse on the type annotation of expressions
  * Ok, this could be worked around, but the pb remains, you
  * don't have control and at some point you may want. In the same
@@ -246,32 +247,41 @@ type visitor_c =
    kfield: (field -> unit) * visitor_c -> field -> unit;
 
    kcppdirective: (cpp_directive -> unit) * visitor_c -> cpp_directive -> unit;
+   kifdefdirective : (ifdef_directive -> unit) * visitor_c -> ifdef_directive -> unit;
    kdefineval : (define_val -> unit) * visitor_c -> define_val -> unit;
    kstatementseq: (statement_sequencable   -> unit) * visitor_c -> statement_sequencable   -> unit;
 
 
+   (* CFG *)
+   knode: (F.node -> unit) * visitor_c -> F.node -> unit;
    (* AST *)
    ktoplevel: (toplevel -> unit) * visitor_c -> toplevel -> unit;
+   kfragment: (string_fragment -> unit) * visitor_c -> string_fragment -> unit;
+   kformat: (string_format -> unit) * visitor_c -> string_format -> unit;
 
    kinfo: (info -> unit) * visitor_c -> info -> unit;
  }
 
 let default_visitor_c =
-  { kexpr         = (fun (k,_) e  -> k e);
-    kstatement    = (fun (k,_) st -> k st);
-    ktype         = (fun (k,_) t  -> k t);
-    kdecl         = (fun (k,_) d  -> k d);
-    konedecl      = (fun (k,_) d  -> k d);
-    kparam        = (fun (k,_) d  -> k d);
-    kdef          = (fun (k,_) d  -> k d);
-    kini          = (fun (k,_) ie  -> k ie);
-    kname         = (fun (k,_) x -> k x);
-    kinfo         = (fun (k,_) ii  -> k ii);
-    ktoplevel     = (fun (k,_) p  -> k p);
-    kcppdirective = (fun (k,_) p  -> k p);
-    kdefineval    = (fun (k,_) p  -> k p);
-    kstatementseq = (fun (k,_) p  -> k p);
-    kfield        = (fun (k,_) p  -> k p);
+  { kexpr           = (fun (k,_) e  -> k e);
+    kstatement      = (fun (k,_) st -> k st);
+    ktype           = (fun (k,_) t  -> k t);
+    kdecl           = (fun (k,_) d  -> k d);
+    konedecl        = (fun (k,_) d  -> k d);
+    kparam          = (fun (k,_) d  -> k d);
+    kdef            = (fun (k,_) d  -> k d);
+    kini            = (fun (k,_) ie  -> k ie);
+    kname           = (fun (k,_) x -> k x);
+    kfragment       = (fun (k,_) f  -> k f);
+    kformat         = (fun (k,_) f  -> k f);
+    kinfo           = (fun (k,_) ii  -> k ii);
+    knode           = (fun (k,_) n  -> k n);
+    ktoplevel       = (fun (k,_) p  -> k p);
+    kcppdirective   = (fun (k,_) p  -> k p);
+    kifdefdirective = (fun (k,_) p  -> k p);
+    kdefineval      = (fun (k,_) p  -> k p);
+    kstatementseq   = (fun (k,_) p  -> k p);
+    kfield          = (fun (k,_) p  -> k p);
   }
 
 
@@ -282,12 +292,13 @@ let rec vk_expr = fun bigf expr ->
   let iif ii = vk_ii bigf ii in
 
   let rec exprf e = bigf.kexpr (k,bigf) e
-  (* !!! dont go in _typ !!! *)
+  (* !!! don't go in _typ !!! *)
   and k ((e,_typ), ii) =
     iif ii;
     match e with
     | Ident (name) -> vk_name bigf name
     | Constant (c) -> ()
+    | StringConstant(s,os,w) -> vk_string_fragments bigf s
     | FunCall  (e, es)         ->
         exprf e;
         vk_argument_list bigf es;
@@ -323,7 +334,7 @@ let rec vk_expr = fun bigf expr ->
     | ParenExpr (e) -> exprf e
 
     | New  (None, t)   -> vk_argument bigf t
-    | New  (Some ts, t)   -> 
+    | New  (Some ts, t)   ->
         vk_argument_list bigf ts;
 	vk_argument bigf t
     | Delete e -> vk_expr bigf e
@@ -380,6 +391,15 @@ and vk_statement = fun bigf (st: Ast_c.statement) ->
 
     | Selection  (If (e, st1, st2)) ->
         vk_expr bigf e; statf st1; statf st2;
+    | Selection  (Ifdef_Ite (e, st1, st2)) ->
+        vk_expr bigf e;
+        statf st1;
+        statf st2;
+    | Selection  (Ifdef_Ite2 (e, st1, st2, st3)) ->
+        vk_expr bigf e;
+        statf st1;
+        statf st2;
+        statf st3;
     | Selection  (Switch (e, st)) ->
         vk_expr bigf e; statf st;
     | Iteration  (While (e, st)) ->
@@ -406,6 +426,8 @@ and vk_statement = fun bigf (st: Ast_c.statement) ->
     | Asm asmbody -> vk_asmbody bigf asmbody
     | NestedFunc def -> vk_def bigf def
     | MacroStmt -> ()
+
+    | Exec (code) -> List.iter (vk_exec_code bigf) code
 
   in statf st
 
@@ -446,6 +468,9 @@ and vk_type = fun bigf t ->
     | Array (eopt, t) ->
         do_option (vk_expr bigf) eopt;
         typef t
+    | Decimal(length,precision_opt) ->
+        vk_expr bigf length;
+        do_option (vk_expr bigf) precision_opt
     | FunctionType (returnt, paramst) ->
         typef returnt;
         (match paramst with
@@ -463,7 +488,7 @@ and vk_type = fun bigf t ->
     | StructUnionName (s, structunion) -> ()
     | EnumName  s -> ()
 
-    (* dont go in _typ *)
+    (* don't go in _typ *)
     | TypeName (name,_typ) ->
         vk_name bigf name
 
@@ -480,6 +505,12 @@ and vk_attribute = fun bigf attr ->
   | Attribute s, ii ->
       iif ii
 
+
+and vk_exec_code = fun bigf e ->
+  let iif ii = vk_ii bigf ii in
+  match e with
+    ExecEval name, ii -> iif ii; vk_expr bigf name
+  | ExecToken, ii -> iif ii
 
 (* ------------------------------------------------------------------------ *)
 
@@ -519,7 +550,7 @@ and vk_onedecl = fun bigf onedecl ->
       v_attr = attrs})  ->
 
     vk_type bigf t;
-    (* dont go in tbis *)
+    (* don't go in tbis *)
     attrs +> List.iter (vk_attribute bigf);
     var +> Common.do_option (fun (name, iniopt) ->
       vk_name bigf name;
@@ -693,10 +724,23 @@ and vk_program = fun bigf xs ->
   xs +> List.iter (vk_toplevel bigf)
 
 and vk_ifdef_directive bigf directive =
-  let iif ii =  vk_ii bigf ii in
-  match directive with
-  | IfdefDirective (ifkind, ii) -> iif ii
+  let f = bigf.kifdefdirective in
+  let k d =
+    let iif ii =  vk_ii bigf ii in
+    match d with
+    | IfdefDirective ((ifkind,_tag), ii) ->
+        vk_ifdefkind bigf ifkind;
+        iif ii
+  in f (k, bigf) directive
 
+and vk_ifdefkind bigf = function
+  | Ifdef       ifguard
+  | IfdefElseif ifguard -> vk_ifdef_guard bigf ifguard
+  | x                   -> ()
+
+and vk_ifdef_guard bigf = function
+  | Gif e -> vk_expr bigf e
+  | x     -> ()
 
 and vk_cpp_directive bigf directive =
   let iif ii =  vk_ii bigf ii in
@@ -720,7 +764,10 @@ and vk_cpp_directive bigf directive =
         iif ii;
         vk_define_kind bigf defkind;
         vk_define_val bigf defval
-    | PragmaAndCo (ii) ->
+    | Pragma ((s,ii), pragmainfo) ->
+        iif ii;
+        vk_pragmainfo bigf pragmainfo
+    | OtherDirective (ii) ->
         iif ii
   in f (k, bigf) directive
 
@@ -755,12 +802,168 @@ and vk_define_val bigf defval =
   | DefineInit ini -> vk_ini bigf ini
     (* christia: added multi *)
   | DefineMulti stmts ->
-      List.fold_left (fun () d -> vk_statement bigf d) () stmts 
+      List.fold_left (fun () d -> vk_statement bigf d) () stmts
   | DefineTodo ->
       pr2_once "DefineTodo";
       ()
   in f (k, bigf) defval
 
+and vk_pragmainfo bigf pragmainfo =
+  match pragmainfo with
+    PragmaTuple(args,ii) ->
+      vk_ii bigf ii;
+      vk_argument_list bigf args
+  | PragmaIdList ids ->
+      ids +> List.iter (function (id, _) -> vk_name bigf id)
+
+and vk_string_fragment = fun bigf x ->
+  let rec fragf x = bigf.kfragment (k, bigf) x
+  and k st =
+    let (unwrap_x, ii) = x in
+    vk_ii bigf ii;
+    match unwrap_x with
+      ConstantFragment s -> ()
+    | FormatFragment(fmt) -> vk_string_format bigf fmt in
+  fragf x
+
+and vk_string_fragments = fun bigf ts ->
+  ts +> List.iter (vk_string_fragment bigf)
+
+and vk_string_format = fun bigf x ->
+  let rec fmtf x = bigf.kformat (k, bigf) x
+  and k st =
+    let (unwrap_x, ii) = x in
+    vk_ii bigf ii;
+    match unwrap_x with (* probably not very useful... *)
+      ConstantFormat s -> ()
+  in
+  fmtf x
+
+(* ------------------------------------------------------------------------ *)
+(* Now keep fullstatement inside the control flow node,
+ * so that can then get in a MetaStmtVar the fullstatement to later
+ * pp back when the S is in a +. But that means that
+ * Exp will match an Ifnode even if there is no such exp
+ * inside the condition of the Ifnode (because the exp may
+ * be deeper, in the then branch). So have to not visit
+ * all inside a node anymore.
+ *
+ * update: j'ai choisi d'accrocher au noeud du CFG a la
+ * fois le fullstatement et le partialstatement et appeler le
+ * visiteur que sur le partialstatement.
+ *)
+
+and vk_node = fun bigf node ->
+  let iif ii = vk_ii bigf ii in
+  let infof info = vk_info bigf info in
+
+  let f = bigf.knode in
+  let rec k n =
+    match F.unwrap n with
+
+    | F.FunHeader (def) ->
+        assert(null (fst def).f_body);
+        vk_def bigf def;
+
+    | F.Decl decl -> vk_decl bigf decl
+    | F.ExprStatement (st, (eopt, ii)) ->
+        iif ii;
+        eopt +> do_option (vk_expr bigf)
+
+    | F.IfHeader (_, (e,ii))
+    | F.SwitchHeader (_, (e,ii))
+    | F.WhileHeader (_, (e,ii))
+    | F.DoWhileTail (e,ii) ->
+        iif ii;
+        vk_expr bigf e
+
+    | F.ForHeader (_st, ((ForExp (e1opt,i1), (e2opt,i2), (e3opt,i3)), ii)) ->
+        iif i1; iif i2; iif i3;
+        iif ii;
+        e1opt +> do_option (vk_expr bigf);
+        e2opt +> do_option (vk_expr bigf);
+        e3opt +> do_option (vk_expr bigf);
+    | F.ForHeader (_st, ((ForDecl decl, (e2opt,i2), (e3opt,i3)), ii)) ->
+        iif i2; iif i3;
+        iif ii;
+        decl  +> (vk_decl bigf);
+        e2opt +> do_option (vk_expr bigf);
+        e3opt +> do_option (vk_expr bigf);
+    | F.MacroIterHeader (_s, ((s,es), ii)) ->
+        iif ii;
+        vk_argument_list bigf es;
+
+    | F.ReturnExpr (_st, (e,ii)) -> iif ii; vk_expr bigf e
+
+    | F.Case  (_st, (e,ii)) -> iif ii; vk_expr bigf e
+    | F.CaseRange (_st, ((e1, e2),ii)) ->
+        iif ii; vk_expr bigf e1; vk_expr bigf e2
+
+
+    | F.CaseNode i -> ()
+
+    | F.DefineExpr e  -> vk_expr bigf e
+    | F.DefineType ft  -> vk_type bigf ft
+    | F.DefineHeader ((s,ii), (defkind))  ->
+        iif ii;
+        vk_define_kind bigf defkind;
+
+    | F.DefineDoWhileZeroHeader (((),ii)) -> iif ii
+    | F.DefineTodo ->
+        pr2_once "DefineTodo";
+        ()
+
+    | F.PragmaHeader((s,ii), pragmainfo) ->
+        iif ii;
+        vk_pragmainfo bigf pragmainfo
+
+    | F.Include {i_include = (s, ii);} -> iif ii;
+
+    | F.MacroTop (s, args, ii) ->
+        iif ii;
+        vk_argument_list bigf args
+
+    | F.IfdefHeader    (info) -> vk_ifdef_directive bigf info
+    | F.IfdefElse    (info) ->  vk_ifdef_directive bigf info
+    | F.IfdefEndif    (info) ->  vk_ifdef_directive bigf info
+
+    | F.IfdefIteHeader ii -> iif ii
+
+    | F.Break    (st,((),ii),_) -> iif ii
+    | F.Continue (st,((),ii)) -> iif ii
+    | F.Default  (st,((),ii)) -> iif ii
+    | F.Return   (st,((),ii)) -> iif ii
+    | F.Goto  (st, name, ((),ii)) -> vk_name bigf name; iif ii
+    | F.Label (st, name, ((),ii)) -> vk_name bigf name; iif ii
+
+    | F.DoHeader (st, info) -> infof info
+
+    | F.Else info -> infof info
+    | F.EndStatement iopt -> do_option infof iopt
+
+    | F.SeqEnd (i, info) -> infof info
+    | F.SeqStart (st, i, info) -> infof info
+
+    | F.MacroStmt (st, ((),ii)) -> iif ii
+    | F.Asm (st, (asmbody,ii)) ->
+        iif ii;
+        vk_asmbody bigf asmbody
+
+    | F.Exec (st,(code,ii)) ->
+	iif ii;
+	List.iter (vk_exec_code bigf) code
+
+    | (
+        F.TopNode|F.EndNode|
+        F.ErrorExit|F.Exit|F.Enter|F.LoopFallThroughNode|F.FallThroughNode|
+        F.AfterNode _|F.FalseNode|F.TrueNode _|F.InLoopNode|
+        F.Fake
+      ) -> ()
+
+
+
+  in
+  f (k, bigf) node
 
 (* ------------------------------------------------------------------------ *)
 and vk_info = fun bigf info ->
@@ -842,6 +1045,10 @@ let vk_define_params_splitted = vk_splitted (fun bigf (_,ii) -> vk_ii bigf ii)
 let vk_params_splitted = vk_splitted vk_param
 let vk_enum_fields_splitted = vk_splitted vk_oneEnum
 let vk_inis_splitted = vk_splitted vk_ini
+let vk_ident_list_splitted = vk_splitted vk_name
+let vk_string_fragments_splitted = vk_splitted vk_string_fragment
+let vk_exec_code_list_splitted = vk_splitted vk_exec_code
+let vk_attrs_splitted = vk_splitted vk_attribute
 
 (* ------------------------------------------------------------------------ *)
 let vk_cst = fun bigf (cst, ii) ->
@@ -880,11 +1087,17 @@ type visitor_c_s = {
   kini_s:  (initialiser  inout * visitor_c_s) -> initialiser inout;
 
   kcppdirective_s: (cpp_directive inout * visitor_c_s) -> cpp_directive inout;
+  kifdefdirective_s : (ifdef_directive inout * visitor_c_s) -> ifdef_directive inout;
   kdefineval_s: (define_val inout * visitor_c_s) -> define_val inout;
   kstatementseq_s: (statement_sequencable inout * visitor_c_s) -> statement_sequencable inout;
   kstatementseq_list_s: (statement_sequencable list inout * visitor_c_s) -> statement_sequencable list inout;
 
+  knode_s: (F.node inout * visitor_c_s) -> F.node inout;
+
+
   ktoplevel_s: (toplevel inout * visitor_c_s) -> toplevel inout;
+  kfragment_s: (string_fragment inout * visitor_c_s) -> string_fragment inout;
+  kformat_s: (string_format inout * visitor_c_s) -> string_format inout;
   kinfo_s: (info inout * visitor_c_s) -> info inout;
  }
 
@@ -897,11 +1110,15 @@ let default_visitor_c_s =
     kname_s      = (fun (k,_) x ->  k x);
     kini_s       = (fun (k,_) d  -> k d);
     ktoplevel_s  = (fun (k,_) p  -> k p);
+    knode_s      = (fun (k,_) n  -> k n);
+    kfragment_s  = (fun (k,_) f  -> k f);
+    kformat_s    = (fun (k,_) f  -> k f);
     kinfo_s      = (fun (k,_) i  -> k i);
     kdefineval_s = (fun (k,_) x  -> k x);
     kstatementseq_s = (fun (k,_) x  -> k x);
     kstatementseq_list_s = (fun (k,_) x  -> k x);
     kcppdirective_s = (fun (k,_) x  -> k x);
+    kifdefdirective_s = (fun (k,_) x -> k x);
   }
 
 let rec vk_expr_s = fun bigf expr ->
@@ -917,6 +1134,8 @@ let rec vk_expr_s = fun bigf expr ->
       match unwrap_e with
       | Ident (name) -> Ident (vk_name_s bigf name)
       | Constant (c) -> Constant (c)
+      |	StringConstant(s,os,w) ->
+	  StringConstant(s +> (List.map (vk_string_fragment_s bigf)),os,w)
       | FunCall  (e, es)         ->
           FunCall (exprf e,
                   es +> List.map (fun (e,ii) ->
@@ -949,7 +1168,7 @@ let rec vk_expr_s = fun bigf expr ->
       | ParenExpr (e)    -> ParenExpr (exprf e)
 
       | New (None, t)    -> New (None, vk_argument_s bigf t)
-      | New (Some ts, t) -> 
+      | New (Some ts, t) ->
 	  New (Some (ts +> List.map (fun (e,ii) ->
 	    vk_argument_s bigf e, iif ii)), vk_argument_s bigf t)
       | Delete e      -> Delete (vk_expr_s bigf e)
@@ -1017,6 +1236,12 @@ and vk_statement_s = fun bigf st ->
       | ExprStatement (Some e) -> ExprStatement (Some ((vk_expr_s bigf) e))
       | Selection (If (e, st1, st2)) ->
           Selection  (If ((vk_expr_s bigf) e, statf st1, statf st2))
+      | Selection (Ifdef_Ite (e, st1, st2)) ->
+          Selection  (Ifdef_Ite (vk_expr_s bigf e,statf st1,statf st2))
+      | Selection (Ifdef_Ite2 (e, st1, st2, st3)) ->
+          Selection  (Ifdef_Ite2 (vk_expr_s bigf e,statf st1
+                                                  ,statf st2
+                                                  ,statf st3))
       | Selection (Switch (e, st))   ->
           Selection  (Switch ((vk_expr_s bigf) e, statf st))
       | Iteration (While (e, st))    ->
@@ -1071,6 +1296,7 @@ and vk_statement_s = fun bigf st ->
       | Asm asmbody -> Asm (vk_asmbody_s bigf asmbody)
       | NestedFunc def -> NestedFunc (vk_def_s bigf def)
       | MacroStmt -> MacroStmt
+      |	Exec(code) -> Exec(List.map (vk_exec_code_s bigf) code)
     in
     st', vk_ii_s bigf ii
   in statf st
@@ -1140,6 +1366,8 @@ and vk_type_s = fun bigf t ->
       | BaseType x -> BaseType x
       | Pointer t  -> Pointer (typef t)
       | Array (eopt, t) -> Array (fmap (vk_expr_s bigf) eopt, typef t)
+      | Decimal (len,prec_opt) ->
+	  Decimal (vk_expr_s bigf len, fmap (vk_expr_s bigf) prec_opt)
       | FunctionType (returnt, paramst) ->
           FunctionType
             (typef returnt,
@@ -1175,6 +1403,12 @@ and vk_attribute_s = fun bigf attr ->
   match attr with
   | Attribute s, ii ->
       Attribute s, iif ii
+
+and vk_exec_code_s = fun bigf e ->
+  let iif ii = vk_ii_s bigf ii in
+  match e with
+    ExecEval name, ii -> ExecEval (vk_expr_s bigf name), iif ii
+  | ExecToken, ii -> ExecToken, iif ii
 
 
 
@@ -1381,8 +1615,8 @@ and vk_toplevel_s = fun bigf p ->
     | Namespace (tls, ii) -> Namespace (List.map (vk_toplevel_s bigf) tls, ii)
   in f (k, bigf) p
 
-and vk_program_s = fun bigf xs ->
-  xs +> List.map (vk_toplevel_s bigf)
+and vk_program_s : visitor_c_s -> toplevel list -> toplevel list =
+      fun bigf -> List.map (vk_toplevel_s bigf)
 
 
 and vk_cpp_directive_s = fun bigf top ->
@@ -1406,16 +1640,31 @@ and vk_cpp_directive_s = fun bigf top ->
     | Define ((s,ii), (defkind, defval)) ->
         Define ((s, iif ii),
                (vk_define_kind_s bigf defkind, vk_define_val_s bigf defval))
-    | PragmaAndCo (ii) -> PragmaAndCo (iif ii)
+    | Pragma((s,ii), pragmainfo) ->
+	Pragma((s,iif ii), vk_pragmainfo_s bigf pragmainfo)
+    | OtherDirective (ii) -> OtherDirective (iif ii)
 
   in f (k, bigf) top
 
-and vk_ifdef_directive_s = fun bigf ifdef ->
-  let iif ii = vk_ii_s bigf ii in
-  match ifdef with
-  | IfdefDirective (ifkind, ii) -> IfdefDirective (ifkind, iif ii)
+and vk_ifdef_directive_s bigf ifdef =
+  let f = bigf.kifdefdirective_s in
+  let k d =
+    let iif ii = vk_ii_s bigf ii in
+    match d with
+    | IfdefDirective ((ifkind,tag), ii) ->
+        let ifkind' = vk_ifdefkind_s bigf ifkind in
+        IfdefDirective ((ifkind',tag), iif ii)
+  in f (k, bigf) ifdef
 
+and vk_ifdefkind_s bigf = function
+  | Ifdef       ifguard -> Ifdef       (vk_ifdef_guard_s bigf ifguard)
+  | IfdefElseif ifguard -> IfdefElseif (vk_ifdef_guard_s bigf ifguard)
+  | IfdefElse           -> IfdefElse
+  | IfdefEndif          -> IfdefEndif
 
+and vk_ifdef_guard_s bigf = function
+  | Gif e -> Gif (vk_expr_s bigf e)
+  | x     -> x
 
 and vk_define_kind_s  = fun bigf defkind ->
   match defkind with
@@ -1456,6 +1705,48 @@ and vk_define_val_s = fun bigf x ->
   in
   f (k, bigf) x
 
+and vk_pragmainfo_s bigf pragmainfo =
+  match pragmainfo with
+    PragmaTuple(args,ii) ->
+      PragmaTuple(
+      args +> List.map (fun (e,ii) -> vk_argument_s bigf e, vk_ii_s bigf ii),
+      vk_ii_s bigf ii)
+  | PragmaIdList ids ->
+      PragmaIdList
+	(ids +>
+	 List.map
+	   (function
+	       id, [] -> vk_name_s bigf id, []
+	     | _ -> failwith "bad ident_list"))
+
+
+and vk_string_fragment_s = fun bigf x ->
+  let rec fragf x = bigf.kfragment_s (k, bigf) x
+  and k st =
+    let (unwrap_x, ii) = x in
+    let x' =
+      match unwrap_x with
+	ConstantFragment s -> ConstantFragment s
+      | FormatFragment(fmt) ->
+	  FormatFragment(vk_string_format_s bigf fmt) in
+    x', vk_ii_s bigf ii
+  in
+  fragf x
+
+and vk_string_fragments_s = fun bigf frags ->
+  frags +> List.map (vk_string_fragment_s bigf)
+
+and vk_string_format_s = fun bigf x ->
+  let rec fmtf x = bigf.kformat_s (k, bigf) x
+  and k st =
+    let (unwrap_x, ii) = x in
+    let x' =
+      match unwrap_x with
+	ConstantFormat s -> ConstantFormat s
+    in
+    x', vk_ii_s bigf ii
+  in
+  fmtf x
 
 and vk_info_s = fun bigf info ->
   let rec infof ii = bigf.kinfo_s (k, bigf) ii
@@ -1465,6 +1756,132 @@ and vk_info_s = fun bigf info ->
 
 and vk_ii_s = fun bigf ii ->
   List.map (vk_info_s bigf) ii
+
+(* ------------------------------------------------------------------------ *)
+and vk_node_s = fun bigf node ->
+  let iif ii = vk_ii_s bigf ii in
+  let infof info = vk_info_s bigf info  in
+
+  let rec nodef n = bigf.knode_s (k, bigf) n
+  and k node =
+    F.rewrap node (
+    match F.unwrap node with
+    | F.FunHeader (def) ->
+        assert (null (fst def).f_body);
+        F.FunHeader (vk_def_s bigf def)
+
+    | F.Decl declb -> F.Decl (vk_decl_s bigf declb)
+    | F.ExprStatement (st, (eopt, ii)) ->
+        F.ExprStatement (st, (eopt +> map_option (vk_expr_s bigf), iif ii))
+
+    | F.IfHeader (st, (e,ii))     ->
+        F.IfHeader    (st, (vk_expr_s bigf e, iif ii))
+    | F.SwitchHeader (st, (e,ii)) ->
+        F.SwitchHeader(st, (vk_expr_s bigf e, iif ii))
+    | F.WhileHeader (st, (e,ii))  ->
+        F.WhileHeader (st, (vk_expr_s bigf e, iif ii))
+    | F.DoWhileTail (e,ii)  ->
+        F.DoWhileTail (vk_expr_s bigf e, iif ii)
+
+    | F.ForHeader (st, ((first, (e2opt,i2), (e3opt,i3)), ii)) ->
+	let first =
+	  match first with
+	    ForExp (e1opt,i1) ->
+	      ForExp (e1opt +> Common.map_option (vk_expr_s bigf), iif i1)
+	  | ForDecl decl -> ForDecl (vk_decl_s bigf decl) in
+
+        F.ForHeader (st,
+                    ((first,
+                     (e2opt +> Common.map_option (vk_expr_s bigf), iif i2),
+                     (e3opt +> Common.map_option (vk_expr_s bigf), iif i3)),
+                    iif ii))
+
+    | F.MacroIterHeader (st, ((s,es), ii)) ->
+        F.MacroIterHeader
+          (st,
+          ((s, es +> List.map (fun (e, ii) -> vk_argument_s bigf e, iif ii)),
+          iif ii))
+
+
+    | F.ReturnExpr (st, (e,ii)) ->
+        F.ReturnExpr (st, (vk_expr_s bigf e, iif ii))
+
+    | F.Case  (st, (e,ii)) -> F.Case (st, (vk_expr_s bigf e, iif ii))
+    | F.CaseRange (st, ((e1, e2),ii)) ->
+        F.CaseRange (st, ((vk_expr_s bigf e1, vk_expr_s bigf e2), iif ii))
+
+    | F.CaseNode i -> F.CaseNode i
+
+    | F.DefineHeader((s,ii), (defkind)) ->
+        F.DefineHeader ((s, iif ii), (vk_define_kind_s bigf defkind))
+
+    | F.DefineExpr e -> F.DefineExpr (vk_expr_s bigf e)
+    | F.DefineType ft -> F.DefineType (vk_type_s bigf ft)
+    | F.DefineDoWhileZeroHeader ((),ii) ->
+        F.DefineDoWhileZeroHeader ((),iif ii)
+    | F.DefineTodo -> F.DefineTodo
+
+    | F.PragmaHeader ((s,ii),pragmainfo) ->
+        F.PragmaHeader((s,iif ii), vk_pragmainfo_s bigf pragmainfo)
+
+    | F.Include {i_include = (s, ii);
+                 i_rel_pos = h_rel_pos;
+                 i_is_in_ifdef = b;
+                 i_content = copt;
+                 }
+      ->
+        assert (copt =*= None);
+        F.Include {i_include = (s, iif ii);
+                    i_rel_pos = h_rel_pos;
+                    i_is_in_ifdef = b;
+                    i_content = copt;
+                   }
+
+    | F.MacroTop (s, args, ii) ->
+        F.MacroTop
+          (s,
+          args +> List.map (fun (e, ii) -> vk_argument_s bigf e, iif ii),
+          iif ii)
+
+
+    | F.MacroStmt (st, ((),ii)) -> F.MacroStmt (st, ((),iif ii))
+    | F.Asm (st, (body,ii)) -> F.Asm (st, (vk_asmbody_s bigf body,iif ii))
+    | F.Exec(st, (code,ii)) ->
+	F.Exec(st,((List.map (vk_exec_code_s bigf) code),ii))
+
+    | F.Break    (st,((),ii),fromswitch) ->
+	F.Break    (st,((),iif ii),fromswitch)
+    | F.Continue (st,((),ii)) -> F.Continue (st,((),iif ii))
+    | F.Default  (st,((),ii)) -> F.Default  (st,((),iif ii))
+    | F.Return   (st,((),ii)) -> F.Return   (st,((),iif ii))
+    | F.Goto  (st, name, ((),ii)) ->
+        F.Goto  (st, vk_name_s bigf name, ((),iif ii))
+    | F.Label (st, name, ((),ii)) ->
+        F.Label (st, vk_name_s bigf name, ((),iif ii))
+    | F.EndStatement iopt -> F.EndStatement (map_option infof iopt)
+    | F.DoHeader (st, info) -> F.DoHeader (st, infof info)
+    | F.Else info -> F.Else (infof info)
+    | F.SeqEnd (i, info) -> F.SeqEnd (i, infof info)
+    | F.SeqStart (st, i, info) -> F.SeqStart (st, i, infof info)
+
+    | F.IfdefHeader (info) -> F.IfdefHeader (vk_ifdef_directive_s bigf info)
+    | F.IfdefElse (info) -> F.IfdefElse (vk_ifdef_directive_s bigf info)
+    | F.IfdefEndif (info) -> F.IfdefEndif (vk_ifdef_directive_s bigf info)
+
+    | F.IfdefIteHeader ii -> F.IfdefIteHeader (iif ii)
+
+    | (
+        (
+          F.TopNode|F.EndNode|
+          F.ErrorExit|F.Exit|F.Enter|F.LoopFallThroughNode|F.FallThroughNode|
+          F.AfterNode _|F.FalseNode|F.TrueNode _|F.InLoopNode|
+          F.Fake
+        ) as x) -> x
+
+
+    )
+  in
+  nodef node
 
 (* ------------------------------------------------------------------------ *)
 and vk_param_s = fun bigf param ->
@@ -1509,3 +1926,7 @@ let vk_define_params_splitted_s =
   vk_splitted_s (fun bigf (s,ii) -> (s,vk_ii_s bigf ii))
 let vk_enum_fields_splitted_s = vk_splitted_s vk_oneEnum_s
 let vk_inis_splitted_s = vk_splitted_s vk_ini_s
+let vk_ident_list_splitted_s = vk_splitted_s vk_name_s
+let vk_string_fragments_splitted_s = vk_splitted_s vk_string_fragment_s
+let vk_exec_code_list_splitted_s = vk_splitted_s vk_exec_code_s
+let vk_attrs_splitted_s = vk_splitted_s vk_attribute_s

@@ -31,7 +31,7 @@ open Common
  *
  * Also, ocamlyacc imposes some stupid constraints on the way we can define
  * the token type. ocamlyacc forces us to do a token type that
- * cant be a pair of a sum type, it must be directly a sum type.
+ * cannot be a pair of a sum type, it must be directly a sum type.
  * We don't have this constraint here.
  *
  * Also, some yacc tokens are not used in the grammar because they are filtered
@@ -114,8 +114,6 @@ type token = token_tag * info
  *)
 type comment_like_token = token
 
-
-
 (*****************************************************************************)
 (* Getters *)
 (*****************************************************************************)
@@ -123,6 +121,7 @@ type comment_like_token = token
 (* simpler than in token_helpers :) because we don't have the ocamlyacc
  * constraints on how to define the token type. *)
 let info_of_token = snd
+let str_of_token t = (info_of_token t).Common.str
 
 
 

@@ -1,25 +1,3 @@
-/*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- */
-
-
 %{
 (* Yoann Padioleau
  *
@@ -177,7 +155,7 @@ let (fixDeclSpecForDecl: decl -> (fullType * (storage wrap)))  = function
      (*mine*)
      raise (Semantic ("signed, unsigned valid only for char and int", fake_pi))
  | (_,Some _,(Some(BaseType(FloatType (CFloat|CLongDouble))))) ->
-     raise (Semantic ("long or short specified with floatint type", fake_pi))
+     raise (Semantic ("long or short specified with floating type", fake_pi))
  | (_,Some Short,(Some(BaseType(FloatType CDouble)))) ->
      raise (Semantic ("the only valid combination is long double", fake_pi))
 
@@ -333,7 +311,10 @@ let fixFunc (typ, compound, old_style_opt) =
       {f_name = name;
        f_type = (fullt, (params, abool));
        f_storage = st;
-       f_body = cp;
+       f_body =
+	if !Flag_parsing_c.parsing_header_for_types
+	then []
+	else cp;
        f_attr = attrs;
        f_old_c_style = old_style_opt;
       },
@@ -382,8 +363,6 @@ let fix_add_params_ident x =
       )
   | _ -> ()
 
-
-
 (*-------------------------------------------------------------------------- *)
 (* shortcuts *)
 (*-------------------------------------------------------------------------- *)
@@ -391,6 +370,30 @@ let fix_add_params_ident x =
 let mk_e e ii = Ast_c.mk_e e ii
 
 let mk_string_wrap (s,info) = (s, [info])
+
+(*-------------------------------------------------------------------------- *)
+(* support for functions with no return type *)
+(*-------------------------------------------------------------------------- *)
+
+let args_are_params l =
+  match l with
+    [Right (ArgAction(ActMisc [x])), ii] when Ast_c.is_fake x -> true
+  | _ -> List.for_all (function Right (ArgType x), ii -> true | _ -> false) l
+let args_to_params l pb =
+  let pi =
+    match pb with Some pb -> Ast_c.parse_info_of_info pb | None -> fake_pi in
+  match l with
+    [(Right (ArgAction(ActMisc [x])), ii)] when Ast_c.is_fake x -> []
+  | l ->
+      List.map
+	(function
+	    Right (ArgType x), ii -> x, ii
+	  | x ->
+	      raise
+		(Semantic
+		   ("function with no return type must have types in param list",
+		    pi)))
+	l
 
 %}
 
@@ -420,13 +423,16 @@ let mk_string_wrap (s,info) = (s, [info])
 %token <(string * Ast_c.floatType) * Ast_c.info> TFloat
 %token <(string * Ast_c.isWchar) * Ast_c.info>   TChar
 %token <(string * Ast_c.isWchar) * Ast_c.info>   TString
+%token <(string * Ast_c.isWchar) * Ast_c.info>   TQuote
+%token <Ast_c.info> TPct
+%token <string * Ast_c.info> TFormat TSubString
+%token <(string * string (*n*) * string (*p*)) * Ast_c.info> TDecimal
 
 %token <string * Ast_c.info> TIdent
 %token <string * Ast_c.info> TKRParam
 %token <string * Ast_c.info> Tconstructorname /* parsing_hack for c++ */
 /*(* appears mostly after some fix_xxx in parsing_hack *)*/
 %token <string * Ast_c.info> TypedefIdent
-
 
 /*
 (* Some tokens like TOPar and TCPar are used as synchronisation stuff,
@@ -456,7 +462,7 @@ let mk_string_wrap (s,info) = (s, [info])
        Tauto Tregister Textern Tstatic
        Ttypedef
        Tconst Tvolatile
-       Tstruct Tunion Tenum
+       Tstruct Tunion Tenum Tdecimal Texec
        Tbreak Telse Tswitch Tcase Tcontinue Tfor Tdo Tif  Twhile Treturn
        Tgoto Tdefault
        Tsizeof Tnew Tdelete TOParCplusplusInit Tnamespace
@@ -518,16 +524,32 @@ let mk_string_wrap (s,info) = (s, [info])
 /*(*---------------*)*/
 
 /*(* coupling: Token_helpers.is_cpp_instruction *)*/
+%token <(Ast_c.ifdef_guard * (int * int) option ref * Ast_c.info)>
+  TIfdef TIfdefelif
 %token <((int * int) option ref * Ast_c.info)>
-  TIfdef TIfdefelse TIfdefelif TEndif
+  TIfdefelse TEndif
 %token <(bool * (int * int) option ref * Ast_c.info)>
   TIfdefBool TIfdefMisc TIfdefVersion
+
+/* Note [Nasty Undisciplined Cpp]
+ *
+ * These tokens replace regular Cpp-ifdef tokens for nasty undisciplined
+ * variability patterns.
+ *
+ * Note that these tokens do not have matching_tag.
+ * (TU stands for Token-Undisciplined.)
+ *
+ * /Iago
+ */
+%token <Ast_c.info>
+  TUifdef TUelseif TUendif
 
 /*(*---------------*)*/
 /*(* other         *)*/
 /*(*---------------*)*/
 
 %token <Ast_c.info> TUndef
+%token <Ast_c.info> TPragma
 
 %token <Ast_c.info> TCppDirectiveOther
 
@@ -641,12 +663,12 @@ main:
  translation_unit EOF     { $1 }
 
 translation_unit:
- | 
+ |
      { [] }
  | translation_unit external_declaration
      { !LP._lexer_hint.context_stack <- [LP.InTopLevel]; $1 ++ [$2] }
  | translation_unit Tnamespace TIdent TOBrace translation_unit TCBrace
-     { !LP._lexer_hint.context_stack <- [LP.InTopLevel]; 
+     { !LP._lexer_hint.context_stack <- [LP.InTopLevel];
        $1 ++ [Namespace ($5, [$2; snd $3; $4; $6])] }
 
 
@@ -797,7 +819,7 @@ new_argument:
 	   let pty = { ty with p_type = fty } in
 	   Right(ArgType pty)
        | _ -> raise (Impossible 88)
-     } 
+     }
 
 unary_op:
  | TAnd   { GetRef,     $1 }
@@ -826,7 +848,7 @@ postfix_expr:
  /*(* gccext: also called compound literals *)*/
  | topar2 type_name tcpar2 TOBrace TCBrace
      { mk_e(Constructor ($2, (InitList [], [$4;$5]))) [$1;$3] }
- | topar2 type_name tcpar2 TOBrace initialize_list gcc_comma_opt TCBrace
+ | topar2 type_name tcpar2 TOBrace initialize_list gcc_comma_opt_struct TCBrace
      { mk_e(Constructor ($2, (InitList (List.rev $5),[$4;$7]++$6))) [$1;$3] }
 
 
@@ -837,7 +859,13 @@ primary_expr:
       mk_e(Constant (Int (str,Si(sign,base)))) [snd $1] }
  | TFloat  { mk_e(Constant (Float  (fst $1))) [snd $1] }
  | TString { mk_e(Constant (String (fst $1))) [snd $1] }
+ | TQuote string_fragments TQuote
+     { let ((fullstring,isW),lqinfo) = $1 in
+       let (_,rqinfo) = $3 in
+       mk_e (Ast_c.StringConstant($2, fullstring, isW)) [lqinfo;rqinfo] }
  | TChar   { mk_e(Constant (Char   (fst $1))) [snd $1] }
+ | TDecimal { let (a,b,c) = fst $1 in
+              mk_e(Constant (DecimalConst (a,b,c))) [snd $1] }
  | TOPar expr TCPar { mk_e(ParenExpr ($2)) [$1;$3] }  /*(* forunparser: *)*/
 
  /*(* gccext: cppext: TODO better ast ? *)*/
@@ -848,7 +876,16 @@ primary_expr:
  /*(* gccext: allow statement as expressions via ({ statement }) *)*/
  | TOPar compound TCPar  { mk_e(StatementExpr ($2)) [$1;$3] }
 
+string_fragments:
+ | /* empty */ { [] }
+ | string_fragment string_fragments { $1 :: $2 }
 
+string_fragment:
+ | TPct string_format { Ast_c.FormatFragment($2), [$1] }
+ | TSubString { Ast_c.ConstantFragment(fst $1), [snd $1] }
+
+string_format:
+ | TFormat { Ast_c.ConstantFormat(fst $1), [snd $1] }
 
 /*(*----------------------------*)*/
 /*(* cppext: *)*/
@@ -918,7 +955,7 @@ statement2:
  /*(* cppext: *)*/
  | TMacroStmt { MacroStmt, [snd $1] }
 
-
+ | Texec identifier exec_list TPtVirg { Exec($3), [$1;snd $2;$4] }
 
 
 /*(* note that case 1: case 2: i++;    would be correctly parsed, but with
@@ -1002,6 +1039,12 @@ selection:
      { If ($3, $5, $7),  [$1;$2;$4;$6] }
  | Tswitch TOPar expr TCPar statement
      { Switch ($3,$5),   [$1;$2;$4]  }
+ /* [Nasty Undisciplined Cpp] #ifdef A if e S1 else #endif S2 */
+ | TUifdef Tif TOPar expr TCPar statement Telse TUendif statement
+     { Ifdef_Ite ($4,$6,$9), [$1;$2;$3;$5;$7;$8] }
+ /* [Nasty Undisciplined Cpp] #ifdef A if e S1 else #else S2 #endif S3 */
+ | TUifdef Tif TOPar expr TCPar statement Telse TUelseif statement TUendif statement
+     { Ifdef_Ite2 ($4,$6,$9,$11), [$1;$2;$3;$5;$7;$8;$10] }
 
 iteration:
  | Twhile TOPar expr TCPar statement
@@ -1059,7 +1102,85 @@ colon_option:
  | identifier                       { ColonMisc, [snd $1] }
  | /*(* empty *)*/                  { ColonMisc, [] }
 
+// IBM C only
+exec_list:
+    /* empty */ { [] }
+  | TDotDot identifier_cpp exec_ident exec_list
+      { (ExecEval ($3 (mk_e (Ident $2) [])), [$1]) :: $4 }
+  | TIdent exec_ident2 exec_list
+      { (ExecToken, [snd $1]) :: $2 @ $3 }
+  | token exec_list { (ExecToken, [$1]) :: $2 }
+
+exec_ident:
+    { function prev -> prev }
+ | TDot   TIdent exec_ident
+     { function prev ->
+       let fld = RegularName (mk_string_wrap $2) in
+       $3 (mk_e(RecordAccess   (prev,fld)) [$1]) }
+ | TPtrOp TIdent exec_ident
+     { function prev ->
+       let fld = RegularName (mk_string_wrap $2) in
+       $3 (mk_e(RecordPtAccess   (prev,fld)) [$1]) }
+ | TOCro expr TCCro exec_ident
+     { function prev ->
+       $4 (mk_e(ArrayAccess   (prev,$2)) [$1;$3]) }
+
+exec_ident2:
+    { [] }
+ | TDot   TIdent exec_ident2
+    { (ExecToken, [$1]) :: (ExecToken, [snd $2]) :: $3 }
+
 asm_expr: assign_expr { $1 }
+
+token:
+    TPlus   { $1 }
+  | TMinus  { $1 }
+  | TMul    { $1 }
+  | TDiv    { $1 }
+  | TMod    { $1 }
+  | TMin    { $1 }
+  | TMax    { $1 }
+  | TInc    { $1 }
+  | TDec    { $1 }
+  | TEq     { $1 }
+  | TAssign { snd $1 }
+
+  | TEqEq   { $1 }
+  | TNotEq  { $1 }
+  | TSupEq  { $1 }
+  | TInfEq  { $1 }
+  | TSup    { $1 }
+  | TInf    { $1 }
+
+  | TAndLog { $1 }
+  | TOrLog  { $1 }
+  | TShr    { $1 }
+  | TShl    { $1 }
+  | TAnd    { $1 }
+  | TOr     { $1 }
+  | TXor    { $1 }
+
+  | TOBrace { $1 }
+  | TCBrace { $1 }
+/*  | TOCro   { $1 }
+  | TCCro   { $1 }*/
+  | TOPar   { $1 }
+  | TCPar   { $1 }
+
+/*| TPtrOp  { $1 }
+  | TDot    { $1 }*/
+  | TWhy    { $1 }
+  | TBang   { $1 }
+  | TComma  { $1 }
+/*  | TIdent  { snd $1 }*/
+  | TypedefIdent { snd $1 }
+
+  | Tif     { $1 }
+  | Telse   { $1 }
+  | TInt    { snd $1 }
+  | TFloat  { snd $1 }
+  | TString { snd $1 }
+  | TChar   { snd $1 } /* other constants needed? */
 
 /*(*************************************************************************)*/
 /*(* types *)*/
@@ -1084,6 +1205,10 @@ type_spec2:
  | Tunsigned            { Left3 UnSigned, [$1]}
  | struct_or_union_spec { Right3 (fst $1), snd $1 }
  | enum_spec            { Right3 (fst $1), snd $1 }
+ | Tdecimal TOPar const_expr TComma const_expr TCPar
+     { Right3 (Decimal($3,Some $5)), [$1;$2;$4;$6] }
+ | Tdecimal TOPar const_expr TCPar
+     { Right3 (Decimal($3,None)), [$1;$2;$4] }
 
  /*
  (* parse_typedef_fix1: cant put: TIdent {} cos it make the grammar
@@ -1591,9 +1716,10 @@ field_declaration:
        if fst (unwrap storage) <> NoSto
        then internal_error "parsing dont allow this";
 
+       let iistart = Ast_c.fakeInfo () in (* for parallelism with DeclList *)
        FieldDeclList ($2 +> (List.map (fun (f, iivirg) ->
          f returnType, iivirg))
-                         ,[$3])
+                         ,[$3;iistart])
          (* dont need to check if typedef or func initialised cos
           * grammar dont allow typedef nor initialiser in struct
           *)
@@ -1606,7 +1732,8 @@ field_declaration:
        if fst (unwrap storage) <> NoSto
        then internal_error "parsing dont allow this";
 
-       FieldDeclList ([(Simple (None, returnType)) , []], [$2])
+       let iistart = Ast_c.fakeInfo () in (* for parallelism with DeclList *)
+       FieldDeclList ([(Simple (None, returnType)) , []], [$2;iistart])
      }
 
 
@@ -1785,11 +1912,16 @@ cpp_directive:
 
  | TUndef TIdentDefine TDefEOL
      { Define((fst $2, [$1; snd $2; $3]), (Undef,DefineEmpty)) }
- | TCppDirectiveOther { PragmaAndCo ([$1]) }
 
+ | TPragma TIdentDefine pragmainfo TDefEOL
+     { Pragma((fst $2, [$1; snd $2; $4]), $3) }
 
+ | TCppDirectiveOther { OtherDirective ([$1]) }
 
-
+pragmainfo:
+   TOPar argument_list_ne TCPar { (PragmaTuple ($2, [$1;$3])) }
+ | TOPar TCPar { PragmaTuple ([], [$1;$2]) }
+ | ident_define_list_ne { PragmaIdList $1 }
 
 /*(* perhaps better to use assign_expr ? but in that case need
    * do a assign_expr_of_string in parse_c
@@ -1822,7 +1954,7 @@ define_val:
  | Tinline { DefineTodo }
 *)*/
 
- | stat_or_decl stat_or_decl_list 
+ | stat_or_decl stat_or_decl_list
      { DefineMulti
 	 (List.map
 	    (function
@@ -1876,27 +2008,27 @@ param_define:
 
 cpp_ifdef_directive:
  | TIfdef
-     { let (tag,ii) = $1 in
-       IfdefDirective ((Ifdef, IfdefTag (Common.some !tag)),  [ii]) }
+     { let (cond,tag,ii) = $1 in
+       IfdefDirective ((Ifdef cond, IfdefTag (Common.some !tag)),  [ii]) }
  | TIfdefelse
      { let (tag,ii) = $1 in
        IfdefDirective ((IfdefElse, IfdefTag (Common.some !tag)), [ii]) }
  | TIfdefelif
-     { let (tag,ii) = $1 in
-       IfdefDirective ((IfdefElseif, IfdefTag (Common.some !tag)), [ii]) }
+     { let (cond,tag,ii) = $1 in
+       IfdefDirective ((IfdefElseif cond, IfdefTag (Common.some !tag)), [ii]) }
  | TEndif
      { let (tag,ii) = $1 in
        IfdefDirective ((IfdefEndif, IfdefTag (Common.some !tag)), [ii]) }
 
  | TIfdefBool
      { let (_b, tag,ii) = $1 in
-       IfdefDirective ((Ifdef, IfdefTag (Common.some !tag)), [ii]) }
+       IfdefDirective ((Ifdef Gnone, IfdefTag (Common.some !tag)), [ii]) }
  | TIfdefMisc
      { let (_b, tag,ii) = $1 in
-       IfdefDirective ((Ifdef, IfdefTag (Common.some !tag)), [ii]) }
+       IfdefDirective ((Ifdef Gnone, IfdefTag (Common.some !tag)), [ii]) }
  | TIfdefVersion
      { let (_b, tag,ii) = $1 in
-       IfdefDirective ((Ifdef, IfdefTag (Common.some !tag)), [ii]) }
+       IfdefDirective ((Ifdef Gnone, IfdefTag (Common.some !tag)), [ii]) }
 
 
 /*(* cppext: *)*/
@@ -1907,9 +2039,50 @@ cpp_other:
     *)*/
  | identifier TOPar argument_list TCPar TPtVirg
      {
-       Declaration(MacroDecl((fst $1, $3, true), [snd $1;$2;$4;$5;fakeInfo()]))
-       (* old: MacroTop (fst $1, $3,    [snd $1;$2;$4;$5])  *)
+       if args_are_params $3
+       then
+	 (* if all args are params, assume it is a prototype of a function
+	    with no return type *)
+	 let parameters = args_to_params $3 None in
+	 let paramlist = (parameters, (false, [])) in (* no varargs *)
+	 let id = RegularName (mk_string_wrap $1) in
+	 let ret =
+	   warning "type defaults to 'int'"
+	     (mk_ty defaultInt [fakeInfo fake_pi]) in
+	 let ty =
+	   fixOldCDecl (mk_ty (FunctionType (ret, paramlist)) [$2;$4]) in
+	 let attrs = Ast_c.noattr in
+	 let sto = (NoSto, false), [] in
+	 let iistart = Ast_c.fakeInfo () in
+	 Declaration(
+	 DeclList ([{v_namei = Some (id,NoInit); v_type = ty;
+                      v_storage = unwrap sto; v_local = NotLocalDecl;
+                      v_attr = attrs; v_type_bis = ref None;
+                    },[]],
+                   ($5::iistart::snd sto)))
+       else
+	 Declaration
+	   (MacroDecl((fst $1, $3, true), [snd $1;$2;$4;$5;fakeInfo()]))
+           (* old: MacroTop (fst $1, $3,    [snd $1;$2;$4;$5])  *)
      }
+
+ /* cheap solution for functions with no return type.  Not really a
+       cpp_other, but avoids conflicts */
+ | identifier TOPar argument_list TCPar compound {
+   let parameters = args_to_params $3 (Some (snd $1)) in
+   let paramlist = (parameters, (false, [])) in (* no varargs *)
+   let fninfo =
+     let id = RegularName (mk_string_wrap $1) in
+     let ret =
+       warning "type defaults to 'int'"
+	 (mk_ty defaultInt [fakeInfo fake_pi]) in
+     let ty = mk_ty (FunctionType (ret, paramlist)) [$2;$4] in
+     let attrs = Ast_c.noattr in
+     let sto = (NoSto, false), [] in
+     (id, fixOldCDecl ty, sto, attrs) in
+   let fundef = fixFunc (fninfo, $5, None) in
+   Definition fundef
+ }
 
  /*(* TCParEOL to fix the end-of-stream bug of ocamlyacc *)*/
  | identifier TOPar argument_list TCParEOL
@@ -1931,7 +2104,7 @@ external_declaration:
 
 celem:
  | Tnamespace TIdent TOBrace translation_unit TCBrace
-     { !LP._lexer_hint.context_stack <- [LP.InTopLevel]; 
+     { !LP._lexer_hint.context_stack <- [LP.InTopLevel];
        Namespace ($4, [$1; snd $2; $3; $5]) }
 
  | external_declaration                         { $1 }
@@ -2051,6 +2224,12 @@ expression_list:
 *)*/
 
 
+ident_define_list_ne:
+ | TIdentDefine              { [RegularName (mk_string_wrap $1), []] }
+ | ident_define_list_ne TIdentDefine
+     { $1 ++ [RegularName (mk_string_wrap $2), []] }
+
+
 struct_decl_list:
  | struct_decl                   { [$1] }
  | struct_decl_list struct_decl  { $1 ++ [$2] }
@@ -2107,13 +2286,6 @@ attribute_storage_list:
 
 
 attributes: attribute_list { $1 }
-
-
-
-/*(* gccext:  which allow a trailing ',' in enum, as in perl *)*/
-gcc_comma_opt:
- | TComma {  [$1] }
- | /*(* empty *)*/  {  []  }
 
 comma_opt:
  | TComma {  [$1] }

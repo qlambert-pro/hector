@@ -1,26 +1,3 @@
-(*
- * Copyright 2013, Inria
- * Suman Saha, Julia Lawall, Gilles Muller
- * This file is part of Hector.
- *
- * Hector is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, according to version 2 of the License.
- *
- * Hector is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
- *
- * The authors reserve the right to distribute this or future versions of
- * Hector under other licenses.
- *)
-
-
-# 0 "./parsing_hacks.mli"
 (* This module tries to detect some cpp idioms so that we can parse as-is
  * files by adjusting or commenting some tokens. Parsing hack style.
  * Sometime we use some indentation information,
@@ -71,6 +48,12 @@ val filter_cpp_stuff :
 val insert_virtual_positions:
   Parser_c.token list -> Parser_c.token list
 
+(* mark suppported undisciplined uses of #ifdef *)
+val fix_tokens_ifdef : Parser_c.token list -> Parser_c.token list
+
+(* expand format strings *)
+val fix_tokens_strings : Parser_c.token list -> Parser_c.token list
+
 (* will among other things interally call cpp_token_c to macro
  * expand some macros *)
 val fix_tokens_cpp :
@@ -81,8 +64,6 @@ val fix_tokens_cpp :
 val lookahead :
   pass:int ->
   Parser_c.token list -> Parser_c.token list -> Parser_c.token
-
-
 
 (* ------------------------------------------------------------------------ *)
 (* Parsing hack helpers related to #define or #include *)
@@ -101,3 +82,10 @@ val tokens_include:
   Ast_c.info * string * string * bool ref ->
   Parser_c.token * Parser_c.token list
 
+(* ------------------------------------------------------------------------ *)
+(* Parsing hack helpers related to #ifdef *)
+(* ------------------------------------------------------------------------ *)
+
+(* #ifdef *)
+val cpp_ifdef_statementize:
+  Ast_c.program -> Ast_c.program
