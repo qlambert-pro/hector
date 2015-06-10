@@ -996,8 +996,8 @@ let rec is_resource_having_same_def_new func_name iifunc1 miss_list branch_linen
                if(List.length args_list)>0 then         
                   let fin_lineno = branch_lineno in
 		  let exe_paths_list = Errorhandling.generate_exe_paths_simple fin_lineno [] lbl_list prog in
-                  let ids_list1 = Def.refine_id_list (Errorhandling.list_of_id_values func_name iifunc1 exe_paths_list args_list) in
-		  let id_values1 = if(List.length args_list) =1 then Errorhandling.find_recent_id_values_paths func_name iifunc1  (List.hd args_list) [] exe_paths_list
+                  let ids_list1 = Def.refine_id_list (Errorhandling.list_of_id_values exe_paths_list args_list) in
+		  let id_values1 = if(List.length args_list) =1 then Errorhandling.find_recent_id_values_paths (List.hd args_list) [] exe_paths_list
 			           else (find_idvalues_list exe_paths_list [] args_list) in
                   let id_values1 = 
                          if (same_id_values id_values1 id_values1) && (List.length id_values1) !=0 then [(List.hd id_values1)] else [] in 
@@ -1018,9 +1018,9 @@ let rec is_resource_having_same_def_new func_name iifunc1 miss_list branch_linen
 
                   let exe_paths_list = Errorhandling.generate_exe_paths_simple (fin_lineno-1) [] lbl_list prog   in
 
-                  let ids_list2 = Def.refine_id_list(Errorhandling.list_of_id_values func_name iifunc1 exe_paths_list args_list) in
+                  let ids_list2 = Def.refine_id_list(Errorhandling.list_of_id_values exe_paths_list args_list) in
 
-                  let id_values2 = if(List.length args_list) =1 then Errorhandling.find_recent_id_values_paths func_name iifunc1   (List.hd args_list) [] exe_paths_list
+                  let id_values2 = if(List.length args_list) =1 then Errorhandling.find_recent_id_values_paths (List.hd args_list) [] exe_paths_list
                                    else find_idvalues_list exe_paths_list [] args_list in
   
 

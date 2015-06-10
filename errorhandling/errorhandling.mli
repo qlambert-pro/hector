@@ -38,16 +38,13 @@ val find_recent_id_values_paths_second :
 
 (* Find the latest expression assigned to the first argument in each path *)
 val find_recent_id_values_paths :
-  'a ->
-  'b ->
   Ast_c.expression ->
-  Ast_c.expression list -> Ast_c.statement list list -> Ast_c.expression list
+  Ast_c.expression list ->
+  Ast_c.statement list list -> Ast_c.expression list
 
 (* Return a list of couple representing the latest expression assigned to each
  * element of the first list and for each path *)
 val list_of_id_values :
-  'a ->
-  'b ->
   Ast_c.statement list list ->
   Ast_c.expression list -> (Ast_c.expression * Ast_c.expression list) list
 
@@ -56,9 +53,7 @@ val list_of_id_values :
 val defined_alloc : string -> bool
 
 (* Return true if there are error handling blocks in the function *)
-val remove_not_errorblks :
-  'a ->
-  'b ->
+val exists_error_handling_block :
   Ast_c.expression ->
   (Ast_c.name * Ast_c.statement list) list ->
   Ast_c.statement list ->
@@ -67,7 +62,6 @@ val remove_not_errorblks :
 (* Return a list of element representing error handling code *)
 val find_errorhandling :
   (Ast_c.name * Ast_c.statement list) list ->
-  'a ->
   Ast_c.statement list ->
   (int * Ast_c.expression * Ast_c.statement option * Ast_c.statement list *
    Def.block_part * int * int * Ast_c.statement list)

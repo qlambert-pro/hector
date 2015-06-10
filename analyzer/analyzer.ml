@@ -36,7 +36,8 @@ let rec create_rr_ops_list func_name iifunc1 lbl_list rr_ops_list init_lbl_list 
 let rec recheck_blks func_name iifunc1  lbl_list prog = function
        []-> []
      | (brnch_strtlineno,test_case,goto,st,typ,blk_strtlineno,blk_endlineno,stmtlist)::t->
-           if (Errorhandling.remove_not_errorblks func_name iifunc1 test_case lbl_list prog stmtlist typ blk_strtlineno) 
+           if not (Errorhandling.exists_error_handling_block test_case lbl_list
+              prog stmtlist typ blk_strtlineno)
 	      then((recheck_blks func_name iifunc1 lbl_list  prog t))
            else (brnch_strtlineno,test_case,goto,st,typ,blk_strtlineno,blk_endlineno,stmtlist)::(recheck_blks func_name iifunc1 lbl_list  prog t)
 
@@ -154,7 +155,7 @@ let  analyze_def full_file all_fn def =
          let prog = (Def.remove_stmtElelist statxs) in
         
          
-         let new_errblks_list = Errorhandling.find_errorhandling lbl_list prog prog  in 
+         let new_errblks_list = Errorhandling.find_errorhandling lbl_list prog  in 
         
          let updated_blk_list = recheck_blks s iifunc1 lbl_list prog new_errblks_list in
          let updated_blk_list = Rm_true_positives.remove_blks_that_returns_resource prog updated_blk_list updated_blk_list in

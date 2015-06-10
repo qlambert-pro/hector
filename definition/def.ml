@@ -140,9 +140,7 @@ let rec add_optionlist = function
 (* Compare two names *)
 
 let compare_names name1 name2 =
-   if (Lib_parsing_c.al_name name1) =  (Lib_parsing_c.al_name name2) then true
-   else false
-
+   Lib_parsing_c.al_name name1 = Lib_parsing_c.al_name name2
 
 (* Compare two statements *)
 
@@ -438,17 +436,17 @@ let rec goto_exists_in_list = function
 (* Whether expression exists in the statement *)
 
 let exp_exists_in_stmt exp st =
- let flag = ref false in
- (Visitor_c.vk_statement
-   { Visitor_c.default_visitor_c with
-     Visitor_c.kexpr =
-     (function (k,bigf) -> function e -> k e;
-        match exp with
-           None -> ()
-        |  Some a -> if (compare_exps e a) then flag:= true else ()
-     ) }
-   st);
- !flag
+  let flag = ref false in
+  (Visitor_c.vk_statement
+     { Visitor_c.default_visitor_c with
+       Visitor_c.kexpr =
+         (function (k,bigf) -> function e -> k e;
+            match exp with
+              None -> ()
+            | Some a -> if (compare_exps e a) then flag := true else ())
+     }
+     st);
+  !flag
 
 (* Whether expression exists in any one statement in the statement list *)
 
@@ -488,42 +486,37 @@ let rec string_exists_in_explist = function
      []-> false
    | h::t-> if (string_exists_in_stmt (Ast_c.ExprStatement (Some h),[])) then true else string_exists_in_explist t
 
-let inner_block_in_compound_stmt st= 
+let inner_block_in_compound_stmt st =
   let l = (create_stmtlist st) in
   let rec inner_block_in_compound_stmt_loop  = function
       []->  false
     | h::t ->  match Ast_c.unwrap h with
-               | Ast_c.Labeled    (Ast_c.Label (name, st1)) -> true
-               | Ast_c.Labeled    (Ast_c.Case  (e, st1)) -> true
-	       | Ast_c.Labeled    (Ast_c.CaseRange  (e, e2, st1)) -> true
-	       | Ast_c.Labeled    (Ast_c.Default st1) -> true
-               | Ast_c.Selection  (Ast_c.If (e, st1, st2)) -> true
-               | Ast_c.Selection  (Ast_c.Switch (e, st1 )) ->true
-               | Ast_c.Iteration  (Ast_c.While (e, st1)) -> true
-               | Ast_c.Iteration  (Ast_c.DoWhile (st1, e)) -> true
-               | Ast_c.Iteration  (Ast_c.For (Ast_c.ForDecl _,(e2opt,il2),(e3opt, il3),st11)) ->
-		   failwith
-		     "for loop with declaration in first argument not supported"
-               | Ast_c.Iteration  (Ast_c.For (Ast_c.ForExp(e1opt,il1),(e2opt,il2),(e3opt, il3),st1)) -> if (List.length (create_stmtlist st1))>1 then true
-		                                                                            else inner_block_in_compound_stmt_loop t
-               | Ast_c.Iteration  (Ast_c.MacroIteration (s,es,st1)) -> true
-               | _ -> inner_block_in_compound_stmt_loop t
-       in inner_block_in_compound_stmt_loop l
+      | Ast_c.Labeled    (Ast_c.Label (name, st1)) -> true
+      | Ast_c.Labeled    (Ast_c.Case  (e, st1)) -> true
+      | Ast_c.Labeled    (Ast_c.CaseRange  (e, e2, st1)) -> true
+      | Ast_c.Labeled    (Ast_c.Default st1) -> true
+      | Ast_c.Selection  (Ast_c.If (e, st1, st2)) -> true
+      | Ast_c.Selection  (Ast_c.Switch (e, st1 )) ->true
+      | Ast_c.Iteration  (Ast_c.While (e, st1)) -> true
+      | Ast_c.Iteration  (Ast_c.DoWhile (st1, e)) -> true
+      | Ast_c.Iteration  (Ast_c.For (Ast_c.ForDecl _,(e2opt,il2),(e3opt, il3),st11)) ->
+        failwith "for loop with declaration in first argument not supported"
+      | Ast_c.Iteration  (Ast_c.For (Ast_c.ForExp(e1opt,il1),(e2opt,il2),(e3opt, il3),st1)) -> if (List.length (create_stmtlist st1))>1 then true
+        else inner_block_in_compound_stmt_loop t
+      | Ast_c.Iteration  (Ast_c.MacroIteration (s,es,st1)) -> true
+      | _ -> inner_block_in_compound_stmt_loop t
+  in inner_block_in_compound_stmt_loop l
 
 
 let rec inner_blk = function
-  []-> false
-  |  h::t ->  match Ast_c.unwrap h with
-              |  Ast_c.Labeled    (Ast_c.Case  (e, st)) -> true
-              |  Ast_c.Selection  (Ast_c.Switch (e, st )) ->true
-              |  Ast_c.Iteration  (Ast_c.While (e, st)) -> true
-              |  Ast_c.Iteration  (Ast_c.DoWhile (st, e)) -> true
-              |  Ast_c.Iteration  (Ast_c.For (Ast_c.ForDecl _,(e2opt,il2),(e3opt, il3),st11)) ->
-		   failwith
-		     "for loop with declaration in first argument not supported"
-              |  Ast_c.Iteration  (Ast_c.For (Ast_c.ForExp(e1opt,il1),(e2opt,il2),(e3opt, il3),st)) -> true
-              |  Ast_c.Iteration  (Ast_c.MacroIteration (s,es,st)) -> true
-              |  _ -> inner_blk t
+    []-> false
+  | h::t ->  match Ast_c.unwrap h with
+    | Ast_c.Labeled    (Ast_c.Case  _) -> true
+    | Ast_c.Selection  (Ast_c.Switch _) -> true
+    | Ast_c.Iteration  (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
+      failwith "for loop with declaration in first argument not supported"
+    | Ast_c.Iteration  _ -> true
+    | _ -> inner_blk t
 
 
 
@@ -543,22 +536,22 @@ let is_pointer ((exp, info), ii) =
 
 
 let rec find_ptr_args_list = function
-  []->[]
-  |  h::t->match  h with
-           (((Ast_c.Cast    (cast, e)), typ), ii)->
+    []->[]
+  | h::t->match  h with
+      (((Ast_c.Cast    (cast, e)), typ), ii)->
 
-                                                 (match (is_pointer e) with
-                                                     IsPtr->
-                                                     e::find_ptr_args_list t
-                                                 |  UnknownType->
-                                                     e::find_ptr_args_list t
-                                                 |  _-> find_ptr_args_list t
-                                                 )
+      (match (is_pointer e) with
+         IsPtr->
+         e::find_ptr_args_list t
+       |  UnknownType->
+         e::find_ptr_args_list t
+       |  _-> find_ptr_args_list t
+      )
     | _-> (match (is_pointer h) with
-                 IsPtr->h::find_ptr_args_list t
-              |	 UnknownType->h::find_ptr_args_list t
-      |	 _-> find_ptr_args_list t
-             )
+          IsPtr->h::find_ptr_args_list t
+        |	 UnknownType->h::find_ptr_args_list t
+        |	 _-> find_ptr_args_list t
+      )
 
 
 
