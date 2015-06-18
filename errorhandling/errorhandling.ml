@@ -50,38 +50,28 @@ let rec is_error_return_code ((e,_),_) =
   | _-> Var_dec.oth_rtrn_ehc:= !Var_dec.oth_rtrn_ehc + 1; false
 
 
-let code_for_goto name labels =
-  try
-    let (_, code) = List.find (fun (a, _) -> Def.compare_names a name) labels in
-    if (Def.inner_blk code) then [] else code
-  with
-    Not_found -> []
-
-
 let lbl_list_has_goto name =
   List.exists (function (a, b) -> Def.compare_names a name)
 
-
-let rec gather_goto_code lbl_list goto_code name_list = function
-    [] -> goto_code
-  | h::t ->
+let rec gather_goto_code lbl_list goto_code = function
+    []-> goto_code
+  | h::t->
     (match Ast_c.unwrap h with
        Ast_c.Jump (Ast_c.Return) -> (goto_code@[h])
      | Ast_c.Jump (Ast_c.ReturnExpr e) -> (goto_code@[h])
      | Ast_c.Jump (Ast_c.Goto name) ->
-       if not (lbl_list_has_goto name lbl_list)
-       then gather_goto_code lbl_list goto_code name_list t
-       else
-       if not (goto_jump_toback h lbl_list) &&
-          not (Def.name_exists_in_list name name_list)
+       if (not(goto_jump_toback h lbl_list))
        then
-         let new_goto_code = code_for_goto name lbl_list in
-         match new_goto_code with
-           [] -> []
-         | _  ->
-           gather_goto_code lbl_list goto_code (name::name_list) new_goto_code
+         let new_goto_code = Def.code_for_goto name lbl_list in
+
+         if (List.length new_goto_code) = 0
+         then []
+         else
+           gather_goto_code lbl_list goto_code new_goto_code
        else []
-     | _ -> gather_goto_code lbl_list (goto_code@[h]) name_list t)
+     | _-> gather_goto_code lbl_list (goto_code@[h]) t
+    )
+
 
 
 let map_append st = List.map (function x -> x@st)
@@ -530,7 +520,7 @@ let rec generate_exe_paths_simple fin_lineno exe_paths lbl_list = function
         let start_line_inner2 = Def.find_startline_no (Def.create_stmtlist st2) in
         let end_line_inner2 =   Def.find_endline_no (Def.create_stmtlist st2) in
         if fin_lineno = start_line_inner1 then(
-          let goto_code = gather_goto_code lbl_list [] [] (Def.create_stmtlist st1) in
+          let goto_code = gather_goto_code lbl_list [] (Def.create_stmtlist st1) in
           let exe_paths1 =   if (List.length exe_paths1) = 0 then (exe_paths1@[goto_code])
             else (map_append goto_code exe_paths1)
           in
@@ -538,7 +528,7 @@ let rec generate_exe_paths_simple fin_lineno exe_paths lbl_list = function
 
 
         else if fin_lineno = start_line_inner2 then
-          let goto_code = gather_goto_code lbl_list [] [] (Def.create_stmtlist st2) in
+          let goto_code = gather_goto_code lbl_list [] (Def.create_stmtlist st2) in
           let exe_paths2 =   if (List.length exe_paths2) = 0 then (exe_paths2@[goto_code])
             else (map_append goto_code exe_paths2)
           in
@@ -1321,8 +1311,8 @@ let rec find_errorhandling lbl_list = function
       let st1_normal = Def.create_stmtlist st1 in
       let st2_normal = Def.create_stmtlist st2 in
       let h_normal   = Def.create_stmtlist h in
-      let stmt_list_st1 = gather_goto_code lbl_list [] [] st1_normal in
-      let stmt_list_st2 = gather_goto_code lbl_list [] [] st2_normal in
+      let stmt_list_st1 = gather_goto_code lbl_list [] st1_normal in
+      let stmt_list_st2 = gather_goto_code lbl_list [] st2_normal in
       let stmt_list_st2 =
         if has_multiple_st stmt_list_st2
         then stmt_list_st2

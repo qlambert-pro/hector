@@ -2,17 +2,11 @@
 val goto_jump_toback :
   Ast_c.statement -> (Ast_c.name * Ast_c.statement list) list -> bool
 
-(* Return the code a specific goto label *)
-val code_for_goto :
-  Ast_c.name ->
-  (Ast_c.name * (Ast_c.statementbis * 'a) list) list ->
-  (Ast_c.statementbis * 'a) list
-
 (* Return a list of statement following through goto *)
 val gather_goto_code :
   (Ast_c.name * Ast_c.statement list) list ->
   Ast_c.statement list ->
-  Ast_c.name list -> Ast_c.statement list -> Ast_c.statement list
+  Ast_c.statement list -> Ast_c.statement list
 
 (* Return true if any of the var in the list is used in the statement *)
 val any_var_access_stmt :

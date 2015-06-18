@@ -30,7 +30,8 @@ SRC=rr_op_finder.ml
 
 INCLUDES = -I ../commons -I ../commons/ocamlextra -I ../globals -I ../parsing_c -I ./ \
            -I ../definition \
-           -I ../rm_true_positives
+           -I ../rm_true_positives \
+           -I ../errorhandling
 
 LIBS=../commons/commons.cma ../globals/globals.cma \
      ../parsing_c/parsing_c.cma \

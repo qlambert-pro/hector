@@ -62,13 +62,13 @@ let analyze_each_blk_new func lbl_list rr_ops_list prog iifunc1 all_def func_nam
       let miss_rr_ops_list = Rr_op_finder.find_missing_rr_ops_new lbl_list stmtlist rr_ops_list in
       let update_miss_rr_ops_list = refine_rr_ops miss_rr_ops_list in
       if(List.length update_miss_rr_ops_list)> 0 then(
-        let miss_rr_ops_list_new  = Rm_true_positives.is_resource_having_same_def_new func_name iifunc1 []
+        let miss_rr_ops_list_new  = Rm_true_positives.is_resource_having_same_def_new
             blk_strtlineno lbl_list prog errblks_list init_lbl_list update_miss_rr_ops_list  in
         if(List.length miss_rr_ops_list_new)> 0 then(
-          let miss_rr_ops_list1 = Rm_true_positives.is_rrwa_alloc errblks_list stmtlist 
-              blk_strtlineno [] lbl_list prog miss_rr_ops_list_new  in
+          let miss_rr_ops_list1 = Rm_true_positives.is_rrwa_alloc errblks_list 
+              blk_strtlineno lbl_list prog miss_rr_ops_list_new  in
           if(List.length miss_rr_ops_list1)> 0 then(
-            let miss_rr_ops_list_new2  = Rm_true_positives.return_resource_new lbl_list stmtlist []  miss_rr_ops_list1 in
+            let miss_rr_ops_list_new2  = Rm_true_positives.return_resource_new lbl_list stmtlist miss_rr_ops_list1 in
             if(List.length miss_rr_ops_list_new2)> 0 then(
               let miss_rr_ops_list_new3 = 
                 Rm_true_positives.rls_in_exe_paths blk_strtlineno lbl_list prog errblks_list test_case 
@@ -79,7 +79,7 @@ let analyze_each_blk_new func lbl_list rr_ops_list prog iifunc1 all_def func_nam
                 let miss_rr_ops_list_new5 =  
                   Interproc.interproc_new func all_def blk_strtlineno errblks_list prog lbl_list  [] miss_rr_ops_list_new4 in  
                 let miss_rr_ops_list_new6 =  
-                  Rm_true_positives.resource_is_not_allocated_yet errblks_list blk_strtlineno prog lbl_list [] miss_rr_ops_list_new5 in  
+                  Rm_true_positives.resource_is_not_allocated_yet errblks_list blk_strtlineno prog lbl_list miss_rr_ops_list_new5 in  
                 if(List.length miss_rr_ops_list_new6)> 0 then(
                   Report.generate_report_new func_name blk_strtlineno  iifunc1 miss_rr_ops_list_new6;
 

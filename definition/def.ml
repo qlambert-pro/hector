@@ -158,9 +158,7 @@ let compare_stmtlists st1 st2 =
 (* Compare two expressions *)
 
 let compare_exps exp1 exp2 =
-  if (clean_exp exp1) = (clean_exp exp2) then true
-  else false
-
+  (clean_exp exp1) = (clean_exp exp2)
 
 (* Compare two  expression lists  *)
 
@@ -382,31 +380,33 @@ let rec which_exp_exists_in_list_new exps res = function
               else which_exp_exists_in_list_new exps res t
 
 let rec which_exp_exists_in_list_outer arg list = function
-  []-> None
-  | (arg1,b)::t-> if(compare_exps arg arg1) then (
+    [] -> None
+  | (arg1, b)::t ->
+    if compare_exps arg arg1
+    then
+      match which_exp_exists_in_list_new list None b with
+        (Some (((Ast_c.FunCall (e, es)), typ), ii))
+      | (Some (((Ast_c.Cast (_, (((Ast_c.FunCall  (e, es)), typ), ii))), _),
+              _)) ->
+        (Some (((Ast_c.FunCall  (e, es)), typ), ii))
+      | _ -> None
+    else which_exp_exists_in_list_outer arg list t
 
 
-                     match (which_exp_exists_in_list_new list None b) with
-
-                      (Some (((Ast_c.FunCall  (e, es)), typ), ii)) ->
-			(Some (((Ast_c.FunCall  (e, es)), typ), ii))
-                     | (Some (((Ast_c.Cast    (t, (((Ast_c.FunCall  (e, es)), typ), ii))), typ1), ii1))-> (*Printf.printf " unique_id_values %s\n" (Dumper.dump (e));*)
-			 (Some (((Ast_c.FunCall  (e, es)), typ), ii))
-                     |_-> None)
-                  else which_exp_exists_in_list_outer arg list t
-            
-
-let rec unique_id_values list1 list2 = function
-  []->[]
-  | (arg,b)::t-> match (which_exp_exists_in_list_outer arg b list2) with
-                    None -> unique_id_values list1 list2 t
-                  | Some l -> l::(unique_id_values list1 list2 t) 
+let rec unique_id_values list1 list2 =
+  match list1 with
+    [] -> []
+  | (arg, b)::t ->
+    match which_exp_exists_in_list_outer arg b list2 with
+      None   -> unique_id_values t list2
+    | Some l -> l::(unique_id_values t list2)
 
 let rec refine_id_list = function
-  []-> []
-  |  (arg,b)::t-> if(List.length b)> 0 then
-                    (arg,b)::(refine_id_list t)
-                  else refine_id_list t
+    []-> []
+  | (arg, b)::t ->
+    if (List.length b) > 0
+    then (arg, b)::(refine_id_list t)
+    else refine_id_list t
 
 
 (* Whether any statement is exists in an statement list *)
@@ -606,7 +606,7 @@ let find_rcol st =
 (* Find opposite expression of a given expression, say if the given expression is x = NULL then opposite expression will be x != NULL *)
 
 let find_opp_exp exp =
-   match exp with 
+   match exp with
    |  Ast_c.Ident (ident) -> ()
    |  Ast_c.Constant (Ast_c.MultiString _) -> ()
    |  Ast_c.Constant (c) -> ()
@@ -627,3 +627,16 @@ let find_opp_exp exp =
    |  Ast_c.StatementExpr (statxs, _) -> ()
    |  Ast_c.Constructor (t, xs) -> ()
    |  Ast_c.ParenExpr (e) -> ()
+
+(* Temporary factoring *)
+let code_for_goto name labels =
+  try
+    let (_, code) = List.find (fun (a, _) -> compare_names a name) labels in
+    if (inner_blk code) then [] else code
+  with
+    Not_found -> []
+
+
+let filter_empty_list_out xs =
+  let is_empty l = l = []  in
+  List.filter (fun l -> not (is_empty l)) xs
