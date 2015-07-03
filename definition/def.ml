@@ -108,14 +108,14 @@ let remove_stmtEle l=
 *)
 
 
-(* remove statement elements from all statements in the list*)
-
-let rec remove_stmtElelist l=
-          match l with
-            [] -> []
-          | h::t -> match h with
-                      Ast_c.StmtElem st -> st::(remove_stmtElelist t)
-                    | _-> remove_stmtElelist t
+(* remove statement elements from all statements in the list *)
+let rec remove_stmtElelist l =
+  match l with
+    []   -> []
+  | h::t ->
+    match h with
+      Ast_c.StmtElem st -> st::(remove_stmtElelist t)
+    | _ -> remove_stmtElelist t
 
 
 (**************************************************************************  Add element into the statement  *******************************************************)
@@ -289,27 +289,23 @@ in create_lbl_list current finished es
 
 
 (* Create an argument list *)
+let rec create_argslist args_list statements =
+  let create_argslist_aux statement acc =
+    match Ast_c.unwrap statement with
+      Common.Left es ->
+      (match es with
+         (((Ast_c.FunCall  (_, es1)), _), _) ->
+         let new_args_list = create_argslist acc es1 in
+         new_args_list
+       | (((Ast_c.Cast (_, ((exp, typ), ii) )), _), _)
+       | ((exp, typ), ii) ->
+         acc@[Some ((exp, typ), ii)]
+       | _ -> acc)
+    | _ -> acc
+  in
+  List.fold_right create_argslist_aux statements []
 
 
-
-
-
-let rec create_argslist args_list = function
-     []-> args_list  
-  |  h::t-> (match Ast_c.unwrap h with  
-               Common.Left es -> (match  es with  
-                                    (((Ast_c.FunCall  (e, es1)), typ), ii)-> let new_args_list = create_argslist args_list es1 in
-					                                     create_argslist new_args_list t
-                                  | (((Ast_c.SizeOfExpr  (((exp, typ1), ii1))), typ), ii)->
-				      create_argslist args_list t
-(*				      create_argslist ((Some e)::args_list) t*)
-                                  | (((Ast_c.Cast (t1,((exp, typ), ii) )), typ1), ii1) ->  create_argslist (args_list@[Some ((exp, typ), ii)]) t
-                                  | ((exp, typ), ii) ->create_argslist (args_list@[Some ((exp, typ), ii)]) t
-                                  | _ -> create_argslist args_list t )
-               | _ -> create_argslist args_list t  
-            )   
-
-            
 
 
 
@@ -640,3 +636,7 @@ let code_for_goto name labels =
 let filter_empty_list_out xs =
   let is_empty l = l = []  in
   List.filter (fun l -> not (is_empty l)) xs
+
+let boolean_of_option = function
+    None -> false
+  | Some _ -> true
