@@ -585,7 +585,7 @@ let rec rls_in_exe_paths branch_lineno lbl_list prog errblk_list test_case stmtl
         let rec check_each_path = function
             [] -> negative_rec_call ()
           | path::rest ->
-            let t_ref_vars = Pointer_linked.gather_all_ref_var [] path in
+            let t_ref_vars = Pointer_linked.gather_all_ref_var path in
             let ref_vars = refine_ref_list args t_ref_vars in
             let last_access =
               find_last_access (List.hd args) ref_vars None path in
