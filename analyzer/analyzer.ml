@@ -28,7 +28,7 @@ let rec create_rr_ops_list func_name iifunc1 lbl_list rr_ops_list init_lbl_list 
     []-> rr_ops_list 
 
   | (brnch_strtlineno,test_case,typ,blk_strtlineno,blk_endlineno,stmtlist)::t->
-    let new_rr_ops_list= Rr_op_finder.stack_rr_op_new func_name iifunc1 lbl_list rr_ops_list [] stmtlist stmtlist in
+    let new_rr_ops_list= Rr_op_finder.stack_rr_op_new rr_ops_list stmtlist in
     create_rr_ops_list func_name iifunc1 lbl_list new_rr_ops_list init_lbl_list errblks_list t
 
 

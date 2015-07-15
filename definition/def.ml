@@ -327,15 +327,15 @@ let rec exp_exists_in_list exp = function
   | h::t-> if(compare_exps exp h) then true
            else exp_exists_in_list exp t
 
+
 (* Whether a statement is exists in an statement list *)
-
-
-
-
 let rec stmt_exists_in_list st = function
-    []-> false
-  | h::t -> if(compare_stmts st  h) then true 
-            else stmt_exists_in_list st t
+    [] -> false
+  | h::t ->
+    if compare_stmts st h
+    then true
+    else stmt_exists_in_list st t
+
 
 let rec stmt_exists_in_all_list st = function
      []-> true
@@ -460,18 +460,18 @@ let is_string exp =
    | (((Ast_c.Constant (Ast_c.String _)), typ), ii)->true
    |_ -> false
 
-let string_exists_in_stmt st  =
- let flag = ref false in
- (Visitor_c.vk_statement
-   { Visitor_c.default_visitor_c with
-     Visitor_c.kexpr =
-     (function (k,bigf) -> function exp -> k exp;
-         if (is_string exp) then
-           flag:=true
-         else ()
-       ) }
-   st);
- !flag
+let string_exists_in_stmt st =
+  let flag = ref false in
+  (Visitor_c.vk_statement
+     {Visitor_c.default_visitor_c with
+      Visitor_c.kexpr =
+        (function (k, bigf) -> function exp -> k exp;
+           if (is_string exp) then
+             flag:=true
+           else ()
+        )}
+     st);
+  !flag
 
 let rec string_exists_in_stmtlist = function
   []->false
