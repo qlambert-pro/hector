@@ -82,11 +82,8 @@ let rec create_argslist args_list = function
     []   -> args_list
   | h::t ->
     match Ast_c.unwrap h with
-        Common.Left es ->
-      (match es with
-         ((exp, typ), ii) ->
-         create_argslist (args_list@[Some ((exp, typ), ii)]) t
-       | _ -> create_argslist args_list t )
+      Common.Left ((exp, typ), ii) ->
+      create_argslist (args_list@[Some ((exp, typ), ii)]) t
     | _ -> create_argslist args_list t
 
 

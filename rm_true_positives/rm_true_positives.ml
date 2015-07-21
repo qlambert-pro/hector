@@ -981,7 +981,7 @@ let is_resource_having_same_def_new fin_lineno lbl_list prog errblk_list init_lb
         let unique_id_values =
           if List.length id_values1 = 1 &&
              List.length id_values2 = 1
-          then Def.unique_id_values ids_list1 ids_list2 
+          then Def.unique_id_values ids_list1 ids_list2
           else [] in
         if List.length unique_id_values = 1
         then

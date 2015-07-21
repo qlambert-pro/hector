@@ -49,7 +49,6 @@ let rec generate_report_new func_name  line_no iifunc1 = function
                      Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (id10, [ii12]))), typ11), ii11), es10)), typ10), ii10)) -> id10
            | _-> " " in
            let st_lineno = Def.find_startline_no [h] in
-            let start_line = line_no  in
             let filename = Ast_c.file_of_info iifunc1 in
 
             let ro = id in
