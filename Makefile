@@ -29,28 +29,23 @@ VERSION=$(shell cat globals/config.ml.in |grep version |perl -p -e 's/.*"(.*)".*
 ##############################################################################
 # Variables
 ##############################################################################
-TARGET=spatch
+TARGET=hector
 
 
-SRC=flag_cocci.ml main.ml
+SRC=flag_cocci.ml var_dec.ml def.ml report.ml org.ml errorhandling.ml\
+    pointer_linked.ml rm_true_positives.ml interproc.ml rr_op_finder.ml\
+    analyzer.ml main.ml 
 
 OPTLIBFLAGS=
 
 SEXPSYSCMA=bigarray.cma nums.cma
 
 SYSLIBS=str.cma unix.cma $(SEXPSYSCMA)
-LIBS=commons/commons.cma \
-     globals/globals.cma \
-     parsing_c/parsing_c.cma \
-     var_dec/var_dec.cma var_dec.cma definition/definition.cma report/report.cma errorhandling/errorhandling.cma interproc/interproc.cma pointer_linked/pointer_linked.cma rm_true_positives/rm_true_positives.cma rr_op_finder/rr_op_finder.cma analyzer/analyzer.cma
+LIBS=commons/commons.cma globals/globals.cma parsing_c/parsing_c.cma
 
 #used for clean: and depend: and a little for rec & rec.opt
-MAKESUBDIRS=commons \
- globals \
- parsing_c var_dec definition report errorhandling interproc pointer_linked rm_true_positives rr_op_finder analyzer
-INCLUDEDIRS=commons commons/ocamlextra \
- globals \
- parsing_c var_dec definition report errorhandling interproc pointer_linked rm_true_positives rr_op_finder analyzer
+MAKESUBDIRS=commons globals parsing_c
+INCLUDEDIRS=commons commons/ocamlextra globals parsing_c
 
 ##############################################################################
 # Generic variables
