@@ -266,7 +266,7 @@ let interproc_new func_name all_function miss_lineno errblks prog lbl_list =
   List.fold_left interproc_new_aux []
 
 
-let rec gather_all_callin_func line_no lbl_list = function
+let rec gather_all_callin_func line_no = function
     []   -> []
   | h::t ->
     let start_lineno = Def.find_startline_no (Def.create_stmtlist h) in
@@ -280,28 +280,28 @@ let rec gather_all_callin_func line_no lbl_list = function
       |	Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
       |	Ast_c.Labeled (Ast_c.Default st) ->
         if (line_no >= start_lineno && line_no <= end_lineno)
-        then gather_all_callin_func line_no lbl_list (Def.create_stmtlist st)
+        then gather_all_callin_func line_no (Def.create_stmtlist st)
         else
         if line_no > end_lineno &&
            not (Def.boolean_of_option (Def.goto_exists_in_list (Def.create_stmtlist st))) &&
            not(return_exists_in_list (Def.create_stmtlist st))
         then
-          gather_all_callin_func line_no lbl_list (Def.create_stmtlist st)
+          gather_all_callin_func line_no (Def.create_stmtlist st)
         else
         if line_no < end_lineno
         then []
-        else gather_all_callin_func line_no lbl_list t
+        else gather_all_callin_func line_no t
 
       |	Ast_c.ExprStatement (Some (((Ast_c.Assignment (_, _, (((Ast_c.FunCall
                                                                   _), _), _))),
                                    _), _))
       | Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
         ((Def.find_startline_no (Def.create_stmtlist h)),h)::
-        (gather_all_callin_func line_no lbl_list t)
+        (gather_all_callin_func line_no t)
       |	Ast_c.ExprStatement (Some (((Ast_c.Assignment (_, _, e2)), _), _))->
         ((Def.find_startline_no (Def.create_stmtlist h)),
          (Ast_c.ExprStatement (Some e2), []))::
-        (gather_all_callin_func line_no  lbl_list t)
+        (gather_all_callin_func line_no t)
       |	Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
         let start_lineno_st1 = Def.find_startline_no (Def.create_stmtlist st1) in
         let end_lineno_st1 = Def.find_endline_no (Def.create_stmtlist st1) in
@@ -309,12 +309,12 @@ let rec gather_all_callin_func line_no lbl_list = function
         let end_lineno_st2 = Def.find_endline_no (Def.create_stmtlist st2) in
         if (line_no >= start_lineno_st1 && line_no <= end_lineno_st1)
         then
-          gather_all_callin_func line_no lbl_list (Def.create_stmtlist st1)
+          gather_all_callin_func line_no (Def.create_stmtlist st1)
         else
         if (line_no >= start_lineno_st2 && line_no <= end_lineno_st2)
         then
-          gather_all_callin_func line_no lbl_list (Def.create_stmtlist st2)
-        else gather_all_callin_func line_no lbl_list t
+          gather_all_callin_func line_no (Def.create_stmtlist st2)
+        else gather_all_callin_func line_no t
 
       | Ast_c.Selection (Ast_c.Switch (_, st))
       | Ast_c.Iteration (Ast_c.While (_, st))
@@ -322,19 +322,19 @@ let rec gather_all_callin_func line_no lbl_list = function
       | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
       | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st)) ->
         if (line_no >= start_lineno && line_no <= end_lineno)
-        then gather_all_callin_func line_no lbl_list (Def.create_stmtlist st)
-        else gather_all_callin_func line_no lbl_list t
+        then gather_all_callin_func line_no (Def.create_stmtlist st)
+        else gather_all_callin_func line_no t
 
       | Ast_c.Iteration (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
         failwith "for loop with declaration in first argument not supported"
 
       |	Ast_c.Jump (Ast_c.Return)
       |	Ast_c.Jump (Ast_c.ReturnExpr _) -> []
-      | _ -> gather_all_callin_func line_no lbl_list t
-    else gather_all_callin_func line_no lbl_list t
+      | _ -> gather_all_callin_func line_no t
+    else gather_all_callin_func line_no t
 
 
-let find_interproc_calls branch all_function miss_lineno lbl_list prog =
+let find_interproc_calls branch all_function miss_lineno prog =
   let find_interproc_calls_aux acc (alloc, args, h) =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall (_, es)), _), _)) ->
@@ -343,8 +343,8 @@ let find_interproc_calls branch all_function miss_lineno lbl_list prog =
       then (alloc, args, h)::acc
       else
         let all_callin_func =
-          (gather_all_callin_func (Def.find_endline_no branch) lbl_list branch)
-          @(gather_all_callin_func miss_lineno lbl_list prog) in
+          (gather_all_callin_func (Def.find_endline_no branch) branch)
+          @(gather_all_callin_func miss_lineno prog) in
         if find_func_frm_all_func_main h args_list all_function all_callin_func
         then
           acc

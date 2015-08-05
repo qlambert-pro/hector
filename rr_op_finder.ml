@@ -143,9 +143,9 @@ let stack_rr_op_new rr_ops_list statements =
   fst (List.fold_left stack_rr_op_new_aux (rr_ops_list, List.tl statements) statements)
 
 
-let find_missing_rr_ops_new lbl_list errblk rr_ops_list =
+let find_missing_rr_ops_new c_function errblk rr_ops_list =
   let updated_errblk_with_goto_code =
-    Errorhandling.gather_goto_code lbl_list [] errblk in
+    C_function.gather_goto_code c_function [] errblk in
   if updated_errblk_with_goto_code = []
   then []
   else

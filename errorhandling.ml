@@ -1223,7 +1223,7 @@ let defined_alloc id =
   else false
 
 
-let exists_error_handling_block exp lbl_list prog stmtlist part blk_strtlineno =
+let exists_error_handling_block exp c_function stmtlist part blk_strtlineno =
   let blank_type_info = ref (None, Ast_c.NotTest) in
   match (Def.return_exists_in_list stmtlist) with
     None    -> false
@@ -1235,7 +1235,7 @@ let exists_error_handling_block exp lbl_list prog stmtlist part blk_strtlineno =
     in
     let exists_error_handling_block_aux fin_lineno expr =
       let exe_paths_list =
-        generate_exe_paths_simple fin_lineno [] lbl_list prog in
+        C_function.generate_exe_paths_simple fin_lineno [] c_function in
       let id_values = find_recent_id_values_paths expr [] exe_paths_list in
       if(List.exists is_error_return_code id_values)
       then true

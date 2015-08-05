@@ -33,13 +33,6 @@ let rec find_ptr_args_list = function
     |   Def.UnknownType-> h::find_ptr_args_list t
     |   _-> find_ptr_args_list t
 
-let rec find_final_return = function
-    [] -> 1000000
-  | h::t-> match Ast_c.unwrap h with
-      Ast_c.Jump (Ast_c.Return) -> Def.find_startline_no (Def.create_stmtlist h)
-    | Ast_c.Jump (Ast_c.ReturnExpr e) -> Def.find_startline_no (Def.create_stmtlist h)
-    | _-> find_final_return t
-
 let rec any_exp_exists_in_stmt stmt = function
     []-> false
   | h::t-> if (Def.exp_exists_in_stmt (Some h) stmt) then true
@@ -55,7 +48,7 @@ let rec create_stmtlist = function
   | h::t-> ((Ast_c.ExprStatement (Some h),[]))::(create_stmtlist t)
 
 
-let rec return_st_access_resource lbl_list miss_st = function
+let rec return_st_access_resource c_function miss_st = function
     []   -> false
   | h::t ->
     (match Ast_c.unwrap h with
@@ -71,30 +64,21 @@ let rec return_st_access_resource lbl_list miss_st = function
              exp_exists_in_stmtlist (Some e1) args_stmtlist)
         | _ -> false)
      | Ast_c.Jump (Ast_c.Goto name) ->
-       let goto_code = Errorhandling.gather_goto_code lbl_list [] [h] in
+       let goto_code = C_function.gather_goto_code c_function [] [h] in
        (match goto_code with
           [] -> true
-        | _  -> return_st_access_resource lbl_list miss_st goto_code)
-     | _ -> return_st_access_resource lbl_list miss_st t)
-
-
-
-let rec function_return_same_val return_val = function
-    []-> false
-  | h::t-> (match Ast_c.unwrap h with
-        Ast_c.Jump (Ast_c.ReturnExpr e1) -> if (Def.compare_exps return_val e1) then true
-        else function_return_same_val return_val t
-      | _-> function_return_same_val return_val t )
+        | _  -> return_st_access_resource c_function miss_st goto_code)
+     | _ -> return_st_access_resource c_function miss_st t)
 
 
 let rec stmtlist_func_contains_same_val return_val = function
-    []-> false 
+    []-> false
   | h::t-> ( match Ast_c.unwrap h with
-        Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ), ii))-> 
+        Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ), ii))->
         let args_list = Def.remove_optionlist (Def.create_argslist [] es) in
         if (Def.exp_exists_in_list return_val args_list) then true
         else stmtlist_func_contains_same_val return_val t
-      |_-> stmtlist_func_contains_same_val return_val t 		   
+      |_-> stmtlist_func_contains_same_val return_val t
     )
 
 let rec other_errblk_contains_same_val return_val = function
@@ -104,13 +88,13 @@ let rec other_errblk_contains_same_val return_val = function
     else other_errblk_contains_same_val return_val t
 
 
-let remove_blks_that_returns_resource prog errblks blocks =
+let remove_blks_that_returns_resource c_function errblks blocks =
   let remove_blks_that_returns_resource_aux block acc =
     let (_, _, _, _, _, _, _, stmtlist) = block in
     (match (Def.return_exists_in_list stmtlist) with
        None -> acc
      | Some (Ast_c.Jump (Ast_c.ReturnExpr e1), _) ->
-       if function_return_same_val e1 prog
+       if C_function.exists_same_return_value e1 c_function
        then
          match Def.is_pointer e1 with
            Def.IsntPtr-> block::acc
@@ -122,10 +106,10 @@ let remove_blks_that_returns_resource prog errblks blocks =
   in List.fold_right remove_blks_that_returns_resource_aux blocks []
 
 
-let return_resource_new lbl_list errblk =
+let return_resource_new c_function errblk =
   let return_resource_new_aux acc miss_rr =
     let (_, _, h) = miss_rr in
-    if return_st_access_resource lbl_list h errblk
+    if return_st_access_resource c_function h errblk
     then acc
     else miss_rr::acc
   in List.fold_left return_resource_new_aux []
@@ -274,16 +258,11 @@ let rec find_ranking_main blk_strtlineno prog  lbl_list = function
 
     )
 
-
-
-
-
-
-
 let rec refine_ref_list args_list = function
-    []-> []
-  | (a,b)::t->
-    if(Def.compare_exps a (List.hd args_list)) then (a,b)::(refine_ref_list args_list t)
+    []       -> []
+  | (a,b)::t ->
+    if Def.compare_exps a (List.hd args_list)
+    then (a,b)::(refine_ref_list args_list t)
     else refine_ref_list args_list t
 
 
@@ -366,8 +345,8 @@ let rec find_last_access var ref_vars last_access = function
       if (Def.exp_exists_in_list var args_list10) then ( ref_var_mark:= false;
 
                                                          find_last_access var ref_vars (Some h) t)
-      else if (any_var_access_stmt args_list10 ref_vars) then(  
-        find_last_access var ref_vars (Some h) t)  
+      else if (any_var_access_stmt args_list10 ref_vars) then(
+        find_last_access var ref_vars (Some h) t)
       else  find_last_access var ref_vars last_access t
 
 
@@ -396,24 +375,26 @@ let rec stmt_exists_in_any_list st = function
     else  stmt_exists_in_any_list st t
 
 
-let rec rr_in_exe_paths_init_lbl rls lbl_list prog last_func blk_strtlineno = function
+let rec rr_in_exe_paths_init_lbl rls c_function last_func blk_strtlineno = function
     []-> false
   | stmtlist::t->
     if(Def.stmt_exists_in_list rls stmtlist) then
-      let exe_paths_list = Errorhandling.generate_exe_paths_simple (blk_strtlineno-1) [] lbl_list prog in
+      let exe_paths_list = C_function.generate_exe_paths_simple
+          (blk_strtlineno-1) [] c_function in
       if(stmt_exists_in_any_list last_func exe_paths_list) then true
-      else rr_in_exe_paths_init_lbl rls lbl_list prog last_func blk_strtlineno t
-    else rr_in_exe_paths_init_lbl rls lbl_list prog last_func blk_strtlineno t
+      else rr_in_exe_paths_init_lbl rls c_function last_func blk_strtlineno t
+    else rr_in_exe_paths_init_lbl rls c_function last_func blk_strtlineno t
 
 
-let rec rr_in_exe_paths_new rls lbl_list prog last_func = function
+let rec rr_in_exe_paths_new rls c_function last_func = function
     []->false
   | (brnch_strtlineno,test_case,typ,blk_strtlineno,blk_endlineno,stmtlist)::t->
     if(Def.stmt_exists_in_list rls stmtlist) then
-      let exe_paths_list = Errorhandling.generate_exe_paths_simple (blk_strtlineno-1) [] lbl_list prog in
+      let exe_paths_list = C_function.generate_exe_paths_simple
+          (blk_strtlineno-1) [] c_function in
       if(stmt_exists_in_any_list last_func exe_paths_list) then true
-      else rr_in_exe_paths_new rls lbl_list prog last_func t
-    else rr_in_exe_paths_new rls lbl_list prog last_func t
+      else rr_in_exe_paths_new rls c_function last_func t
+    else rr_in_exe_paths_new rls c_function last_func t
 
 let rec stmt_exists_in_list st = function
     []-> false
@@ -422,14 +403,14 @@ let rec stmt_exists_in_list st = function
 
 let rec release_by_address arg = function
     []-> false
-  | h::t->  
-    match h with 
-    | (((Ast_c.Unary (e, Ast_c.GetRef)), typ), ii)-> 
+  | h::t->
+    match h with
+    | (((Ast_c.Unary (e, Ast_c.GetRef)), typ), ii)->
       if (Def.compare_exps arg e) then true
       else
         (
           match e with
-            ((( Ast_c.RecordAccess   (e, name)), typ1), ii1)-> if(Def.compare_exps arg e) then true 
+            ((( Ast_c.RecordAccess   (e, name)), typ1), ii1)-> if(Def.compare_exps arg e) then true
             else release_by_address arg t
           | ((( Ast_c.RecordPtAccess   (e, name)), typ1), ii1)->if(Def.compare_exps arg e) then true
             else release_by_address arg t
@@ -499,19 +480,17 @@ let rec is_locally_main branch_lineno name local = function
     |  _ -> is_locally_main branch_lineno name local t
 
 
-
-
-
-
 let rec any_exp_exists_in_stmtlist_inner arg = function
-    []-> false
-  | h::t-> match Ast_c.unwrap h with
-      Ast_c.ExprStatement (Some ((( Ast_c.FunCall  (e, es)), typ), ii)) -> 
-      if (not(Def.string_exists_in_stmt h)) then
+    []   -> false
+  | h::t ->
+    match Ast_c.unwrap h with
+      Ast_c.ExprStatement (Some ((( Ast_c.FunCall  (e, es)), typ), ii)) ->
+      if not (Def.string_exists_in_stmt h)
+      then
         let args_list = Def.remove_optionlist (Def.create_argslist [] es) in
-        if (Def.exp_exists_in_list arg args_list) then true
-        else if (release_by_address arg args_list) then true
-        else any_exp_exists_in_stmtlist_inner arg t
+        (Def.exp_exists_in_list arg args_list) ||
+        (release_by_address arg args_list) ||
+        any_exp_exists_in_stmtlist_inner arg t
       else any_exp_exists_in_stmtlist_inner arg t
     | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, e2)), typ), ii)) ->
       if(Def.compare_exps arg e1) then true
@@ -529,12 +508,12 @@ let is_defined_alloc alloc =
                                                       (Ast_c.RegularName (id,
                                                                           _))),
                                                   _), _), _)), _), _)) ->
-    Errorhandling.defined_alloc id 
+    Errorhandling.defined_alloc id
   | _-> false
 
 
 (* The function test for numbers and lower case character presumbly as an
- * euristic to differentiate with macros *)
+ * heuristic to differentiate with macros *)
 let is_function_call alloc =
   let reg_alloc = Str.regexp "[a-z0-9_]+" in
   match alloc with
@@ -543,18 +522,18 @@ let is_function_call alloc =
   | _ -> false
 
 
-let rec rls_in_exe_paths branch_lineno lbl_list prog errblk_list test_case stmtlist init_lbl_list list = function
+let rec rls_in_exe_paths branch_lineno c_function errblk_list test_case stmtlist list = function
     [] -> list
   | (alloc, args, rr)::t ->
     let positive_rec_call () =
-      rls_in_exe_paths branch_lineno lbl_list prog errblk_list test_case
-        stmtlist init_lbl_list ((alloc, args, rr)::list) t in
+      rls_in_exe_paths branch_lineno c_function errblk_list test_case
+        stmtlist ((alloc, args, rr)::list) t in
     let negative_rec_call () =
-      rls_in_exe_paths branch_lineno lbl_list prog errblk_list test_case
-        stmtlist init_lbl_list list t in
+      rls_in_exe_paths branch_lineno c_function errblk_list test_case
+        stmtlist list t in
     match Ast_c.unwrap rr with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
-      let final_return = find_final_return prog in
+      let final_return = C_function.find_final_return c_function in
       let args_list =
         find_ptr_args_list (Def.remove_optionlist (Def.create_argslist [] es)) in
       if not (is_function_call alloc)
@@ -571,7 +550,7 @@ let rec rls_in_exe_paths branch_lineno lbl_list prog errblk_list test_case stmtl
            ((Ast_c.Ident ident, _), _)
          | (((Ast_c.RecordAccess (((Ast_c.Ident ident, _), _), _)), _), _)
          | (((Ast_c.RecordPtAccess (((Ast_c.Ident ident, _), _), _)), _), _) ->
-           let local = is_locally_main branch_lineno ident true prog in
+           let local = C_function.is_locally_main branch_lineno ident true c_function in
            not local
          | _ -> false) ||
         Def.stmt_exists_in_list rr stmtlist ||
@@ -580,103 +559,16 @@ let rec rls_in_exe_paths branch_lineno lbl_list prog errblk_list test_case stmtl
       then
         negative_rec_call ()
       else (
-        let fin_lineno = branch_lineno in
-        let exe_paths_lists = Errorhandling.generate_exe_paths_simple fin_lineno [] lbl_list prog in
-        let rec check_each_path = function
-            [] -> negative_rec_call ()
-          | path::rest ->
-            let t_ref_vars = Pointer_linked.gather_all_ref_var path in
-            let ref_vars = refine_ref_list args t_ref_vars in
-            let last_access =
-              find_last_access (List.hd args) ref_vars None path in
-            let tmp =
-              if Def.exp_exists_in_stmt (Some (List.hd args)) (Ast_c.ExprStatement (Some test_case), [])
-              then
-                match test_case with
-                  (((Ast_c.Binary ((((Ast_c.ParenExpr (((Ast_c.Assignment _),
-                                                        _), _)), _), _), _, _)),
-                    _), _) ->
-                  let follow = Errorhandling.is_following_code_access_exp
-                      (((List.hd args_list),[])::ref_vars ) branch_lineno false
-                      final_return prog in
-                  not follow
-                | _ -> false
-              else false in
-            if tmp then
-              negative_rec_call ()
-            else
-              match last_access with
-                None -> if (List.length rest) = 0
-                then
-                  positive_rec_call ()
-                else
-                  check_each_path rest
-              | Some access ->
-                (match Ast_c.unwrap access with
-                   Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
-                   if alloc = access
-                   then
-                     positive_rec_call ()
-                   else if
-                     Def.compare_stmts rr access ||
-                     stmt_exists_in_list access stmtlist
-                   then
-                     negative_rec_call ()
-                   else if
-                     rr_in_exe_paths_new rr lbl_list prog access errblk_list ||
-                     rr_in_exe_paths_init_lbl rr lbl_list prog access
-                       (Def.find_startline_no init_lbl_list) [init_lbl_list]
-                   then
-                     positive_rec_call ()
-                   else
-                     check_each_path rest
-                 | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, _,
-                                                                  ((Ast_c.FunCall
-                                                                      _, _), _))),
-                                               _), _)) ->
-                   if stmt_exists_in_list access stmtlist
-                   then
-                     negative_rec_call ()
-                   else if
-                     Def.exp_exists_in_stmt (Some e1)
-                       (Ast_c.ExprStatement (Some test_case), [])
-                   then
-                     let local =
-                       Errorhandling.is_following_code_access_exp
-                         ((List.hd args, [])::ref_vars)
-                         branch_lineno false final_return prog in
-                     if not local
-                     then
-                       negative_rec_call ()
-                     else
-                       positive_rec_call ()
-                   else if
-                     rr_in_exe_paths_new rr lbl_list prog access errblk_list
-                   then
-                     positive_rec_call ()
-                   else check_each_path rest
-                 | Ast_c.ExprStatement (Some (((Ast_c.Assignment (_, _, (((Ast_c.CondExpr ((((Ast_c.FunCall ((((Ast_c.Ident (Ast_c.RegularName ("IS_ERR", _))), _), _), es10)), _), _), _, _)), _), _))), _), _)) ->
-                   let args_list10 =
-                     Def.remove_optionlist (Def.create_argslist [] es10) in
-                   if
-                     Def.compare_exps (List.hd args_list10) (List.hd args)
-                   then
-                     negative_rec_call ()
-                   else
-                     check_each_path rest
-                 | _ -> check_each_path rest)
-        in check_each_path exe_paths_lists)
-   | _ -> negative_rec_call ()
-
-
-
-
+        if C_function.check_each_path c_function alloc rr args args_list
+            branch_lineno test_case stmtlist final_return errblk_list
+        then positive_rec_call ()
+        else negative_rec_call ())
+    | _ -> negative_rec_call ()
 
 let rec find_all_poss_alloc args_list = function
     []->[]
   |  h::t-> match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ), ii)) ->
-
       let args_list1 = Def.create_argslist [] es in
       if (List.length args_list1) > 0 && (Def.compare_explists (Def.remove_optionlist args_list1) (Def.remove_optionlist args_list)) then(
         h::(find_all_poss_alloc args_list t))
@@ -699,13 +591,13 @@ let find_all_rrwa statments =
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
       (match args_list with
-        [] -> s::acc
-      | _  -> acc)
+         [] -> s::acc
+       | _  -> acc)
     | _ -> acc
   in
   List.fold_right find_all_rrwa_aux statments []
 
- 
+
 let rec find_all_rrwa_main rrwa_list = function
     []   -> rrwa_list
   | h::t ->
@@ -750,10 +642,10 @@ let find_first_model_blk miss_st mergin model errblk_list =
 let rec find_model_blk_init_lbl miss_st = function
     [] -> None
   | stmtlist::t ->
-    if Def.stmt_exists_in_list miss_st stmtlist 
+    if Def.stmt_exists_in_list miss_st stmtlist
     then
       Some ((Def.find_startline_no stmtlist), stmtlist)
-    else 
+    else
       find_model_blk_init_lbl miss_st t
 
 
@@ -814,44 +706,45 @@ let rec rem_brn_st_frm_list all_rrwa_in_model_branch = function
     else h::(rem_brn_st_frm_list all_rrwa_in_model_branch t)
 
 
-let is_rrwa_alloc errblk_list miss_blk_st_line lbl_list prog =
+let is_rrwa_alloc errblk_list miss_blk_st_line c_function =
   let is_rrwa_alloc_aux acc (alloc, args, rls) =
     match Ast_c.unwrap rls with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
       (match args_list with
-        [] ->
-        let (model_blk_st_no, model_blk) =
-          find_app_model_blk rls 0 [] 0 miss_blk_st_line errblk_list in
-        let all_rrwa_in_model = find_all_rrwa model_blk in
+         [] ->
+         let (model_blk_st_no, model_blk) =
+           find_app_model_blk rls 0 [] 0 miss_blk_st_line errblk_list in
+         let all_rrwa_in_model = find_all_rrwa model_blk in
 
-        let exe_paths =
-          Errorhandling.generate_exe_paths_simple model_blk_st_no [] lbl_list prog in
-        let all_rrwa_in_model_path = find_all_rrwa_main [] exe_paths in
+         let exe_paths =
+           C_function.generate_exe_paths_simple model_blk_st_no [] c_function in
+         let all_rrwa_in_model_path = find_all_rrwa_main [] exe_paths in
 
-        let common_rrwa_in_model_path =
-          find_common_rrwa_in_model_path all_rrwa_in_model_path in
+         let common_rrwa_in_model_path =
+           find_common_rrwa_in_model_path all_rrwa_in_model_path in
 
-        let common_rrwa_in_model_path =
-          rem_brn_st_frm_list all_rrwa_in_model common_rrwa_in_model_path in
-        let pairs_list =
-          make_pairs common_rrwa_in_model_path (List.rev all_rrwa_in_model) [] in
-        let alloc_op = find_alloc_op rls pairs_list in
-        (match alloc_op with
-           None   -> acc
-         | Some a ->
-           let exe_paths_list =
-             Errorhandling.generate_exe_paths_simple (miss_blk_st_line - 1) [] lbl_list prog in
-           if is_defined_alloc a
-           then acc
-           else
-           if Def.stmt_exists_in_all_list a exe_paths_list &&
-              not (Def.stmt_exists_in_all_list rls exe_paths_list)
-           then
-             (a, args, rls)::acc
-           else
-             acc)
-      | _ -> (alloc, args, rls)::acc)
+         let common_rrwa_in_model_path =
+           rem_brn_st_frm_list all_rrwa_in_model common_rrwa_in_model_path in
+         let pairs_list =
+           make_pairs common_rrwa_in_model_path (List.rev all_rrwa_in_model) [] in
+         let alloc_op = find_alloc_op rls pairs_list in
+         (match alloc_op with
+            None   -> acc
+          | Some a ->
+            let exe_paths_list =
+              C_function.generate_exe_paths_simple (miss_blk_st_line - 1) []
+                c_function in
+            if is_defined_alloc a
+            then acc
+            else
+            if Def.stmt_exists_in_all_list a exe_paths_list &&
+               not (Def.stmt_exists_in_all_list rls exe_paths_list)
+            then
+              (a, args, rls)::acc
+            else
+              acc)
+       | _ -> (alloc, args, rls)::acc)
     | _ -> acc
   in
   List.fold_left is_rrwa_alloc_aux []
@@ -892,7 +785,7 @@ let rec find_actual_alloc exe_paths_model exe_paths_candidate = function
     | _ -> find_actual_alloc exe_paths_model exe_paths_candidate t
 
 
-let resource_is_not_allocated_yet errblks miss_line prog lbl_list =
+let resource_is_not_allocated_yet errblks miss_line c_function =
   let resource_is_not_allocated_yet_aux acc (alloc, args, rrl) =
     let alloc_line = Def.find_startline_no (Def.create_stmtlist alloc) in
     match Ast_c.unwrap rrl with
@@ -904,8 +797,10 @@ let resource_is_not_allocated_yet errblks miss_line prog lbl_list =
         if List.length lines > 0
         then
           let model_blk_st_no = fst (find_app_model_blk rrl 0 [] 0 miss_line errblks) in
-          let exe_paths_model = Errorhandling.generate_exe_paths_simple (model_blk_st_no - 1) [] lbl_list prog in
-          let exe_paths_candidate = Errorhandling.generate_exe_paths_simple miss_line [] lbl_list prog in
+          let exe_paths_model = C_function.generate_exe_paths_simple
+              (model_blk_st_no - 1) [] c_function in
+          let exe_paths_candidate = C_function.generate_exe_paths_simple
+              miss_line [] c_function in
           let all_pos_alloc_can = find_all_poss_alloc_main args_list [] exe_paths_model in
           let common_alloc = find_common_rrwa_in_model_path all_pos_alloc_can in
           let actual_alloc = find_actual_alloc exe_paths_model exe_paths_candidate common_alloc  in
@@ -921,8 +816,8 @@ let resource_is_not_allocated_yet errblks miss_line prog lbl_list =
 (* Return the list of last assigned valeus for each path when only one argument
  * has a list *)
 let find_idvalues_list exe_paths_list id_values args_list =
-  let find_idvalues_list_aux el =  
-      Errorhandling.find_recent_id_values_paths_second el [] exe_paths_list in
+  let find_idvalues_list_aux el =
+    Errorhandling.find_recent_id_values_paths_second el [] exe_paths_list in
   let all_id_values = List.map find_idvalues_list_aux args_list in
   let tmp = Def.filter_empty_list_out all_id_values in
   match tmp with
@@ -941,51 +836,53 @@ let filter_null_out =
   in
   List.fold_left filter_null_out_aux []
 
-let is_resource_having_same_def_new fin_lineno lbl_list prog errblk_list init_lbl_list =
+let is_resource_having_same_def_new fin_lineno c_function errblk_list =
   let is_resource_having_same_def_new_aux acc (alloc, args_list, h) =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
       if args_list != []
       then
-        let exe_paths_list = Errorhandling.generate_exe_paths_simple fin_lineno [] lbl_list prog in
-        let ids_list1 = Def.refine_id_list (Errorhandling.list_of_id_values exe_paths_list args_list) in
-        let id_values1 =
-          match args_list with
-            [h] -> Errorhandling.find_recent_id_values_paths (List.hd args_list) [] exe_paths_list
-          | _   -> find_idvalues_list exe_paths_list [] args_list in
-        let id_values1 =
-          if same_id_values id_values1 &&
-             List.length id_values1 != 0
-          then [(List.hd id_values1)]
-          else [] in
-        let id_values1 = filter_null_out id_values1 in
-        let match_model = find_model_blk_init_lbl h [init_lbl_list] in
+
+        let match_model = C_function.find_model_block_by_release_statement
+            c_function h in
         let model_blk_st_no =
           match (find_first_model_blk h 10000000 None errblk_list, match_model) with
             (Some (model_blk_st_no, _), _)
           | (None, Some (model_blk_st_no, _)) -> model_blk_st_no
           | (None, None) -> 0
         in
-        let exe_paths_list = Errorhandling.generate_exe_paths_simple (model_blk_st_no - 1) [] lbl_list prog in
-        let ids_list2 = Def.refine_id_list (Errorhandling.list_of_id_values exe_paths_list args_list) in
-        let id_values2 =
-          if List.length args_list = 1
-          then Errorhandling.find_recent_id_values_paths (List.hd args_list) [] exe_paths_list
-          else find_idvalues_list exe_paths_list [] args_list in
-        let id_values2 = filter_null_out id_values2 in
-        let id_values2 =
-          if same_id_values id_values2 &&
-             List.length id_values2 != 0
-          then [(List.hd id_values2)]
-          else [] in
+
+        let id_values1 = C_function.get_identifier_values
+            c_function fin_lineno args_list in
+        let id_values2 = C_function.get_identifier_values
+            c_function (model_blk_st_no - 1) args_list in
+
         let unique_id_values =
           if List.length id_values1 = 1 &&
              List.length id_values2 = 1
-          then Def.unique_id_values ids_list1 ids_list2
+          then
+            match (List.hd id_values1, List.hd id_values2) with
+              ((((Ast_c.FunCall (_, _)), _), _) as e1,
+               (((Ast_c.Cast (_, ((((Ast_c.FunCall  (_, _)), _), _) as e2))), _),
+                _)) when Def.compare_exps e1 e2
+              -> [e1]
+            | ((((Ast_c.FunCall (_, _)), _), _) as e1,
+               ((((Ast_c.FunCall (_, _)), _), _) as e2)) when Def.compare_exps e1 e2
+              -> [e1]
+            | ((((Ast_c.Cast (_, ((((Ast_c.FunCall  (_, _)), _), _) as e1))), _),
+                _),
+               ((((Ast_c.FunCall (_, _)), _), _) as e2)) when Def.compare_exps e1 e2
+              -> [e1]
+            | ((((Ast_c.Cast (_, ((((Ast_c.FunCall (_, _)), _), _) as e1))), _),
+                _),
+               (((Ast_c.Cast (_, ((((Ast_c.FunCall (_, _)), _), _) as e2))), _), _))
+              when Def.compare_exps e1 e2
+              -> [e1]
+            | _ -> []
           else [] in
         if List.length unique_id_values = 1
         then
-           ((Ast_c.ExprStatement (Some (List.hd unique_id_values)), []), args_list, h)::acc
+          ((Ast_c.ExprStatement (Some (List.hd unique_id_values)), []), args_list, h)::acc
         else acc
       else (alloc, args_list, h)::acc
     | _ -> acc

@@ -14,7 +14,6 @@ val find_interproc_calls :
   Ast_c.statement list ->
   (Ast_c.name * 'a * Ast_c.statement list) list ->
   int ->
-  'b ->
   Ast_c.statement list ->
   ('c * 'd * Ast_c.statement) list ->
   ('c * 'd * Ast_c.statement) list

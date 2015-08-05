@@ -32,8 +32,8 @@ VERSION=$(shell cat globals/config.ml.in |grep version |perl -p -e 's/.*"(.*)".*
 TARGET=hector
 
 
-SRC=flag_cocci.ml var_dec.ml def.ml report.ml org.ml errorhandling.ml\
-    pointer_linked.ml rm_true_positives.ml interproc.ml rr_op_finder.ml\
+SRC=flag_cocci.ml var_dec.ml def.ml report.ml pointer_linked.ml c_function.ml\
+    org.ml errorhandling.ml rm_true_positives.ml interproc.ml rr_op_finder.ml\
     analyzer.ml main.ml 
 
 OPTLIBFLAGS=

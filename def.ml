@@ -323,9 +323,11 @@ let rec name_exists_in_list name = function
 (* Whether an expression is exists in an expression list *)
 
 let rec exp_exists_in_list exp = function
-    []-> false
-  | h::t-> if(compare_exps exp h) then true
-           else exp_exists_in_list exp t
+    []   -> false
+  | h::t ->
+    if compare_exps exp h
+    then true
+    else exp_exists_in_list exp t
 
 
 (* Whether a statement is exists in an statement list *)
@@ -369,33 +371,39 @@ let rec which_exp_exists_in_list exps = function
   |    h::t-> if(exp_exists_in_list h exps) then (Some h)
               else which_exp_exists_in_list exps t
 
-let rec which_exp_exists_in_list_new exps res = function
-    []-> res
-  |     h::t-> 
-             if(exp_exists_in_list h exps) then which_exp_exists_in_list_new exps (Some h) t
-              else which_exp_exists_in_list_new exps res t
+(* Returns an expression present in both exps and the last argument *)
+let which_exp_exists_in_list_new exps =
+  let which_exp_exists_in_list_aux acc e =
+    if exp_exists_in_list e exps
+    then Some e
+    else acc
+  in
+  List.fold_left which_exp_exists_in_list_aux None
 
-let rec which_exp_exists_in_list_outer arg list = function
-    [] -> None
+
+let rec which_exp_exists_in_list_outer (arg, list) = function
+    []           -> None
   | (arg1, b)::t ->
     if compare_exps arg arg1
     then
-      match which_exp_exists_in_list_new list None b with
+      match which_exp_exists_in_list_new list b with
         (Some (((Ast_c.FunCall (e, es)), typ), ii))
       | (Some (((Ast_c.Cast (_, (((Ast_c.FunCall  (e, es)), typ), ii))), _),
               _)) ->
         (Some (((Ast_c.FunCall  (e, es)), typ), ii))
       | _ -> None
-    else which_exp_exists_in_list_outer arg list t
+    else which_exp_exists_in_list_outer (arg, list) t
 
 
-let rec unique_id_values list1 list2 =
-  match list1 with
-    [] -> []
-  | (arg, b)::t ->
-    match which_exp_exists_in_list_outer arg b list2 with
-      None   -> unique_id_values t list2
-    | Some l -> l::(unique_id_values t list2)
+let unique_id_values list1 list2 =
+  let unique_id_values_aux acc id =
+    let expression = which_exp_exists_in_list_outer id list2 in
+    match expression with
+      None   -> acc
+    | Some e -> e::acc
+  in
+  List.fold_left unique_id_values_aux [] list1
+
 
 let rec refine_id_list = function
     []-> []
@@ -420,7 +428,7 @@ let rec goto_exists_in_list = function
   | h::t ->  match Ast_c.unwrap h with
                 Ast_c.Jump (Ast_c.Goto name) -> Some h
              | _ -> goto_exists_in_list t
-            
+
 
 
 
