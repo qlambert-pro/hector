@@ -3,6 +3,7 @@ open Common
 let ref_var_mark = ref false
 
 type c_function =
+
   {ast: Ast_c.statement list;
    init_labels: Ast_c.statement list;
    (*      cfg: Control_flow.cflow; *)
@@ -81,7 +82,7 @@ let rec gather_all_callin_func line_no = function
 
       |	Ast_c.ExprStatement (Some (((Ast_c.Assignment (_, _, (((Ast_c.FunCall
                                                                   _), _), _))),
-                                   _), _))
+                                    _), _))
       | Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
         ((Def.find_startline_no (Def.create_stmtlist h)),h)::
         (gather_all_callin_func line_no t)
@@ -182,7 +183,9 @@ let find_func_frm_all_func_main st args_list all_function =
   List.exists find_func_frm_all_func_main_aux
 
 
-let find_interproc_calls branch all_function miss_lineno c_function =
+let find_interproc_calls all_function block c_function =
+  let branch = Block.extract_statements block in
+  let miss_lineno = Block.extract_branch_start block in
   let {ast = prog} = c_function in
   let find_interproc_calls_aux acc (alloc, args, h) =
     match Ast_c.unwrap h with
@@ -231,20 +234,23 @@ let rec gather_goto_code c_function goto_code = function
     []   -> goto_code
   | h::t ->
     let {labels = lbl_list} = c_function in
-    (match Ast_c.unwrap h with
-       Ast_c.Jump (Ast_c.Return) -> (goto_code@[h])
-     | Ast_c.Jump (Ast_c.ReturnExpr e) -> (goto_code@[h])
-     | Ast_c.Jump (Ast_c.Goto name) ->
-       if not (goto_jump_toback c_function h)
-       then
-         let new_goto_code = Def.code_for_goto name lbl_list in
-         if (List.length new_goto_code) = 0
-         then []
-         else
-           gather_goto_code c_function goto_code new_goto_code
-       else []
-     | _-> gather_goto_code c_function (goto_code@[h]) t
-    )
+    match Ast_c.unwrap h with
+      Ast_c.Jump (Ast_c.Return) -> (goto_code@[h])
+    | Ast_c.Jump (Ast_c.ReturnExpr e) -> (goto_code@[h])
+    | Ast_c.Jump (Ast_c.Goto name) ->
+      if not (goto_jump_toback c_function h)
+      then
+        let new_goto_code = Def.code_for_goto name lbl_list in
+        if (List.length new_goto_code) = 0
+        then []
+        else
+          gather_goto_code c_function goto_code new_goto_code
+      else []
+    | _-> gather_goto_code c_function (goto_code@[h]) t
+
+let gather_goto_code_from_block c_function block =
+  let statements = Block.extract_statements block in
+  gather_goto_code c_function [] statements
 
 let rec is_locally_dec branch_lineno = function
     []   -> false
@@ -254,7 +260,8 @@ let rec is_locally_dec branch_lineno = function
     if (branch_lineno>= start_line && branch_lineno<=end_line) then true
     else is_locally_dec branch_lineno t
 
-let is_locally_main branch_lineno name local c_function =
+let is_locally_main block name local c_function =
+  let branch_lineno = Block.extract_branch_start block in
   let {ast = ast} = c_function in
   let rec is_locally_main_aux name local = function
       []   -> local
@@ -554,100 +561,95 @@ let rec return_error e typ = function
 
 
 
-let rec find_errorhandling c_function =
-  let {ast = ast;
-       init_labels = init_labels;
-       labels = lbl_list} = c_function in
-  match ast with
-    []   -> []
-  | h::t ->
-    let build_errorhandling_block_list st =
-      let outer_EHC = find_errorhandling {ast = t; init_labels = init_labels; labels = lbl_list} in
-      if Def.inner_block_in_compound_stmt st
-      then
+let find_errorhandling c_function =
+  let {ast = ast} = c_function in
+  let rec find_errorhandling_aux statements =
+    match statements with
+      []   -> []
+    | h::t ->
+      let build_errorhandling_block_list st =
+        let outer_EHC = find_errorhandling_aux t in
+        if Def.inner_block_in_compound_stmt st
+        then
+          let inner_EHC =
+            find_errorhandling_aux (Def.create_stmtlist st) in
+          inner_EHC@outer_EHC
+        else
+          outer_EHC
+      in
+      match Ast_c.unwrap h with
+      | Ast_c.Labeled (Ast_c.Label (_, st))
+      | Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
+      | Ast_c.Labeled (Ast_c.Case  (_, st))
+      | Ast_c.Selection  (Ast_c.Switch (_, st))
+      | Ast_c.Iteration  (Ast_c.While (_, st))
+      | Ast_c.Iteration  (Ast_c.DoWhile (st, _))
+      | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
+      | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st))
+      | Ast_c.Labeled (Ast_c.Default st) ->
+        build_errorhandling_block_list st
+
+      | Ast_c.Compound _ ->
+        build_errorhandling_block_list h
+
+      | Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
+        let outer_EHC  = find_errorhandling_aux t in
+        let st1_normal = Def.create_stmtlist st1 in
+        let st2_normal = Def.create_stmtlist st2 in
+        let h_normal   = Def.create_stmtlist h in
+        let stmt_list_st1 = gather_goto_code c_function [] st1_normal in
+        let stmt_list_st2 = gather_goto_code c_function [] st2_normal in
+        let stmt_list_st2 =
+          if has_multiple_st stmt_list_st2
+          then stmt_list_st2
+          else []
+        in
+        let branch1_st_lineno = Def.find_startline_no st1_normal in
+        let branch1_en_lineno = Def.find_endline_no stmt_list_st1 in
+        let branch2_st_lineno = Def.find_startline_no st2_normal in
+        let branch2_en_lineno = Def.find_endline_no stmt_list_st2 in
+        let inner_EHC1 = find_errorhandling_aux stmt_list_st1 in
+        let inner_EHC2 = find_errorhandling_aux stmt_list_st2 in
+        let goto1 = Def.goto_exists_in_list st1_normal in
+        let goto2 = Def.goto_exists_in_list st2_normal in
+        let block1 = Block.mk_block (Def.find_startline_no h_normal) e goto1
+            st1_normal Def.Then branch1_st_lineno branch1_en_lineno stmt_list_st1
+        in
+        let block2 = Block.mk_block (Def.find_startline_no h_normal) e goto2
+            st2_normal Def.Else branch2_st_lineno branch2_en_lineno stmt_list_st2
+        in
         let inner_EHC =
-          find_errorhandling {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+          match Def.inner_block_in_compound_stmt st1,
+                Def.inner_block_in_compound_stmt st2,
+                stmt_list_st1,
+                stmt_list_st2,
+                return_error e Def.Then stmt_list_st1,
+                return_error e Def.Else stmt_list_st2
+          with
+            (true, true, _, _, _, _) -> inner_EHC1@inner_EHC2
+          | (true, _, _, [], _, _    )
+          | (true, _, _,  _, _, false) -> inner_EHC1
+          | (true, _, _,  _, _, _    ) -> block2::inner_EHC1
+          | (_, true, [], _, _    , _)
+          | (_, true,  _, _, false, _) -> inner_EHC2
+          | (_, true,  _, _, _    , _) -> block1::inner_EHC2
+          | (_, _, x::xs, y::ys, true, true) -> block1::[block2]
+          | (_, _, x::xs, y::ys, true, _   ) -> [block1]
+          | (_, _, x::xs, y::ys, _   , true) -> [block2]
+          | (_, _, x::xs, _    , true, _   ) ->
+            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
+            [block1]
+          | (_, _, _    , x::xs, _   , true) ->
+            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
+            [block2]
+          | _ -> []
+        in
         inner_EHC@outer_EHC
-      else
-        outer_EHC
-    in
-    match Ast_c.unwrap h with
-    | Ast_c.Labeled (Ast_c.Label (_, st))
-    | Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
-    | Ast_c.Labeled (Ast_c.Case  (_, st))
-    | Ast_c.Selection  (Ast_c.Switch (_, st))
-    | Ast_c.Iteration  (Ast_c.While (_, st))
-    | Ast_c.Iteration  (Ast_c.DoWhile (st, _))
-    | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
-    | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st))
-    | Ast_c.Labeled (Ast_c.Default st) ->
-      build_errorhandling_block_list st
-
-    | Ast_c.Compound _ ->
-      build_errorhandling_block_list h
-
-    | Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
-      let outer_EHC  = find_errorhandling {ast = t; init_labels = init_labels; labels = lbl_list} in
-      let st1_normal = Def.create_stmtlist st1 in
-      let st2_normal = Def.create_stmtlist st2 in
-      let h_normal   = Def.create_stmtlist h in
-      let stmt_list_st1 = gather_goto_code c_function [] st1_normal in
-      let stmt_list_st2 = gather_goto_code c_function [] st2_normal in
-      let stmt_list_st2 =
-        if has_multiple_st stmt_list_st2
-        then stmt_list_st2
-        else []
-      in
-      let branch1_st_lineno = Def.find_startline_no st1_normal in
-      let branch1_en_lineno = Def.find_endline_no stmt_list_st1 in
-      let branch2_st_lineno = Def.find_startline_no st2_normal in
-      let branch2_en_lineno = Def.find_endline_no stmt_list_st2 in
-      let inner_EHC1 = find_errorhandling {labels = lbl_list; init_labels = init_labels;
-                                           ast = stmt_list_st1} in
-      let inner_EHC2 = find_errorhandling {labels = lbl_list; init_labels = init_labels;
-                                           ast = stmt_list_st2} in
-      let goto1 = Def.goto_exists_in_list st1_normal in
-      let goto2 = Def.goto_exists_in_list st2_normal in
-      let block1 =
-        (Def.find_startline_no h_normal, e, goto1, st1_normal, Def.Then,
-         branch1_st_lineno, branch1_en_lineno, stmt_list_st1)
-      in
-      let block2 =
-        (Def.find_startline_no h_normal, e, goto2, st2_normal, Def.Else,
-         branch2_st_lineno, branch2_en_lineno, stmt_list_st2)
-      in
-      let inner_EHC =
-        match Def.inner_block_in_compound_stmt st1,
-              Def.inner_block_in_compound_stmt st2,
-              stmt_list_st1,
-              stmt_list_st2,
-              return_error e Def.Then stmt_list_st1,
-              return_error e Def.Else stmt_list_st2
-        with
-          (true, true, _, _, _, _) -> inner_EHC1@inner_EHC2
-        | (true, _, _, [], _, _    )
-        | (true, _, _,  _, _, false) -> inner_EHC1
-        | (true, _, _,  _, _, _    ) -> block2::inner_EHC1
-        | (_, true, [], _, _    , _)
-        | (_, true,  _, _, false, _) -> inner_EHC2
-        | (_, true,  _, _, _    , _) -> block1::inner_EHC2
-        | (_, _, x::xs, y::ys, true, true) -> block1::[block2]
-        | (_, _, x::xs, y::ys, true, _   ) -> [block1]
-        | (_, _, x::xs, y::ys, _   , true) -> [block2]
-        | (_, _, x::xs, _    , true, _   ) ->
-          Var_dec.all_ehc := !Var_dec.all_ehc + 1;
-          [block1]
-        | (_, _, _    , x::xs, _   , true) ->
-          Var_dec.all_ehc := !Var_dec.all_ehc + 1;
-          [block2]
-        | _ -> []
-      in
-      inner_EHC@outer_EHC
-
-    | Ast_c.Iteration (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
-      failwith "for loop with declaration in first argument not supported"
-
-    | _ -> find_errorhandling {ast = t; init_labels = init_labels; labels = lbl_list}
+      | Ast_c.Iteration (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
+        failwith "for loop with declaration in first argument not supported"
+      | _ -> find_errorhandling_aux t
+  in
+  find_errorhandling_aux ast
 
 let is_return_or_goto x =
   match Ast_c.unwrap x with
@@ -1281,7 +1283,8 @@ let find_model_block_by_release_statement c_function miss_st =
   let {init_labels = label_statements} = c_function in
   if Def.stmt_exists_in_list miss_st label_statements
   then
-    Some ((Def.find_startline_no label_statements), label_statements)
+    Some (Block.mk_block_simple (Def.find_startline_no label_statements)
+            label_statements)
   else
     None
 
@@ -1471,8 +1474,12 @@ let rec list_of_id_values exe_paths_list =
   List.map (fun id -> (id, find_recent_id_values_paths id [] exe_paths_list))
 
 (* FYI the empty list is used as None because reasons ... -_-' *)
-let get_identifier_values c_function fin_lineno args_list =
-  let exe_paths_list = generate_exe_paths_simple fin_lineno
+let get_identifier_values c_function block offset args_list =
+  let fin_lineno =
+    match block with
+      None   -> 0
+    | Some b -> Block.extract_branch_start b in
+  let exe_paths_list = generate_exe_paths_simple (fin_lineno + offset)
       [] c_function in
   let ids_list = Def.refine_id_list (list_of_id_values exe_paths_list args_list) in
   let id_values =
@@ -1594,18 +1601,24 @@ let rec find_last_access var ref_vars last_access = function
 
 
 let rec rr_in_exe_paths_new rls c_function last_func = function
-    []->false
-  | (brnch_strtlineno,test_case,typ,blk_strtlineno,blk_endlineno,stmtlist)::t->
-    if(Def.stmt_exists_in_list rls stmtlist) then
-      let exe_paths_list = generate_exe_paths_simple
-          (blk_strtlineno-1) [] c_function in
-      if(stmt_exists_in_any_list last_func exe_paths_list) then true
+    [] -> false
+  | block::t->
+    if Block.does_block_contains_statement block rls 
+    then
+      let blk_strtlineno = Block.extract_branch_start block in
+      let exe_paths_list = generate_exe_paths_simple (blk_strtlineno-1) []
+          c_function in
+      if stmt_exists_in_any_list last_func exe_paths_list
+      then true
       else rr_in_exe_paths_new rls c_function last_func t
     else rr_in_exe_paths_new rls c_function last_func t
 
 
-let check_each_path c_function alloc rr args args_list branch_lineno test_case
-    stmtlist final_return errblk_list =
+let check_each_path c_function alloc rr args args_list block final_return
+    errblk_list =
+  let branch_lineno = Block.extract_branch_start block in
+  let test_case = Block.extract_test_case block in
+  let stmtlist = Block.extract_statements block in
   let exe_paths_lists = generate_exe_paths_simple branch_lineno
       [] c_function in
   let rec check_each_path_aux = function
@@ -1664,3 +1677,79 @@ let check_each_path c_function alloc rr args args_list branch_lineno test_case
            | _ -> check_each_path_aux rest)
   in
   check_each_path_aux exe_paths_lists
+
+let rec find_all_poss_alloc args_list = function
+    []->[]
+  |  h::t-> match Ast_c.unwrap h with
+      Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ), ii)) ->
+      let args_list1 = Def.create_argslist [] es in
+      if (List.length args_list1) > 0 && (Def.compare_explists (Def.remove_optionlist args_list1) (Def.remove_optionlist args_list)) then(
+        h::(find_all_poss_alloc args_list t))
+      else find_all_poss_alloc args_list t
+    | _-> find_all_poss_alloc args_list t
+
+
+let rec find_all_poss_alloc_main args_list poss_list = function
+    []-> poss_list
+  |  h::t-> let tmp_list = find_all_poss_alloc args_list h in
+    if(List.length tmp_list) > 0 then
+      find_all_poss_alloc_main args_list (tmp_list::poss_list) t
+    else find_all_poss_alloc_main args_list poss_list t
+
+
+let rec find_common_rrwa_in_model_path_inner list = function
+    []->[]
+  | h::t-> if(Def.stmt_exists_in_all_list h list) then
+      h::(find_common_rrwa_in_model_path_inner list t)
+    else find_common_rrwa_in_model_path_inner list t
+
+
+let find_common_rrwa_in_model_path = function
+    []->[]
+  | h::t-> (find_common_rrwa_in_model_path_inner  t h)
+
+
+let find_possible_alloc_with_given_argument c_function model_block args_list =
+  let model_blk_st_no =
+    match model_block with
+      Some model_blk -> Block.extract_branch_start model_blk
+    | None -> 0
+  in
+  let exe_paths_model = generate_exe_paths_simple
+      (model_blk_st_no - 1) [] c_function in
+  let all_pos_alloc_can = find_all_poss_alloc_main args_list []
+      exe_paths_model in
+  find_common_rrwa_in_model_path all_pos_alloc_can
+
+
+
+let rec stmt_exists_in_exe_paths_inner stmt = function
+    []-> false
+  | h::t -> if (Def.compare_stmts h stmt) then true
+    else stmt_exists_in_exe_paths_inner stmt t
+
+let rec stmt_exists_in_exe_paths stmt = function
+    []-> false
+  | h::t-> if stmt_exists_in_exe_paths_inner stmt h then true
+    else stmt_exists_in_exe_paths stmt t
+
+let rec find_actual_alloc exe_paths_candidate = function
+    []   -> false
+  | h::t ->
+    if not (stmt_exists_in_exe_paths h exe_paths_candidate)
+    then
+      true
+    else find_actual_alloc exe_paths_candidate t
+
+
+
+let is_resource_allocated c_function model_block release_block args_list =
+  let possible_alloc =
+    find_possible_alloc_with_given_argument c_function model_block args_list
+  in
+  let miss_line = Block.extract_branch_start release_block in
+  let exe_paths_candidate = generate_exe_paths_simple
+      miss_line [] c_function in
+  find_actual_alloc exe_paths_candidate possible_alloc
+
+

@@ -8,6 +8,6 @@ val stack_rr_op_new :
 (* Find missing resource releasing operations from error handling block *)
 val find_missing_rr_ops_new :
   C_function.c_function ->
-  Ast_c.statement list ->
+  Block.block ->
   ('a * Ast_c.statement) list ->
   (Ast_c.statement * 'a * Ast_c.statement) list

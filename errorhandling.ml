@@ -1223,9 +1223,8 @@ let defined_alloc id =
   else false
 
 
-let exists_error_handling_block exp c_function stmtlist part blk_strtlineno =
-  let blank_type_info = ref (None, Ast_c.NotTest) in
-  match (Def.return_exists_in_list stmtlist) with
+let exists_error_handling_block c_function exp stmtlist part blk_strtlineno =
+  match Def.return_exists_in_list stmtlist with
     None    -> false
   | Some st ->
     let return_expr =
@@ -1233,14 +1232,16 @@ let exists_error_handling_block exp c_function stmtlist part blk_strtlineno =
         Ast_c.Jump (Ast_c.ReturnExpr (e, _)) -> Some e
       | _ -> None
     in
+    (* Return true if expr has been assigned an error return code or
+     * if we are on the error branch of a test_case *)
     let exists_error_handling_block_aux fin_lineno expr =
       let exe_paths_list =
         C_function.generate_exe_paths_simple fin_lineno [] c_function in
       let id_values = find_recent_id_values_paths expr [] exe_paths_list in
-      if(List.exists is_error_return_code id_values)
+      if List.exists is_error_return_code id_values
       then true
       else
-        (match part with
+        match part with
            Def.Then ->
            (match is_error_code_test exp with
               Some true -> true
@@ -1249,7 +1250,7 @@ let exists_error_handling_block exp c_function stmtlist part blk_strtlineno =
          | Def.Else ->
            (match is_error_code_test exp with
               Some _ -> false
-            | _      -> true))
+            | _      -> true)
     in
     (match return_expr with
        Some ((Ast_c.Ident (Ast_c.RegularName(id, ii))), typ) ->
@@ -1267,14 +1268,14 @@ let exists_error_handling_block exp c_function stmtlist part blk_strtlineno =
        else
          let fin_lineno = Def.find_startline_no (Def.create_stmtlist st) in
          let expr = (((Ast_c.Ident (Ast_c.RegularName(id, ii))),
-                      blank_type_info), []) in
+                      Ast_c.noType ()), []) in
          exists_error_handling_block_aux fin_lineno expr
 
      | Some ((Ast_c.Cast (_, (((Ast_c.ParenExpr ((((Ast_c.Ident ident),
                                                    _), _))), _), _))), _)
      | Some ((Ast_c.Cast (_, (((Ast_c.Ident ident), _), _))), _) ->
        let fin_lineno = Def.find_startline_no (Def.create_stmtlist st) in
-       let expr = (((Ast_c.Ident ident), blank_type_info), []) in
+       let expr = (((Ast_c.Ident ident), Ast_c.noType ()), []) in
        exists_error_handling_block_aux fin_lineno expr
 
      | _ -> true)

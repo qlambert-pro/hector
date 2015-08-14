@@ -145,7 +145,7 @@ let stack_rr_op_new rr_ops_list statements =
 
 let find_missing_rr_ops_new c_function errblk rr_ops_list =
   let updated_errblk_with_goto_code =
-    C_function.gather_goto_code c_function [] errblk in
+    C_function.gather_goto_code_from_block c_function errblk in
   if updated_errblk_with_goto_code = []
   then []
   else

@@ -48,7 +48,7 @@ let rec create_stmtlist = function
   | h::t-> ((Ast_c.ExprStatement (Some h),[]))::(create_stmtlist t)
 
 
-let rec return_st_access_resource c_function miss_st = function
+let rec return_st_access_resource miss_st = function
     []   -> false
   | h::t ->
     (match Ast_c.unwrap h with
@@ -63,12 +63,7 @@ let rec return_st_access_resource c_function miss_st = function
              any_exp_exists_in_stmt h args_list ||
              exp_exists_in_stmtlist (Some e1) args_stmtlist)
         | _ -> false)
-     | Ast_c.Jump (Ast_c.Goto name) ->
-       let goto_code = C_function.gather_goto_code c_function [] [h] in
-       (match goto_code with
-          [] -> true
-        | _  -> return_st_access_resource c_function miss_st goto_code)
-     | _ -> return_st_access_resource c_function miss_st t)
+      | _ -> return_st_access_resource miss_st t)
 
 
 let rec stmtlist_func_contains_same_val return_val = function
@@ -82,16 +77,15 @@ let rec stmtlist_func_contains_same_val return_val = function
     )
 
 let rec other_errblk_contains_same_val return_val = function
-    []-> false
-  | (brnch_strtlineno,test_case,st_normal,goto,typ,blk_strtlineno,blk_endlineno,stmtlist)::t->
-    if (stmtlist_func_contains_same_val return_val stmtlist) then true
+    []       -> false
+  | block::t ->
+    if Block.expression_used_as_argument block return_val then true
     else other_errblk_contains_same_val return_val t
 
 
-let remove_blks_that_returns_resource c_function errblks blocks =
+let remove_blks_that_returns_resource c_function blocks =
   let remove_blks_that_returns_resource_aux block acc =
-    let (_, _, _, _, _, _, _, stmtlist) = block in
-    (match (Def.return_exists_in_list stmtlist) with
+    (match Block.get_returned_expression block with
        None -> acc
      | Some (Ast_c.Jump (Ast_c.ReturnExpr e1), _) ->
        if C_function.exists_same_return_value e1 c_function
@@ -99,17 +93,17 @@ let remove_blks_that_returns_resource c_function errblks blocks =
          match Def.is_pointer e1 with
            Def.IsntPtr-> block::acc
          | _ -> acc
-       else if other_errblk_contains_same_val e1 errblks
+       else if other_errblk_contains_same_val e1 blocks
        then acc
        else block::acc
      | _ -> block::acc)
   in List.fold_right remove_blks_that_returns_resource_aux blocks []
 
 
-let return_resource_new c_function errblk =
+let return_resource_new errblk =
   let return_resource_new_aux acc miss_rr =
     let (_, _, h) = miss_rr in
-    if return_st_access_resource c_function h errblk
+    if Block.return_st_access_resource h errblk
     then acc
     else miss_rr::acc
   in List.fold_left return_resource_new_aux []
@@ -440,7 +434,7 @@ let rec is_locally_main branch_lineno name local = function
     in
     match Ast_c.unwrap h with
     | Ast_c.Labeled (Ast_c.Label (name, st)) ->
-          rec_call name local st
+      rec_call name local st
 
     | Ast_c.Labeled (Ast_c.Case  (_, st))
     | Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
@@ -450,10 +444,10 @@ let rec is_locally_main branch_lineno name local = function
     | Ast_c.Iteration (Ast_c.DoWhile (st, _))
     | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
     | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st)) ->
-          rec_call name local st
+      rec_call name local st
 
     | Ast_c.Compound _ ->
-          rec_call name local h
+      rec_call name local h
 
     | Ast_c.Selection (Ast_c.If (_, st1, st2)) ->
       (* !! no use of st2 ???? *)
@@ -480,22 +474,22 @@ let rec is_locally_main branch_lineno name local = function
     |  _ -> is_locally_main branch_lineno name local t
 
 
-let rec any_exp_exists_in_stmtlist_inner arg = function
-    []   -> false
-  | h::t ->
+let any_exp_exists_in_stmtlist_inner arg =
+  let any_exp_exists_in_stmtlist_inner_aux h =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some ((( Ast_c.FunCall  (e, es)), typ), ii)) ->
       if not (Def.string_exists_in_stmt h)
       then
         let args_list = Def.remove_optionlist (Def.create_argslist [] es) in
-        (Def.exp_exists_in_list arg args_list) ||
-        (release_by_address arg args_list) ||
-        any_exp_exists_in_stmtlist_inner arg t
-      else any_exp_exists_in_stmtlist_inner arg t
+        Def.exp_exists_in_list arg args_list ||
+        release_by_address arg args_list
+      else false
     | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, e2)), typ), ii)) ->
-      if(Def.compare_exps arg e1) then true
-      else any_exp_exists_in_stmtlist_inner arg t
-    | _-> any_exp_exists_in_stmtlist_inner arg t
+      Def.compare_exps arg e1
+    | _ -> false
+  in
+  List.exists any_exp_exists_in_stmtlist_inner_aux
+
 
 let rec any_exp_exists_in_stmtlist stmtlist = function
     []-> false
@@ -504,9 +498,9 @@ let rec any_exp_exists_in_stmtlist stmtlist = function
 
 let is_defined_alloc alloc =
   match Ast_c.unwrap alloc with
-  | Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident
-                                                      (Ast_c.RegularName (id,
-                                                                          _))),
+  | Ast_c.ExprStatement (Some (((Ast_c.FunCall ((((Ast_c.Ident
+                                                     (Ast_c.RegularName (id,
+                                                                         _))),
                                                   _), _), _)), _), _)) ->
     Errorhandling.defined_alloc id
   | _-> false
@@ -522,48 +516,32 @@ let is_function_call alloc =
   | _ -> false
 
 
-let rec rls_in_exe_paths branch_lineno c_function errblk_list test_case stmtlist list = function
-    [] -> list
-  | (alloc, args, rr)::t ->
-    let positive_rec_call () =
-      rls_in_exe_paths branch_lineno c_function errblk_list test_case
-        stmtlist ((alloc, args, rr)::list) t in
-    let negative_rec_call () =
-      rls_in_exe_paths branch_lineno c_function errblk_list test_case
-        stmtlist list t in
+let rls_in_exe_paths block c_function errblk_list miss_rrs =
+  let rls_in_exe_paths_aux (alloc, args, rr) =
     match Ast_c.unwrap rr with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let final_return = C_function.find_final_return c_function in
       let args_list =
         find_ptr_args_list (Def.remove_optionlist (Def.create_argslist [] es)) in
-      if not (is_function_call alloc)
-      then
-        negative_rec_call ()
-      else if List.length args_list = 0
-      then
-        positive_rec_call ()
-      else if List.length args = 0
-      then
-        negative_rec_call ()
-      else if
-        (match List.hd args_list with
-           ((Ast_c.Ident ident, _), _)
-         | (((Ast_c.RecordAccess (((Ast_c.Ident ident, _), _), _)), _), _)
-         | (((Ast_c.RecordPtAccess (((Ast_c.Ident ident, _), _), _)), _), _) ->
-           let local = C_function.is_locally_main branch_lineno ident true c_function in
-           not local
-         | _ -> false) ||
-        Def.stmt_exists_in_list rr stmtlist ||
-        any_exp_exists_in_stmtlist stmtlist args ||
-        is_defined_alloc alloc
-      then
-        negative_rec_call ()
-      else (
-        if C_function.check_each_path c_function alloc rr args args_list
-            branch_lineno test_case stmtlist final_return errblk_list
-        then positive_rec_call ()
-        else negative_rec_call ())
-    | _ -> negative_rec_call ()
+      (is_function_call alloc) &&
+      ((List.length args_list = 0) ||
+       not (List.length args = 0) &&
+       not ((
+           match List.hd args_list with
+             ((Ast_c.Ident ident, _), _)
+           | (((Ast_c.RecordAccess (((Ast_c.Ident ident, _), _), _)), _), _)
+           | (((Ast_c.RecordPtAccess (((Ast_c.Ident ident, _), _), _)), _), _) ->
+             not (C_function.is_locally_main block ident true c_function)
+           | _ -> false) ||
+           Block.does_block_contains_statement block rr ||
+           List.exists (Block.contains_expression block) args ||
+           is_defined_alloc alloc) &&
+       C_function.check_each_path c_function alloc rr args args_list block
+         final_return errblk_list)
+    | _ -> false
+  in
+  List.rev (List.filter rls_in_exe_paths_aux miss_rrs)
+
 
 let rec find_all_poss_alloc args_list = function
     []->[]
@@ -586,7 +564,7 @@ let rec find_all_poss_alloc_main args_list poss_list = function
 
 (* Filter out the element with arguments *)
 let find_all_rrwa statments =
-  let find_all_rrwa_aux s acc = 
+  let find_all_rrwa_aux s acc =
     match Ast_c.unwrap s with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
@@ -608,11 +586,11 @@ let rec find_all_rrwa_main rrwa_list = function
     else find_all_rrwa_main rrwa_list t
 
 
-let rec make_pairs list1 list2 pairs_list = 
+let rec make_pairs list1 list2 pairs_list =
   match (list1, list2) with
     (h::t, h1::t1) ->
     if not (Def.compare_stmts h h1)
-    then make_pairs t t1 ([(h,h1)]@pairs_list)
+    then make_pairs t t1 ([(h, h1)]@pairs_list)
     else make_pairs t t1  pairs_list
   | ([], _)
   | (_, []) -> pairs_list
@@ -623,20 +601,21 @@ let rec find_alloc_op miss_st = function
     [] -> None
   | (alloc, rr)::t ->
     if Def.compare_stmts rr miss_st
-    then (Some alloc)
+    then Some alloc
     else find_alloc_op miss_st t
 
 
-let find_first_model_blk miss_st mergin model errblk_list =
-  let find_first_model_blk_aux (mergin, model) (_, _, _, blk_strtlineno, _, stmtlist) =
-    if Def.stmt_exists_in_list miss_st stmtlist
-    then
-      if blk_strtlineno < mergin
-      then (blk_strtlineno, Some (blk_strtlineno, stmtlist))
-      else (mergin, model)
-    else (mergin, model)
+let find_first_model_blk miss_st errblk_list =
+  let find_first_model_blk_aux model block =
+    match model with
+      None       -> Some block
+    | Some model_block ->
+      if Block.does_block_contains_statement block miss_st &&
+         Block.compare_branch_start block model_block < 0
+      then Some block
+      else model
   in
-  snd (List.fold_left find_first_model_blk_aux (mergin, model) errblk_list)
+  List.fold_left find_first_model_blk_aux None errblk_list
 
 
 let rec find_model_blk_init_lbl miss_st = function
@@ -658,7 +637,26 @@ let rec find_model_blk miss_st = function
     else find_model_blk miss_st t
 
 
-let rec find_app_model_blk miss_st diff model model_line miss_blk = function
+let find_app_model_blk miss_st miss_blk =
+  let rec find_app_model_blk_aux (diff, model) = function
+      []   -> model
+    | block::t ->
+    let miss_blk_strtlineno_diff = Block.compare_branch_start miss_blk block in
+    if Block.does_block_contains_statement block miss_st
+    then
+      if miss_blk_strtlineno_diff < 0 &&
+         diff = 0
+      then Some block
+      else
+      if miss_blk_strtlineno_diff > diff
+      then
+        find_app_model_blk_aux (miss_blk_strtlineno_diff, Some block) t
+      else find_app_model_blk_aux (diff, model) t
+    else find_app_model_blk_aux (diff, model) t
+  in
+  find_app_model_blk_aux (0, None)
+
+let rec find_app_model_blk_temp miss_st diff model model_line miss_blk = function
     [] -> (model_line, model)
   | (_, _, _, blk_strtlineno, _, stmtlist)::t ->
     let miss_blk_strtlineno_diff = miss_blk - blk_strtlineno in
@@ -670,9 +668,9 @@ let rec find_app_model_blk miss_st diff model model_line miss_blk = function
       else
       if miss_blk_strtlineno_diff > diff
       then
-        find_app_model_blk miss_st miss_blk_strtlineno_diff stmtlist blk_strtlineno miss_blk t
-      else find_app_model_blk miss_st diff model model_line miss_blk t
-    else find_app_model_blk miss_st diff model model_line miss_blk t
+        find_app_model_blk_temp miss_st miss_blk_strtlineno_diff stmtlist blk_strtlineno miss_blk t
+      else find_app_model_blk_temp miss_st diff model model_line miss_blk t
+    else find_app_model_blk_temp miss_st diff model model_line miss_blk t
 
 
 let rec find_common_rrwa_in_model_path_inner list = function
@@ -706,60 +704,26 @@ let rec rem_brn_st_frm_list all_rrwa_in_model_branch = function
     else h::(rem_brn_st_frm_list all_rrwa_in_model_branch t)
 
 
-let is_rrwa_alloc errblk_list miss_blk_st_line c_function =
+let is_rrwa_alloc errblk_list miss_blk c_function =
   let is_rrwa_alloc_aux acc (alloc, args, rls) =
     match Ast_c.unwrap rls with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
       (match args_list with
-         [] ->
-         let (model_blk_st_no, model_blk) =
-           find_app_model_blk rls 0 [] 0 miss_blk_st_line errblk_list in
-         let all_rrwa_in_model = find_all_rrwa model_blk in
-
-         let exe_paths =
-           C_function.generate_exe_paths_simple model_blk_st_no [] c_function in
-         let all_rrwa_in_model_path = find_all_rrwa_main [] exe_paths in
-
-         let common_rrwa_in_model_path =
-           find_common_rrwa_in_model_path all_rrwa_in_model_path in
-
-         let common_rrwa_in_model_path =
-           rem_brn_st_frm_list all_rrwa_in_model common_rrwa_in_model_path in
-         let pairs_list =
-           make_pairs common_rrwa_in_model_path (List.rev all_rrwa_in_model) [] in
-         let alloc_op = find_alloc_op rls pairs_list in
-         (match alloc_op with
-            None   -> acc
-          | Some a ->
-            let exe_paths_list =
-              C_function.generate_exe_paths_simple (miss_blk_st_line - 1) []
-                c_function in
-            if is_defined_alloc a
-            then acc
-            else
-            if Def.stmt_exists_in_all_list a exe_paths_list &&
-               not (Def.stmt_exists_in_all_list rls exe_paths_list)
-            then
-              (a, args, rls)::acc
-            else
-              acc)
-       | _ -> (alloc, args, rls)::acc)
+         [] -> acc
+       | _  -> (alloc, args, rls)::acc)
     | _ -> acc
   in
   List.fold_left is_rrwa_alloc_aux []
 
 (* Return a list of block starting line that does not release the resource *)
-let rec no_previous_blk_has_rrl miss_line rrl alloc_line = function
-    [] -> []
-  | (_, _, _, blk_strtlineno, blk_endlineno, stmtlist)::t ->
-    if blk_strtlineno > alloc_line &&
-       blk_endlineno  < miss_line &&
-       not (Def.stmt_exists_in_list rrl stmtlist)
-    then
-      blk_strtlineno::(no_previous_blk_has_rrl miss_line rrl alloc_line t)
-    else
-      no_previous_blk_has_rrl miss_line rrl alloc_line t
+let no_previous_blk_has_rrl miss_block rrl alloc_line =
+  let no_previous_blk_has_rrl_aux block =
+    Block.compare_branch_start block alloc_line > 0 &&
+    Block.compare_branch_end_with_start block miss_block < 0 &&
+    not (Block.does_block_contains_statement block rrl)
+  in
+  List.filter no_previous_blk_has_rrl_aux
 
 
 let rec stmt_exists_in_exe_paths_inner stmt = function
@@ -772,41 +736,39 @@ let rec stmt_exists_in_exe_paths stmt = function
   | h::t-> if stmt_exists_in_exe_paths_inner stmt h then true
     else stmt_exists_in_exe_paths stmt t
 
-let rec find_actual_alloc exe_paths_model exe_paths_candidate = function
+let rec find_actual_alloc exe_paths_candidate = function
     []   -> None
   | h::t ->
-    match Ast_c.unwrap h with
-      Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
-      if (stmt_exists_in_exe_paths h exe_paths_model) &&
-         not (stmt_exists_in_exe_paths h exe_paths_candidate)
-      then
-        Some h
-      else find_actual_alloc exe_paths_model exe_paths_candidate t
-    | _ -> find_actual_alloc exe_paths_model exe_paths_candidate t
+    if not (stmt_exists_in_exe_paths h exe_paths_candidate)
+    then
+      Some h
+    else find_actual_alloc exe_paths_candidate t
 
 
-let resource_is_not_allocated_yet errblks miss_line c_function =
+let resource_is_not_allocated_yet errblks block c_function =
   let resource_is_not_allocated_yet_aux acc (alloc, args, rrl) =
     let alloc_line = Def.find_startline_no (Def.create_stmtlist alloc) in
+    let alloc_block = Block.mk_block_simple alloc_line (Def.create_stmtlist
+                                                          alloc) in
     match Ast_c.unwrap rrl with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
       if List.length args_list = 1
       then
-        let lines = no_previous_blk_has_rrl miss_line rrl alloc_line errblks in
-        if List.length lines > 0
+        let unreleasing_blocks = no_previous_blk_has_rrl block rrl alloc_block
+            errblks in
+        if List.length unreleasing_blocks > 0
         then
-          let model_blk_st_no = fst (find_app_model_blk rrl 0 [] 0 miss_line errblks) in
-          let exe_paths_model = C_function.generate_exe_paths_simple
-              (model_blk_st_no - 1) [] c_function in
-          let exe_paths_candidate = C_function.generate_exe_paths_simple
-              miss_line [] c_function in
-          let all_pos_alloc_can = find_all_poss_alloc_main args_list [] exe_paths_model in
-          let common_alloc = find_common_rrwa_in_model_path all_pos_alloc_can in
-          let actual_alloc = find_actual_alloc exe_paths_model exe_paths_candidate common_alloc  in
-          match actual_alloc with
-            None   -> (alloc, args, rrl)::acc
-          | Some a -> acc
+          let model_blk = find_app_model_blk rrl block errblks in
+
+          let is_allocated =
+            C_function.is_resource_allocated c_function
+              model_blk block args_list
+          in
+          if is_allocated
+          then acc
+          else (alloc, args, rrl)::acc
+
         else (alloc, args, rrl)::acc
       else (alloc, args, rrl)::acc
     | _ -> acc
@@ -836,26 +798,25 @@ let filter_null_out =
   in
   List.fold_left filter_null_out_aux []
 
-let is_resource_having_same_def_new fin_lineno c_function errblk_list =
+let is_resource_having_same_def_new block c_function errblk_list =
   let is_resource_having_same_def_new_aux acc (alloc, args_list, h) =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
       if args_list != []
       then
-
         let match_model = C_function.find_model_block_by_release_statement
             c_function h in
-        let model_blk_st_no =
-          match (find_first_model_blk h 10000000 None errblk_list, match_model) with
-            (Some (model_blk_st_no, _), _)
-          | (None, Some (model_blk_st_no, _)) -> model_blk_st_no
-          | (None, None) -> 0
+
+        let model_blk =
+          match (find_first_model_blk h errblk_list, match_model) with
+            (Some model, _) -> Some model
+          | (_,          e) -> e
         in
 
         let id_values1 = C_function.get_identifier_values
-            c_function fin_lineno args_list in
+            c_function (Some block) 0 args_list in
         let id_values2 = C_function.get_identifier_values
-            c_function (model_blk_st_no - 1) args_list in
+            c_function model_blk (-1) args_list in
 
         let unique_id_values =
           if List.length id_values1 = 1 &&

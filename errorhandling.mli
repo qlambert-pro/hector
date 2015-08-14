@@ -48,7 +48,7 @@ val defined_alloc : string -> bool
 
 (* Return true if there are error handling blocks in the function *)
 val exists_error_handling_block :
-  Ast_c.expression -> C_function.c_function ->  Ast_c.statement list ->
+  C_function.c_function -> Ast_c.expression -> Ast_c.statement list ->
   Def.block_part -> int -> bool
 
 (* Return a list of element representing error handling code *)
