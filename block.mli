@@ -34,8 +34,8 @@ val has_goto: block -> bool
 (* TODO clean that *)
 val get_resource_release:
   block ->
-  (Ast_c.expression list * Ast_c.statement) list ->
-  (Ast_c.expression list * Ast_c.statement) list
+  Resource.release list ->
+  Resource.release list
 
 val find_all_resource_release_without_argument:
   block -> Ast_c.statement list

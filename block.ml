@@ -647,13 +647,15 @@ let get_resource_release (Block (_, _, _, _, _, _, _, statements)) acc =
                                                    _), _), es)), _), _)) ->
       let args_list = Def.remove_optionlist (create_argslist [] es) in
       if (List.length args_list) = 0 &&
-         not (Def.stmt_exists_in_list statement (List.map snd rr_ops_list))
+         not (Def.stmt_exists_in_list statement
+                (List.map (function Resource.Release (_, s) -> s) rr_ops_list))
       then
-        ((([], statement)::rr_ops_list), ntail)
+        (((Resource.Release ([], statement))::rr_ops_list), ntail)
       else
       if not (first_arg_is_array args_list ||
               Def.string_exists_in_explist args_list ||
-              Def.stmt_exists_in_list statement (List.map snd rr_ops_list))
+              Def.stmt_exists_in_list statement
+                (List.map (function Resource.Release (_, s) -> s) rr_ops_list))
       then
         let ptr_args_list = find_ptr_args_list args_list in
         if not (ptr_args_list = [] ||
@@ -662,7 +664,7 @@ let get_resource_release (Block (_, _, _, _, _, _, _, statements)) acc =
           let unused_args = unused_ptr_args tail ptr_args_list in
           if no_exp_exists_in_stmtlist tail unused_args
           then
-            (((unused_args, statement)::rr_ops_list), ntail)
+            (((Resource.Release (unused_args, statement))::rr_ops_list), ntail)
           else
             (rr_ops_list, ntail)
         else

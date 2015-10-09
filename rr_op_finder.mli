@@ -9,5 +9,5 @@ val stack_rr_op_new :
 val find_missing_rr_ops_new :
   C_function.c_function ->
   Block.block ->
-  ('a * Ast_c.statement) list ->
-  (Ast_c.statement * 'a * Ast_c.statement) list
+  Resource.release list ->
+  Resource.resource list

@@ -102,7 +102,7 @@ let remove_blks_that_returns_resource c_function blocks =
 
 let return_resource_new errblk =
   let return_resource_new_aux acc miss_rr =
-    let (_, _, h) = miss_rr in
+    let (Resource.Resource (_, _, h)) = miss_rr in
     if Block.return_st_access_resource h errblk
     then acc
     else miss_rr::acc
@@ -517,7 +517,7 @@ let is_function_call alloc =
 
 
 let rls_in_exe_paths block c_function errblk_list miss_rrs =
-  let rls_in_exe_paths_aux (alloc, args, rr) =
+  let rls_in_exe_paths_aux (Resource.Resource (alloc, args, rr)) =
     match Ast_c.unwrap rr with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let final_return = C_function.find_final_return c_function in
@@ -705,13 +705,13 @@ let rec rem_brn_st_frm_list all_rrwa_in_model_branch = function
 
 
 let is_rrwa_alloc errblk_list miss_blk c_function =
-  let is_rrwa_alloc_aux acc (alloc, args, rls) =
+  let is_rrwa_alloc_aux acc (Resource.Resource (alloc, args, rls)) =
     match Ast_c.unwrap rls with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
       (match args_list with
          [] -> acc
-       | _  -> (alloc, args, rls)::acc)
+       | _  -> (Resource.Resource (alloc, args, rls))::acc)
     | _ -> acc
   in
   List.fold_left is_rrwa_alloc_aux []
@@ -746,7 +746,8 @@ let rec find_actual_alloc exe_paths_candidate = function
 
 
 let resource_is_not_allocated_yet errblks block c_function =
-  let resource_is_not_allocated_yet_aux acc (alloc, args, rrl) =
+  let resource_is_not_allocated_yet_aux acc
+      (Resource.Resource (alloc, args, rrl)) =
     let alloc_line = Def.find_startline_no (Def.create_stmtlist alloc) in
     let alloc_block = Block.mk_block_simple alloc_line (Def.create_stmtlist
                                                           alloc) in
@@ -762,15 +763,15 @@ let resource_is_not_allocated_yet errblks block c_function =
           let model_blk = find_app_model_blk rrl block errblks in
 
           let is_allocated =
-            C_function.is_resource_allocated c_function
-              model_blk block args_list
+            C_function.is_resource_allocated c_function model_blk block
+              args_list
           in
           if is_allocated
           then acc
-          else (alloc, args, rrl)::acc
+          else (Resource.Resource (alloc, args, rrl))::acc
 
-        else (alloc, args, rrl)::acc
-      else (alloc, args, rrl)::acc
+        else (Resource.Resource (alloc, args, rrl))::acc
+      else (Resource.Resource (alloc, args, rrl))::acc
     | _ -> acc
   in
   List.fold_left resource_is_not_allocated_yet_aux []
@@ -799,7 +800,8 @@ let filter_null_out =
   List.fold_left filter_null_out_aux []
 
 let is_resource_having_same_def_new block c_function errblk_list =
-  let is_resource_having_same_def_new_aux acc (alloc, args_list, h) =
+  let is_resource_having_same_def_new_aux acc
+      (Resource.Resource(alloc, args_list, h)) =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  _), _), _)) ->
       if args_list != []
@@ -843,9 +845,12 @@ let is_resource_having_same_def_new block c_function errblk_list =
           else [] in
         if List.length unique_id_values = 1
         then
-          ((Ast_c.ExprStatement (Some (List.hd unique_id_values)), []), args_list, h)::acc
+          let new_alloc =
+            (Ast_c.ExprStatement (Some (List.hd unique_id_values)), [])
+          in
+          (Resource.Resource (new_alloc, args_list, h))::acc
         else acc
-      else (alloc, args_list, h)::acc
+      else (Resource.Resource (alloc, args_list, h))::acc
     | _ -> acc
   in
   List.fold_left is_resource_having_same_def_new_aux []

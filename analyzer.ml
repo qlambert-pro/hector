@@ -184,18 +184,18 @@ let rec recheck_blks c_function = function
       block::(recheck_blks c_function t)
 
 
-let rec refine_rr_ops_inner args_list = function
-    [] -> false
-  | (alloc, args, rrl)::t ->
-    if (Def.compare_explists args args_list) then true
-    else refine_rr_ops_inner args_list t
-
-
 let rec refine_rr_ops = function
     [] -> []
-  | (alloc, args, rrl)::t ->
-    if (refine_rr_ops_inner args t) then refine_rr_ops t
-    else (alloc, args, rrl)::(refine_rr_ops t)
+  | ((Resource.Resource (_, args, _)) as resource)::t ->
+    let refine_rr_ops_inner args_list resources =
+      List.exists
+        (fun (Resource.Resource (_, args, _)) ->
+           Def.compare_explists args args_list)
+        resources
+    in
+    if refine_rr_ops_inner args t
+    then refine_rr_ops t
+    else resource::(refine_rr_ops t)
 
 let analyze_each_blk_new c_function rr_ops_list iifunc1 all_def func_name errblks_list =
   let rec analyze_each_blk_loop_new = function
@@ -210,7 +210,7 @@ let analyze_each_blk_new c_function rr_ops_list iifunc1 all_def func_name errblk
           block c_function miss_rr_ops_list_new in
       let miss_rr_ops_list_new2 = Rm_true_positives.return_resource_new
           block miss_rr_ops_list1 in
-     let miss_rr_ops_list_new3 =
+      let miss_rr_ops_list_new3 =
         Rm_true_positives.rls_in_exe_paths block c_function errblks_list
           miss_rr_ops_list_new2 in
       let miss_rr_ops_list_new4 =

@@ -42,7 +42,8 @@ let rec testing_ehc func_name = function
 
 let rec generate_report_new func_name block iifunc1 = function
     []-> false
-  |  (alloc,args,h)::t-> match Ast_c.unwrap h with
+  | (Resource.Resource (alloc,args,h))::t->
+    match Ast_c.unwrap h with
     |   Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (id, [ii2]))), typ1), ii1), es)), typ), ii)) ->
 
       let ao = match Ast_c.unwrap alloc with

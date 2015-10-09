@@ -68,11 +68,11 @@ let find_ptr_args_list args =
     | Def.UnknownType -> p::acc
     | _ -> acc
   in
-  let find_ptr_args_list_aux arg acc = 
+  let find_ptr_args_list_aux arg acc =
     match arg with
       (((Ast_c.Cast (_, p)), _), _) ->
       pointer_test p acc
-    | _ -> 
+    | _ ->
       pointer_test arg acc
   in
   List.fold_right find_ptr_args_list_aux args []
@@ -142,7 +142,7 @@ let stack_rr_op_new rr_ops_list statements =
   in
   fst (List.fold_left stack_rr_op_new_aux (rr_ops_list, List.tl statements) statements)
 
-
+(*why is release used as alloc ?*)
 let find_missing_rr_ops_new c_function errblk rr_ops_list =
   let updated_errblk_with_goto_code =
     C_function.gather_goto_code_from_block c_function errblk in
@@ -151,10 +151,10 @@ let find_missing_rr_ops_new c_function errblk rr_ops_list =
   else
     let rec find_missing_rr_ops_inner = function
         [] -> []
-      | (args, h)::t ->
+      | (Resource.Release (args, h))::t ->
         if not (Def.stmt_exists_in_list h updated_errblk_with_goto_code)
         then
-          (h, args, h)::(find_missing_rr_ops_inner t)
+          (Resource.Resource (h, args, h))::(find_missing_rr_ops_inner t)
         else
           find_missing_rr_ops_inner  t
     in find_missing_rr_ops_inner rr_ops_list

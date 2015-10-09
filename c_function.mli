@@ -23,8 +23,8 @@ val find_interproc_calls:
   (Ast_c.name * 'a * Ast_c.statement list) list ->
   Block.block ->
   c_function ->
-  ('c * 'd * Ast_c.statement) list ->
-  ('c * 'd * Ast_c.statement) list
+  Resource.resource list ->
+  Resource.resource list
 
 (* Return a list of statement following through goto *)
 val gather_goto_code:

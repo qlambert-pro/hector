@@ -187,12 +187,12 @@ let find_interproc_calls all_function block c_function =
   let branch = Block.extract_statements block in
   let miss_lineno = Block.extract_branch_start block in
   let {ast = prog} = c_function in
-  let find_interproc_calls_aux acc (alloc, args, h) =
+  let find_interproc_calls_aux acc (Resource.Resource (alloc, args, h)) =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall (_, es)), _), _)) ->
       let args_list = Def.create_argslist [] es in
       if (args_list = [])
-      then (alloc, args, h)::acc
+      then (Resource.Resource (alloc, args, h))::acc
       else
         let all_callin_func =
           (gather_all_callin_func (Def.find_endline_no branch) branch)
@@ -201,8 +201,8 @@ let find_interproc_calls all_function block c_function =
         then
           acc
         else
-          (alloc, args, h)::acc
-    | _ -> (alloc, args, h)::acc
+          (Resource.Resource (alloc, args, h))::acc
+    | _ -> (Resource.Resource (alloc, args, h))::acc
   in
   List.fold_left find_interproc_calls_aux []
 
