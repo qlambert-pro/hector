@@ -34,7 +34,7 @@ TARGET=hector
 
 SRC=flag_cocci.ml var_dec.ml def.ml resource.ml block.ml report.ml\
     pointer_linked.ml c_function.ml org.ml errorhandling.ml\
-    rm_true_positives.ml interproc.ml rr_op_finder.ml analyzer.ml main.ml
+    rm_true_positives.ml rr_op_finder.ml analyzer.ml main.ml
 
 OPTLIBFLAGS=
 

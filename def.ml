@@ -35,33 +35,20 @@ type rank  =
 
 (**************************************************************************  Clean Parsing parameter from objects *******************************************************)
 
-(* Clean argument means remove extra parsing parameters from arguments *)
-
-let clean_arg  arg =  Lib_parsing_c.al_arguments arg
-
-let  rec clean_arglist  = function
-    []-> []
-  |  h::t-> (clean_arg h)::(clean_arglist t)
-
-
 (* Clean expression means remove extra parsing parameters from expression *)
-
-and clean_exp  exp =  Lib_parsing_c.al_expr exp
+let clean_exp  exp =  Lib_parsing_c.al_expr exp
 
 
 (* Clean statement means remove extra parsing parameters from statement *)
-
-and clean_stmt st =  Lib_parsing_c.real_al_statement st
+let clean_stmt st =  Lib_parsing_c.real_al_statement st
 
 
 (* Clean all expressions in the list means remove extra parsing parameters from the expression list*)
-
 let rec clean_explist = function
     []-> []
   | h::t-> (clean_exp h)::(clean_explist t)
 
 (* Clean all statements in the list means remove extra parsing parameters from the statement list*)
-
 let rec clean_stmtlist  = function
     []-> []
   | h::t-> (clean_stmt h)::(clean_stmtlist t)
@@ -71,41 +58,10 @@ let rec clean_stmtlist  = function
 (**************************************************************************  Remove element from the statement  *******************************************************)
 
 (* remove options from all elements in the list *)
-
 let rec remove_optionlist = function
     []-> []
   | None::t -> failwith "unexpected None in remove_optionlist"
   | (Some h)::t -> h::(remove_optionlist t)
-
-(* remove cast from a statement *)
-
-(* not used - jll
-let remove_cast st =
-  match Ast_c.unwrap st with
-    Ast_c.ExprStatement
-      (Some (((Ast_c.Cast (c, (((Ast_c.FunCall  (e, es)), typ1), ii1))), typ),
-	     ii))->
-      (Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ1), ii1)),[])
-*)
-
-
-(* remove cast from all statements in the statement list *)
-
-let rec remove_castlist = function
-    []-> []
-  | h::t-> match Ast_c.unwrap h with
-                Ast_c.ExprStatement (Some (((Ast_c.Cast (c, (((Ast_c.FunCall  (e, es)), typ1), ii1))), typ), ii))->
-                         (Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ1), ii1)),[])::(remove_castlist t)
-          |_-> h::(remove_castlist t)
-
-
-(* remove statement element from the statement *)
-
-(* not used - jll
-let remove_stmtEle l=
-      match l with
-        Ast_c.StmtElem st -> st
-*)
 
 
 (* remove statement elements from all statements in the list *)
@@ -122,13 +78,11 @@ let rec remove_stmtElelist l =
 
 
 (* Add  Ast_c.StmtElem into all statements in the  list *)
-
 let add_stmtElelist l=
     List.map (function st -> Ast_c.StmtElem st ) l
 
 
 (* add options from all elements in the list *)
-
 let rec add_optionlist = function
     []-> []
   | h::t-> (Some h)::(add_optionlist t)
@@ -138,30 +92,19 @@ let rec add_optionlist = function
 
 
 (* Compare two names *)
-
 let compare_names name1 name2 =
    Lib_parsing_c.al_name name1 = Lib_parsing_c.al_name name2
 
 (* Compare two statements *)
-
 let compare_stmts st1 st2 =
    if (clean_stmt st1) = (clean_stmt st2) then true
    else false
 
-(* Compare two statement lists  *)
-
-let compare_stmtlists st1 st2 =
-   if (clean_stmtlist st1) = (clean_stmtlist st2) then true
-   else false
-
-
 (* Compare two expressions *)
-
 let compare_exps exp1 exp2 =
   (clean_exp exp1) = (clean_exp exp2)
 
 (* Compare two  expression lists  *)
-
 let compare_explists st1 st2 =
    if (clean_explist st1) = (clean_explist st2) then true
    else false
@@ -172,55 +115,14 @@ let compare_explists st1 st2 =
 (**************************************************************************  Create Objects  ***********************************************************************)
 
 
-(* Create an Id name *)
-
-let create_id_name name = Ast_c.RegularName(name,[])
-
-
-(* Create an Assignment statement *)
-
-let create_assignment_stmt typ name exp =
-  (Ast_c.ExprStatement (Some (((Ast_c.Assignment ((((Ast_c.Ident (name)), typ), []),
-  Ast_c.SimpleAssign,((exp, typ), []))), typ), [])),[])
-
-
-(* Create a Return statement *)
-
-let create_return_stmt typ name =
-(Ast_c.Jump (Ast_c.ReturnExpr (((Ast_c.Ident (create_id_name name)), typ), [])),[])
-
-
-(* Create Label with single statement *)
-
-let create_label_with_stmt name st =
-(Ast_c.Labeled (Ast_c.Label ((create_id_name name), st)),[])
-
-(* Create Label with multiple statements *)
-
-let create_label_with_stmts name stlist =
-(create_label_with_stmt name (List.hd stlist))::(List.tl stlist)
-
-
-
-(* Create If statement *)
-
-let create_if_st e st2 lbl if_code  =
- match if_code with
-    [] -> (Ast_c.Selection  (Ast_c.If (e,(Ast_c.Jump (Ast_c.Goto lbl),[]), st2)),[])
- |   h::t ->(Ast_c.Selection  (Ast_c.If (e, ((Ast_c.Compound (add_stmtElelist (if_code@[(Ast_c.Jump (Ast_c.Goto lbl),[])]))),[]), st2)),[])
-
-
 (* Create statement list from compound statement *)
-
 let create_stmtlist st =
   match Ast_c.unwrap st with
       Ast_c.Compound  st -> (remove_stmtElelist st)
   |    _ -> [st]
 
 
-
 (* Whether return statement exists in the statement list *)
-
 let rec return_exists_in_list = function
     []-> None
   |  h::t ->  match Ast_c.unwrap h with
@@ -239,8 +141,6 @@ let rec return_exists_in_list_bool = function
 
 
 (* Create lbl_list from existing label and out0 label *)
-
-
 let rec create_lbl_list_loop current finished  st =
   match Ast_c.unwrap st  with
   |   Ast_c.Labeled (Ast_c.Label (name, st1)) -> (match Ast_c.unwrap st1 with
@@ -299,8 +199,7 @@ let rec create_argslist args_list statements =
          new_args_list
        | (((Ast_c.Cast (_, ((exp, typ), ii) )), _), _)
        | ((exp, typ), ii) ->
-         acc@[Some ((exp, typ), ii)]
-       | _ -> acc)
+         acc@[Some ((exp, typ), ii)])
     | _ -> acc
   in
   List.fold_right create_argslist_aux statements []
@@ -312,16 +211,7 @@ let rec create_argslist args_list statements =
 (**************************************************************************  Boolean value ***********************************************************************)
 
 
-(* Whether an name is exists in a name  list *)
-
-let rec name_exists_in_list name = function
-    []-> false
-  | h::t-> if(compare_names name h) then true
-           else name_exists_in_list name t
-
-
 (* Whether an expression is exists in an expression list *)
-
 let rec exp_exists_in_list exp = function
     []   -> false
   | h::t ->
@@ -344,32 +234,6 @@ let rec stmt_exists_in_all_list st = function
   |  h::t -> if(stmt_exists_in_list st h) then
                stmt_exists_in_all_list st t
              else false
-
-let rec stmt_exists_in_any_list st = function
-     []-> false
-  |   h::t -> if(stmt_exists_in_list st h) then true
-              else  stmt_exists_in_any_list st t
-
-
-
-
-let rec find_stmt_in_list st = function
-    []-> None
-  |  h::t -> if(compare_stmts st  h) then (Some h)
-            else find_stmt_in_list st t
-
-
-(* Whether any expression is exists in an expression list *)
-
-let rec any_exp_exists_in_list exps = function
-    []-> false
-  |   h::t-> if(exp_exists_in_list h exps) then true
-           else any_exp_exists_in_list exps t
-
-let rec which_exp_exists_in_list exps = function
-    []-> None
-  |    h::t-> if(exp_exists_in_list h exps) then (Some h)
-              else which_exp_exists_in_list exps t
 
 (* Returns an expression present in both exps and the last argument *)
 let which_exp_exists_in_list_new exps =
@@ -452,16 +316,7 @@ let exp_exists_in_stmt exp st =
      st);
   !flag
 
-(* Whether expression exists in any one statement in the statement list *)
-
-let rec exp_exists_in_stmtlist exp= function
-    []->false
-  | h::t-> if(exp_exists_in_stmt exp h) then true
-           else exp_exists_in_stmtlist exp t
-
-
 (* Whether string exists in the statement *)
-
 let is_string exp =
    match exp with
    | (((Ast_c.Constant (Ast_c.MultiString _)), typ), ii)->true
@@ -480,11 +335,6 @@ let string_exists_in_stmt st =
         )}
      st);
   !flag
-
-let rec string_exists_in_stmtlist = function
-  []->false
-  | h::t-> if (string_exists_in_stmt h) then true
-           else string_exists_in_stmtlist t
 
 let rec string_exists_in_explist = function
      []-> false
@@ -584,53 +434,6 @@ let find_endline_no st =
                 end_line
               )
               else 0
-
-(* Find left column number of the statement *)
-let find_lcol st =
-    match st with
-      []-> 0
-    | h::t->  let info = Lib_parsing_c.ii_of_stmt h in
-              if (List.length info)>0 then(
-              let (file,current_element,(start_line,lcol),(end_line,rcol))= Lib_parsing_c.lin_col_by_pos info in
-                lcol
-              )
-              else 0
-
-(* Find right column number of the statement *)
-let find_rcol st =
-    match List.rev st with
-      []-> 0
-    | h::t->  let info = Lib_parsing_c.ii_of_stmt h in
-              if (List.length info)>0 then(
-              let (file,current_element,(start_line,lcol),(end_line,rcol))= Lib_parsing_c.lin_col_by_pos info in
-                rcol
-              )
-              else 0
-
-(* Find opposite expression of a given expression, say if the given expression is x = NULL then opposite expression will be x != NULL *)
-
-let find_opp_exp exp =
-   match exp with
-   |  Ast_c.Ident (ident) -> ()
-   |  Ast_c.Constant (Ast_c.MultiString _) -> ()
-   |  Ast_c.Constant (c) -> ()
-   |  Ast_c.FunCall  (e, es) -> ()
-   |  Ast_c.CondExpr (e1, e2, e3) -> ()
-   |  Ast_c.Sequence (e1, e2) -> ()
-   |  Ast_c.Assignment (e1, op, e2) -> ()
-   |  Ast_c.Postfix  (e, op) -> ()
-   |  Ast_c.Infix    (e, op) -> ()
-   |  Ast_c.Unary    (e, op) -> ()
-   |  Ast_c.Binary   (e1, op, e2) -> ()
-   |  Ast_c.ArrayAccess    (e1, e2) -> ()
-   |  Ast_c.RecordAccess   (e, name) -> ()
-   |  Ast_c.RecordPtAccess (e, name) -> ()
-   |  Ast_c.SizeOfExpr  (e) -> ()
-   |  Ast_c.SizeOfType  (t) -> ()
-   |  Ast_c.Cast    (t, e) -> ()
-   |  Ast_c.StatementExpr (statxs, _) -> ()
-   |  Ast_c.Constructor (t, xs) -> ()
-   |  Ast_c.ParenExpr (e) -> ()
 
 (* Temporary factoring *)
 let code_for_goto name labels =

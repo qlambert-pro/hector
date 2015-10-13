@@ -206,8 +206,8 @@ let analyze_each_blk_new c_function rr_ops_list iifunc1 all_def func_name errblk
       let update_miss_rr_ops_list = refine_rr_ops miss_rr_ops_list in
       let miss_rr_ops_list_new = Rm_true_positives.is_resource_having_same_def_new
           block c_function errblks_list update_miss_rr_ops_list in
-      let miss_rr_ops_list1 = Rm_true_positives.is_rrwa_alloc errblks_list
-          block c_function miss_rr_ops_list_new in
+      let miss_rr_ops_list1 = Rm_true_positives.is_rrwa_alloc
+          miss_rr_ops_list_new in
       let miss_rr_ops_list_new2 = Rm_true_positives.return_resource_new
           block miss_rr_ops_list1 in
       let miss_rr_ops_list_new3 =
@@ -232,7 +232,6 @@ let analyze_def full_file all_fn = function
          Ast_c.f_body = body;
         } = defbis
     in
-    let lbl_list = Def.create_lbl_list [] [] (Def.remove_stmtElelist body) in
     let func_name = fst (Ast_c.get_s_and_ii_of_name name) in
 
     Var_dec.func_name := func_name;
@@ -244,12 +243,6 @@ let analyze_def full_file all_fn = function
     let updated_blk_list = recheck_blks function_data new_errblks_list in
     let updated_blk_list = Rm_true_positives.remove_blks_that_returns_resource
         function_data updated_blk_list in
-    let has_both_goto_and_none_goto_block (f_basic, f_goto) block =
-      (f_basic || not (Block.has_goto block), f_goto || Block.has_goto block)
-    in
-    let (f_basic, f_goto) = List.fold_left has_both_goto_and_none_goto_block
-        (false, false) updated_blk_list
-    in
     let updated_blk_list = List.rev updated_blk_list in
     let rr_ops_list_new =
       match updated_blk_list with

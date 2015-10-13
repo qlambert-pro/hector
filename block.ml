@@ -13,24 +13,13 @@ let mk_block block_start test_case goto st_normal part branch_start branch_end
 
 let mk_block_simple branch_start statements = BlockSimple (branch_start, statements)
 
-let extract (Block (block_start, test_case, goto, st_normal, part, branch_start,
-                    branch_end, statements)) = (block_start, test_case,
-                                                part, branch_start,
-                                                branch_end, statements)
-
 let extract_statements (Block (_, _, _, _, _, _, _, statements)) =
   statements
-
-let extract_part (Block (_, _, _, _, part, _, _, _)) =
-  part
 
 let extract_branch_start = function
     Block (_, _, _, _, _, branch_start, _, _)
   | BlockSimple (branch_start, _) ->
     branch_start
-
-let extract_branch_end (Block (_, _, _, _, _, _, branch_end, _)) =
-  branch_end
 
 let extract_test_case (Block (_, test_case, _, _, _, _, _, _)) =
   test_case
@@ -106,21 +95,6 @@ let contains_expression (Block (_, _, _, _, _, _, _, statements)) arg =
     | _ -> false
   in
   List.exists contains_expression_aux statements
-
-
-let does_block_contains_expression (Block (_, _, _, _, _, _, _, statements))
-    return_val =
-  let rec does_block_contains_expression_aux = function
-      []-> false
-    | h::t->
-      match Ast_c.unwrap h with
-        Ast_c.ExprStatement (Some (((Ast_c.FunCall  (e, es)), typ), ii))->
-        let args_list = Def.remove_optionlist (Def.create_argslist [] es) in
-        if (Def.exp_exists_in_list return_val args_list) then true
-        else does_block_contains_expression_aux t
-      | _ -> does_block_contains_expression_aux t
-  in
-  does_block_contains_expression_aux statements
 
 
 let expression_used_as_argument (Block (_, _, _, _, _, _, _, statements))

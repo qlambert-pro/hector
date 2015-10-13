@@ -19,9 +19,6 @@ val rls_in_exe_paths :
 
 (* Return the list of resource release without arguments ? *)
 val is_rrwa_alloc :
-  Block.block list ->
-  Block.block ->
-  C_function.c_function ->
   Resource.resource list ->
   Resource.resource list
 
