@@ -24,5 +24,5 @@ val analyze_toplevel:
   Ast_c.toplevel list ->
   (Ast_c.name * Ast_c.parameterType Ast_c.wrap2 list * Ast_c.statement list) list ->
   Ast_c.toplevel ->
-  Ast_c.toplevel
+  unit
 

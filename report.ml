@@ -41,13 +41,14 @@ let rec testing_ehc func_name = function
 
 
 let rec generate_report_new func_name block iifunc1 = function
-    []-> false
+    [] -> ()
   | (Resource.Resource (alloc,args,h))::t->
     match Ast_c.unwrap h with
     |   Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (id, [ii2]))), typ1), ii1), es)), typ), ii)) ->
 
       let ao = match Ast_c.unwrap alloc with
-          Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (id10, [ii12]))), typ11), ii11), es10)), typ10), ii10)) -> id10
+        | Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (id10, [_]))), _), _), _)), _), _))
+        | Ast_c.ExprStatement (Some (((Ast_c.Cast (_, ((((Ast_c.FunCall ((((Ast_c.Ident (Ast_c.RegularName (id10, [_]))), _), _), _)), _), _)))), _), _)) -> id10
         | _-> " " in
       let st_lineno = Def.find_startline_no [h] in
       let filename = Ast_c.file_of_info iifunc1 in

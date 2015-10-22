@@ -33,8 +33,7 @@ TARGET=hector
 
 
 SRC=flag_cocci.ml var_dec.ml def.ml resource.ml block.ml report.ml\
-    pointer_linked.ml c_function.ml org.ml errorhandling.ml\
-    rm_true_positives.ml rr_op_finder.ml analyzer.ml main.ml
+    c_function.ml org.ml analyzer.ml main.ml
 
 OPTLIBFLAGS=
 
@@ -62,7 +61,7 @@ EXEC=$(TARGET)
 # Generic ocaml variables
 ##############################################################################
 
-OCAMLCFLAGS= -g # -dtypes # -w A
+OCAMLCFLAGS= -g -w +32# -dtypes # -w A
 
 # for profiling add  -p -inline 0
 # but 'make forprofiling' below does that for you.

@@ -3,7 +3,6 @@ open Common
 let ref_var_mark = ref false
 
 type c_function =
-
   {ast: Ast_c.statement list;
    init_labels: Ast_c.statement list;
    (*      cfg: Control_flow.cflow; *)
@@ -11,6 +10,23 @@ type c_function =
 
 let any_ref_var_access_stmt stmt ref_vars =
   List.exists (fun x -> Def.exp_exists_in_stmt (Some x) stmt) ref_vars
+
+let insert_exp_into_ref_list e re e2 ref_list =
+  let insert_exp_into_ref_list_aux (a, b) acc =
+    if Def.compare_exps a e2
+    then acc@[(a, b@[e])]@[(e2, [re])]
+    else acc@[(a, b)]
+  in
+  if List.exists (fun (a, _) -> Def.compare_exps a e2) ref_list
+  then List.fold_right insert_exp_into_ref_list_aux ref_list []
+  else ref_list@[(e2, [e])]@[(e2, [re])]
+
+
+let insert_exp_into_ref_list_loop e1 =
+  let insert_exp_into_ref_list_loop_aux acc arg =
+    insert_exp_into_ref_list e1 e1 arg acc
+  in
+  List.fold_left insert_exp_into_ref_list_loop_aux
 
 let rec any_var_access_stmt stmt = function
     []-> false
@@ -22,6 +38,32 @@ let rec any_var_access_stmt stmt = function
     then true
     else any_var_access_stmt stmt t
 
+let gather_all_ref_var statements =
+  let gather_all_ref_var_aux acc statement =
+    match Ast_c.unwrap statement with
+      Ast_c.ExprStatement (Some (((Ast_c.Assignment ((((Ast_c.RecordAccess (e, name)), typ1), ii1), op,
+                                                     (((Ast_c.Ident (ident)), typ2), ii2))), typ), ii))
+    | Ast_c.ExprStatement (Some (((Ast_c.Assignment ((((Ast_c.Ident (ident)), typ2), ii2) , op,
+                                                     (((Ast_c.RecordAccess (e, name)), typ1), ii1))), typ), ii)) ->
+
+      insert_exp_into_ref_list e (((Ast_c.RecordAccess   (e, name)), typ1), ii1)
+        (((Ast_c.Ident (ident)), typ2), ii2) acc
+
+    | Ast_c.ExprStatement (Some (((Ast_c.Assignment ((((Ast_c.RecordPtAccess (e, name)), typ1), ii1), op,
+                                                     (((Ast_c.Ident (ident)), typ2), ii2))), typ), ii))
+    | Ast_c.ExprStatement (Some (((Ast_c.Assignment ((((Ast_c.Ident (ident)), typ2), ii2), op,
+                                                     (((Ast_c.RecordPtAccess (e, name)), typ1), ii1))), typ), ii)) ->
+
+      insert_exp_into_ref_list e (((Ast_c.RecordPtAccess (e, name)), typ1), ii1)
+        (((Ast_c.Ident (ident)), typ2), ii2) acc
+
+    | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, (((Ast_c.FunCall  (e, es)), typ1), ii1))), typ), ii)) ->
+      let args_list = Def.remove_optionlist (Def.create_argslist [] es) in
+      insert_exp_into_ref_list_loop e1 acc args_list
+
+    | _ -> acc
+  in
+  List.fold_left gather_all_ref_var_aux [] statements
 
 let find_final_return c_function =
   let {ast = ast} = c_function in
@@ -247,10 +289,6 @@ let rec gather_goto_code c_function goto_code = function
           gather_goto_code c_function goto_code new_goto_code
       else []
     | _-> gather_goto_code c_function (goto_code@[h]) t
-
-let gather_goto_code_from_block c_function block =
-  let statements = Block.extract_statements block in
-  gather_goto_code c_function [] statements
 
 let rec is_locally_dec branch_lineno = function
     []   -> false
@@ -558,98 +596,6 @@ let rec return_error e typ = function
 
     | Ast_c.Jump (Ast_c.ReturnExpr e1) -> is_error_return_code e1
     | _ ->  return_error e typ t
-
-
-
-let find_errorhandling c_function =
-  let {ast = ast} = c_function in
-  let rec find_errorhandling_aux statements =
-    match statements with
-      []   -> []
-    | h::t ->
-      let build_errorhandling_block_list st =
-        let outer_EHC = find_errorhandling_aux t in
-        if Def.inner_block_in_compound_stmt st
-        then
-          let inner_EHC =
-            find_errorhandling_aux (Def.create_stmtlist st) in
-          inner_EHC@outer_EHC
-        else
-          outer_EHC
-      in
-      match Ast_c.unwrap h with
-      | Ast_c.Labeled (Ast_c.Label (_, st))
-      | Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
-      | Ast_c.Labeled (Ast_c.Case  (_, st))
-      | Ast_c.Selection  (Ast_c.Switch (_, st))
-      | Ast_c.Iteration  (Ast_c.While (_, st))
-      | Ast_c.Iteration  (Ast_c.DoWhile (st, _))
-      | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
-      | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st))
-      | Ast_c.Labeled (Ast_c.Default st) ->
-        build_errorhandling_block_list st
-
-      | Ast_c.Compound _ ->
-        build_errorhandling_block_list h
-
-      | Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
-        let outer_EHC  = find_errorhandling_aux t in
-        let st1_normal = Def.create_stmtlist st1 in
-        let st2_normal = Def.create_stmtlist st2 in
-        let h_normal   = Def.create_stmtlist h in
-        let stmt_list_st1 = gather_goto_code c_function [] st1_normal in
-        let stmt_list_st2 = gather_goto_code c_function [] st2_normal in
-        let stmt_list_st2 =
-          if has_multiple_st stmt_list_st2
-          then stmt_list_st2
-          else []
-        in
-        let branch1_st_lineno = Def.find_startline_no st1_normal in
-        let branch1_en_lineno = Def.find_endline_no stmt_list_st1 in
-        let branch2_st_lineno = Def.find_startline_no st2_normal in
-        let branch2_en_lineno = Def.find_endline_no stmt_list_st2 in
-        let inner_EHC1 = find_errorhandling_aux stmt_list_st1 in
-        let inner_EHC2 = find_errorhandling_aux stmt_list_st2 in
-        let goto1 = Def.goto_exists_in_list st1_normal in
-        let goto2 = Def.goto_exists_in_list st2_normal in
-        let block1 = Block.mk_block (Def.find_startline_no h_normal) e goto1
-            st1_normal Def.Then branch1_st_lineno branch1_en_lineno stmt_list_st1
-        in
-        let block2 = Block.mk_block (Def.find_startline_no h_normal) e goto2
-            st2_normal Def.Else branch2_st_lineno branch2_en_lineno stmt_list_st2
-        in
-        let inner_EHC =
-          match Def.inner_block_in_compound_stmt st1,
-                Def.inner_block_in_compound_stmt st2,
-                stmt_list_st1,
-                stmt_list_st2,
-                return_error e Def.Then stmt_list_st1,
-                return_error e Def.Else stmt_list_st2
-          with
-            (true, true, _, _, _, _) -> inner_EHC1@inner_EHC2
-          | (true, _, _, [], _, _    )
-          | (true, _, _,  _, _, false) -> inner_EHC1
-          | (true, _, _,  _, _, _    ) -> block2::inner_EHC1
-          | (_, true, [], _, _    , _)
-          | (_, true,  _, _, false, _) -> inner_EHC2
-          | (_, true,  _, _, _    , _) -> block1::inner_EHC2
-          | (_, _, x::xs, y::ys, true, true) -> block1::[block2]
-          | (_, _, x::xs, y::ys, true, _   ) -> [block1]
-          | (_, _, x::xs, y::ys, _   , true) -> [block2]
-          | (_, _, x::xs, _    , true, _   ) ->
-            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
-            [block1]
-          | (_, _, _    , x::xs, _   , true) ->
-            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
-            [block2]
-          | _ -> []
-        in
-        inner_EHC@outer_EHC
-      | Ast_c.Iteration (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
-        failwith "for loop with declaration in first argument not supported"
-      | _ -> find_errorhandling_aux t
-  in
-  find_errorhandling_aux ast
 
 let is_return_or_goto x =
   match Ast_c.unwrap x with
@@ -1279,6 +1225,259 @@ let is_following_code_access_exp exp point_lineno follow final_return c_function
   in
   is_following_code_access_exp_aux follow ast
 
+let rec find_ptr_args_list = function
+    []->[]
+  | h::t->
+    match (Def.is_pointer h) with
+      Def.IsPtr       -> h::find_ptr_args_list t
+    | Def.UnknownType -> h::find_ptr_args_list t
+    | _               -> find_ptr_args_list t
+
+let rec args_list_contain_id id = function
+    []-> false
+  | h::t-> match h with
+      (((Ast_c.Unary (e, Ast_c.GetRef)), typ), ii)-> if (Def.compare_exps id e) then true
+      else args_list_contain_id id t
+    |_-> args_list_contain_id id t
+
+let rec remove_string_args = function
+    []-> []
+  | h::t-> if(Def.string_exists_in_explist [h]) then
+      remove_string_args t
+    else h::(remove_string_args t)
+
+let rec assign_var_is_null var = function
+    []-> false
+  | h::t-> match Ast_c.unwrap h with
+      Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, (((Ast_c.Ident (Ast_c.RegularName("NULL",ii2))), typ1), ii1))), typ), ii)) ->
+      if (Def.compare_exps var e1) then true
+      else assign_var_is_null var t
+    |_-> assign_var_is_null var t
+
+let rec find_recent_id_values_paths_inner id id_value any_access  mark =  function
+    []-> id_value
+  | h::t->
+    match Ast_c.unwrap h with
+    | Ast_c.Decl decl ->
+      (match decl with
+         Ast_c.DeclList decls ->
+         (match Ast_c.unwrap decls with
+            [one] ->
+            let onedecl = Ast_c.unwrap2 one in
+            (match onedecl.Ast_c.v_namei with
+               Some (nm, vl) ->
+               (match vl with
+                  Ast_c.ValInit (ii, init) ->
+                  (match Ast_c.unwrap init with
+                     Ast_c.InitExpr (e1) ->
+                     (match id with
+                        (((Ast_c.Ident (ident)), typ11), ii11)->
+                        if (Def.compare_names nm ident) then
+                          find_recent_id_values_paths_inner  id (Some e1) any_access false t
+                        else find_recent_id_values_paths_inner  id id_value any_access mark t
+                      | (((Ast_c.RecordAccess   (e, ident)), typ11), ii11) ->
+                        if (Def.compare_names nm ident)
+                        then find_recent_id_values_paths_inner id (Some e1) any_access false t
+                        else find_recent_id_values_paths_inner id id_value any_access mark t
+                      | (((Ast_c.RecordPtAccess   (e, ident)), typ11), ii11) ->
+                        if (Def.compare_names nm ident) then
+                          find_recent_id_values_paths_inner  id (Some e1) any_access false t
+                        else find_recent_id_values_paths_inner  id id_value any_access mark t
+                      | _-> find_recent_id_values_paths_inner  id id_value any_access mark t)
+                   | _-> find_recent_id_values_paths_inner  id id_value any_access mark t)
+                |	Ast_c.ConstrInit _ ->
+                  failwith "constrinit not supported"
+                |	Ast_c.NoInit -> find_recent_id_values_paths_inner  id id_value any_access mark t )
+             |  None-> find_recent_id_values_paths_inner  id id_value any_access mark t )
+          | _-> find_recent_id_values_paths_inner  id id_value any_access mark t
+         )
+       | _-> find_recent_id_values_paths_inner  id id_value any_access mark t)
+
+    |  Ast_c.ExprStatement (Some (((Ast_c.ParenExpr ((((Ast_c.Assignment (e1, op, (((Ast_c.FunCall  (e, es)), typ4), ii4))), typ3), ii3))), typ), ii))->
+      let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
+      let args_list = find_ptr_args_list args_list in
+      if (args_list_contain_id id args_list) then
+        find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ4), ii4))  any_access false t
+      else find_recent_id_values_paths_inner  id id_value any_access mark t
+    | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, ((( Ast_c.FunCall  (e, es)), typ1), ii1))), typ), ii)) ->
+      let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
+      let args_list = find_ptr_args_list args_list in
+      if (args_list_contain_id id args_list) then
+        if (assign_var_is_null e1 t) then
+          find_recent_id_values_paths_inner  id id_value any_access mark t
+        else find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ1), ii1)) true false t
+      else if (Def.compare_exps id e1) then find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ1), ii1)) any_access false t
+      else find_recent_id_values_paths_inner  id id_value any_access mark t
+
+    | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, e2)), typ), ii)) ->
+      if (Def.compare_exps id e1) then(
+        find_recent_id_values_paths_inner  id (Some e2) any_access false t)
+      else (find_recent_id_values_paths_inner id id_value any_access mark t)
+    | Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (fn_n, [ii3]))), typ10), ii10), es)), typ), ii)) ->
+      (match id_value with
+         None-> let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
+         let args_list1 = find_ptr_args_list args_list in
+         if (List.length args_list1)> 1 then
+           find_recent_id_values_paths_inner id id_value any_access mark t
+         else if(Def.exp_exists_in_list id args_list) && (List.length args_list1)=1  && (List.length args_list)<2 && any_access = false
+                &&(not(Def.string_exists_in_stmt h))then
+           find_recent_id_values_paths_inner  id
+             (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (fn_n, [ii3]))), typ10), ii10), es)), typ), ii)) any_access true t
+         else find_recent_id_values_paths_inner id id_value any_access mark t
+       | Some exp -> if mark = false then find_recent_id_values_paths_inner  id id_value any_access mark t
+         else find_recent_id_values_paths_inner  id
+             (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (fn_n, [ii3]))), typ10), ii10), es)), typ), ii)) any_access true t
+      )
+    | _-> if (Def.exp_exists_in_stmt (Some id) h) then find_recent_id_values_paths_inner  id id_value true mark t
+      else find_recent_id_values_paths_inner  id id_value any_access mark t
+
+
+let rec find_recent_id_values_paths id values = function
+    []   -> values
+  | h::t ->
+    let id_value =
+      find_recent_id_values_paths_inner id None false false h in
+    match id_value with
+      None   -> find_recent_id_values_paths id values      t
+    | Some a -> find_recent_id_values_paths id (a::values) t
+
+let rec other_errblk_contains_same_val return_val = function
+    []       -> false
+  | block::t ->
+    if Block.expression_used_as_argument block return_val then true
+    else other_errblk_contains_same_val return_val t
+
+let remove_blks_that_returns_resource c_function blocks =
+  let remove_blks_that_returns_resource_aux block acc =
+    (match Block.get_returned_expression block with
+       None -> acc
+     | Some (Ast_c.Jump (Ast_c.ReturnExpr e1), _) ->
+       if exists_same_return_value e1 c_function
+       then
+         match Def.is_pointer e1 with
+           Def.IsntPtr-> block::acc
+         | _ -> acc
+       else if other_errblk_contains_same_val e1 blocks
+       then acc
+       else block::acc
+     | _ -> block::acc)
+  in List.fold_right remove_blks_that_returns_resource_aux blocks []
+
+
+
+let rec recheck_blks c_function = function
+    [] -> []
+  | block::t->
+    let is_assigned_error fin_lineno expr =
+      let exe_paths_list =
+        generate_exe_paths_simple fin_lineno [] c_function in
+      let id_values = find_recent_id_values_paths expr [] exe_paths_list in
+      List.exists is_error_return_code id_values
+    in
+    if not (Block.is_error_handling_block is_assigned_error block)
+    then recheck_blks c_function t
+    else
+      block::(recheck_blks c_function t)
+
+
+let find_errorhandling c_function =
+  let {ast = ast} = c_function in
+  let rec find_errorhandling_aux statements =
+    match statements with
+      []   -> []
+    | h::t ->
+      let build_errorhandling_block_list st =
+        let outer_EHC = find_errorhandling_aux t in
+        if Def.inner_block_in_compound_stmt st
+        then
+          let inner_EHC =
+            find_errorhandling_aux (Def.create_stmtlist st) in
+          inner_EHC@outer_EHC
+        else
+          outer_EHC
+      in
+      match Ast_c.unwrap h with
+      | Ast_c.Labeled (Ast_c.Label (_, st))
+      | Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
+      | Ast_c.Labeled (Ast_c.Case  (_, st))
+      | Ast_c.Selection  (Ast_c.Switch (_, st))
+      | Ast_c.Iteration  (Ast_c.While (_, st))
+      | Ast_c.Iteration  (Ast_c.DoWhile (st, _))
+      | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
+      | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st))
+      | Ast_c.Labeled (Ast_c.Default st) ->
+        build_errorhandling_block_list st
+
+      | Ast_c.Compound _ ->
+        build_errorhandling_block_list h
+
+      | Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
+        let outer_EHC  = find_errorhandling_aux t in
+        let st1_normal = Def.create_stmtlist st1 in
+        let stmt_list_st1 = gather_goto_code c_function [] st1_normal in
+        let st2_normal = Def.create_stmtlist st2 in
+        let stmt_list_st2 = gather_goto_code c_function [] st2_normal in
+        let h_normal   = Def.create_stmtlist h in
+        let stmt_list_st2 =
+          if has_multiple_st stmt_list_st2
+          then stmt_list_st2
+          else []
+        in
+
+        let inner_EHC1 = find_errorhandling_aux stmt_list_st1 in
+        let inner_EHC2 = find_errorhandling_aux stmt_list_st2 in
+
+        let branch1_st_lineno = Def.find_startline_no st1_normal in
+        let branch1_en_lineno = Def.find_endline_no stmt_list_st1 in
+        let goto1 = Def.goto_exists_in_list st1_normal in
+        let block1 = Block.mk_block (Def.find_startline_no h_normal) e goto1
+            st1_normal Def.Then branch1_st_lineno branch1_en_lineno stmt_list_st1
+        in
+
+        let branch2_st_lineno = Def.find_startline_no st2_normal in
+        let branch2_en_lineno = Def.find_endline_no stmt_list_st2 in
+        let goto2 = Def.goto_exists_in_list st2_normal in
+        let block2 = Block.mk_block (Def.find_startline_no h_normal) e goto2
+            st2_normal Def.Else branch2_st_lineno branch2_en_lineno stmt_list_st2
+        in
+
+
+        let inner_EHC =
+          match Def.inner_block_in_compound_stmt st1,
+                Def.inner_block_in_compound_stmt st2,
+                stmt_list_st1,
+                stmt_list_st2,
+                return_error e Def.Then stmt_list_st1,
+                return_error e Def.Else stmt_list_st2
+          with
+            (true, true, _, _, _, _) -> inner_EHC1@inner_EHC2
+          | (true, _, _, [], _, _    )
+          | (true, _, _,  _, _, false) -> inner_EHC1
+          | (true, _, _,  _, _, _    ) -> block2::inner_EHC1
+          | (_, true, [], _, _    , _)
+          | (_, true,  _, _, false, _) -> inner_EHC2
+          | (_, true,  _, _, _    , _) -> block1::inner_EHC2
+          | (_, _, x::xs, y::ys, true, true) -> block1::[block2]
+          | (_, _, x::xs, y::ys, true, _   ) -> [block1]
+          | (_, _, x::xs, y::ys, _   , true) -> [block2]
+          | (_, _, x::xs, _    , true, _   ) ->
+            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
+            [block1]
+          | (_, _, _    , x::xs, _   , true) ->
+            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
+            [block2]
+          | _ -> []
+        in
+        inner_EHC@outer_EHC
+      | Ast_c.Iteration (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
+        failwith "for loop with declaration in first argument not supported"
+      | _ -> find_errorhandling_aux t
+  in
+  let error_blocks = find_errorhandling_aux ast in
+  let updated_blk_list = recheck_blks c_function error_blocks in
+  List.rev (remove_blks_that_returns_resource c_function updated_blk_list)
+
+
 let find_model_block_by_release_statement c_function miss_st =
   let {init_labels = label_statements} = c_function in
   if Def.stmt_exists_in_list miss_st label_statements
@@ -1481,20 +1680,23 @@ let get_identifier_values c_function block offset args_list =
     | Some b -> Block.extract_branch_start b in
   let exe_paths_list = generate_exe_paths_simple (fin_lineno + offset)
       [] c_function in
-  let ids_list = Def.refine_id_list (list_of_id_values exe_paths_list args_list) in
+
   let id_values =
-    match (args_list, ids_list) with
-      ([h], []) -> []
-    | ([h], ids) -> snd (List.hd ids)
-    | _   -> find_idvalues_list exe_paths_list [] args_list in
+    match args_list with
+      [h] -> find_recent_id_values_paths h [] exe_paths_list
+    | _   -> find_idvalues_list exe_paths_list [] args_list
+  in
 
   let id_values = filter_null_out id_values in
+(* TODO
   let id_values =
     if same_id_values id_values &&
        List.length id_values != 0
     then [(List.hd id_values)]
     else [] in
+     *)
   id_values
+
 
 let rec refine_ref_list args_list = function
     []       -> []
@@ -1603,7 +1805,7 @@ let rec find_last_access var ref_vars last_access = function
 let rec rr_in_exe_paths_new rls c_function last_func = function
     [] -> false
   | block::t->
-    if Block.does_block_contains_statement block rls 
+    if Block.does_block_contains_statement block rls
     then
       let blk_strtlineno = Block.extract_branch_start block in
       let exe_paths_list = generate_exe_paths_simple (blk_strtlineno-1) []
@@ -1624,7 +1826,7 @@ let check_each_path c_function alloc rr args args_list block final_return
   let rec check_each_path_aux = function
       [] -> false
     | path::rest ->
-      let t_ref_vars = Pointer_linked.gather_all_ref_var path in
+      let t_ref_vars = gather_all_ref_var path in
       let ref_vars = refine_ref_list args t_ref_vars in
       let last_access =
         find_last_access (List.hd args) ref_vars None path in
@@ -1742,8 +1944,7 @@ let rec find_actual_alloc exe_paths_candidate = function
     else find_actual_alloc exe_paths_candidate t
 
 
-
-let is_resource_allocated c_function model_block release_block args_list =
+let is_resource_allocation_the_same c_function model_block release_block args_list =
   let possible_alloc =
     find_possible_alloc_with_given_argument c_function model_block args_list
   in
@@ -1752,4 +1953,186 @@ let is_resource_allocated c_function model_block release_block args_list =
       miss_line [] c_function in
   find_actual_alloc exe_paths_candidate possible_alloc
 
+(* Return a list of block starting line that does not release the resource *)
+let no_previous_blk_has_rrl miss_block rrl alloc_line =
+  let no_previous_blk_has_rrl_aux block =
+    Block.compare_branch_start block alloc_line > 0 &&
+    Block.compare_branch_end_with_start block miss_block < 0 &&
+    not (Block.does_block_contains_statement block rrl)
+  in
+  List.filter no_previous_blk_has_rrl_aux
 
+let find_app_model_blk miss_st miss_blk =
+  let rec find_app_model_blk_aux (diff, model) = function
+      []   -> model
+    | block::t ->
+    let miss_blk_strtlineno_diff = Block.compare_branch_start miss_blk block in
+    if Block.does_block_contains_statement block miss_st
+    then
+      if miss_blk_strtlineno_diff < 0 &&
+         diff = 0
+      then Some block
+      else
+      if miss_blk_strtlineno_diff > diff
+      then
+        find_app_model_blk_aux (miss_blk_strtlineno_diff, Some block) t
+      else find_app_model_blk_aux (diff, model) t
+    else find_app_model_blk_aux (diff, model) t
+  in
+  find_app_model_blk_aux (0, None)
+
+
+let is_resource_allocated_properly block error_blocks c_function
+    (Resource.Resource (alloc, args, rrl)) =
+  let alloc_line = Def.find_startline_no (Def.create_stmtlist alloc) in
+  let alloc_block = Block.mk_block_simple alloc_line (Def.create_stmtlist
+                                                        alloc) in
+  match Ast_c.unwrap rrl with
+    Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
+    let args_list = Def.create_argslist [] es in
+    if List.length args_list = 1
+    then
+      let unreleasing_blocks = no_previous_blk_has_rrl block rrl alloc_block
+          error_blocks in
+      if List.length unreleasing_blocks > 0
+      then
+        let model_blk = find_app_model_blk rrl block error_blocks in
+        not (
+          is_resource_allocation_the_same c_function model_blk block
+            args_list)
+      else true
+    else true
+  | _ -> false
+
+
+
+let rec find_ptr_args_list = function
+    []->[]
+  |   h::t-> match (Def.is_pointer h) with
+      Def.IsPtr->h::find_ptr_args_list t
+    |   Def.UnknownType-> h::find_ptr_args_list t
+    |   _-> find_ptr_args_list t
+
+let defined_alloc id =
+  if id =~ "__dev_get_by_name" then true
+  else if id =~ "wiphy_to_dev" then true
+  else if id =~ "container_of" then true
+  else if id =~ "i2c_get_adapdata" then true
+  else if id =~ "snd_lookup_oss_minor_data" then true
+  else if id =~ "snd_lookup_minor_data" then true
+  else if id =~ "pci_get_drvdata" then true
+  else if id =~ "dev_get_by_name" then true
+  else if id =~ "l2cap_load" then true
+  else if id =~ "platform_get_irq" then true
+  else if id =~ "wpan_phy_find" then true
+  else if id =~ "nla_nest_start" then true
+  else if id =~ "sx_init_drivers" then true
+  else if id =~ "clk_get" then true
+  else if id =~ "irq_of_parse_and_map" then true
+  else if id =~ "netdev_priv" then true
+  else false
+
+
+let is_defined_alloc alloc =
+  match Ast_c.unwrap alloc with
+  | Ast_c.ExprStatement (Some (((Ast_c.FunCall ((((Ast_c.Ident
+                                                     (Ast_c.RegularName (id,
+                                                                         _))),
+                                                  _), _), _)), _), _)) ->
+    defined_alloc id
+  | _-> false
+
+
+let is_resource_released block error_blocks c_function
+    (Resource.Resource (alloc, args, rr)) =
+  match Ast_c.unwrap rr with
+    Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
+    let final_return = find_final_return c_function in
+    let args_list =
+      find_ptr_args_list (Def.remove_optionlist (Def.create_argslist [] es)) in
+    not (
+      (match List.hd args_list with
+         ((Ast_c.Ident ident, _), _)
+       | (((Ast_c.RecordAccess (((Ast_c.Ident ident, _), _), _)), _), _)
+       | (((Ast_c.RecordPtAccess (((Ast_c.Ident ident, _), _), _)), _), _) ->
+         not (is_locally_main block ident true c_function)
+       | _ -> false) ||
+      Block.does_block_contains_statement block rr ||
+      List.exists (Block.contains_expression block) args ||
+      is_defined_alloc alloc) &&
+    check_each_path c_function alloc rr args args_list block
+      final_return error_blocks
+  | _ -> false
+
+let find_first_model_blk miss_st errblk_list =
+  let find_first_model_blk_aux model block =
+    match model with
+      None       -> Some block
+    | Some model_block ->
+      if Block.does_block_contains_statement block miss_st &&
+         Block.compare_branch_start block model_block < 0
+      then Some block
+      else model
+  in
+  List.fold_left find_first_model_blk_aux None errblk_list
+
+let resource_of_release_temp block error_blocks c_function
+    (Resource.Resource (alloc, args_list, _)) =
+
+  let id_values1 =
+    get_identifier_values c_function (Some block) 0 args_list
+  in
+
+  let alloc_call =
+    match alloc with
+      (Ast_c.ExprStatement (Some id), _) -> id
+  in
+
+  if List.length id_values1 = 1
+  then
+    match (List.hd id_values1, alloc_call) with
+      ((((Ast_c.FunCall (_, _)), _), _) as e1,
+       (((Ast_c.Cast (_, ((((Ast_c.FunCall  (_, _)), _), _) as e2))), _),
+        _))
+    | ((((Ast_c.FunCall (_, _)), _), _) as e1,
+       ((((Ast_c.FunCall (_, _)), _), _) as e2))
+    | ((((Ast_c.Cast (_, ((((Ast_c.FunCall  (_, _)), _), _) as e1))), _),
+        _),
+       ((((Ast_c.FunCall (_, _)), _), _) as e2))
+    | ((((Ast_c.Cast (_, ((((Ast_c.FunCall (_, _)), _), _) as e1))), _),
+        _),
+       (((Ast_c.Cast (_, ((((Ast_c.FunCall (_, _)), _), _) as e2))), _), _))
+      -> Def.compare_exps e1 e2
+    | _ -> false
+  else false
+
+
+let option_map f lst =
+    let aux acc x = match f x with
+        | Some item -> item :: acc
+                       | None -> acc in
+    List.rev (List.fold_left aux [] lst)
+
+let get_resources c_function error_blocks =
+  let get_resource_release acc block = Block.get_resource_release block acc in
+  let releases = List.fold_left get_resource_release [] error_blocks in
+  let resource_of_release (Resource.Release (args_list, h)) =
+    let match_model = find_model_block_by_release_statement c_function h in
+
+    let model_blk =
+      match (find_first_model_blk h error_blocks, match_model) with
+        (Some model, _) -> Some model
+      | (         _, e) -> e
+    in
+
+    let id_values = get_identifier_values c_function model_blk (-1) args_list in
+
+    if List.length id_values = 1
+    then
+      let id = List.hd id_values in
+      let new_alloc = (Ast_c.ExprStatement (Some id), []) in
+      Some (Resource.Resource (new_alloc, args_list, h))
+    else
+      None
+  in
+  option_map resource_of_release releases

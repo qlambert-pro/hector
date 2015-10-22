@@ -157,23 +157,8 @@ let _ =
     else [!file]
 
   in
-  (match (!diff, !real_diff) with
-     (false, false) ->
-     Common.main_boilerplate
-       (fun () -> List.iter (function x -> cat (
-            try Common.timeout_function 60 (function () -> test_type_c x)
-            with _ -> []))
-            files)
-   | (true, _) ->
-     List.iter (function x -> compare_with_indented x (test_type_c x)) files
-   | (_, true) ->
-     List.iter (function x -> compare_with_original x (test_type_c x)) files);
-
-  (*     let ic = open_in "sound_new_rep" in *)
-
-  (*      try  *)
-  (*        while true do *)
-  (*          let line = input_line ic in  *)
-  (*          test_type_c line  *)
-  (*        done;  *)
-  (*      with End_of_file -> close_in ic ;  *)
+  Common.main_boilerplate
+    (fun () -> List.iter (function x -> cat (
+         try Common.timeout_function 60 (function () -> test_type_c x)
+         with _ -> []))
+         files)

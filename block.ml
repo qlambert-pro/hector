@@ -676,8 +676,8 @@ let rec create_stmtlist = function
     []->[]
   | h::t-> ((Ast_c.ExprStatement (Some h),[]))::(create_stmtlist t)
 
-let return_st_access_resource miss_st (Block (_, _, _, _, _, _, _,
-                                              statements))=
+let return_st_access_resource (Resource.Resource (_, _, miss_st))
+    (Block (_, _, _, _, _, _, _, statements)) =
   let rec return_st_access_resource_aux = function
       []   -> false
     | h::t ->

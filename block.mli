@@ -19,12 +19,6 @@ val is_error_handling_block: (int -> Ast_c.expression -> bool) -> block -> bool
 
 val get_returned_expression: block -> Ast_c.statement option
 
-(* Return the returned expression as well as the line where it dies, its not
- * generic the current version should not assume anything about the behaviour of
- * that function *)
-(* val get_returned_expression_and_line: block -> (int * Ast_c.expression)
- * option *)
-
 val expression_used_as_argument: block -> Ast_c.expression -> bool
 val does_block_contains_statement: block -> Ast_c.statement  -> bool
 val contains_expression: block -> Ast_c.expression -> bool
@@ -41,6 +35,6 @@ val find_all_resource_release_without_argument:
   block -> Ast_c.statement list
 
 val return_st_access_resource:
-  Ast_c.statement ->
+  Resource.resource ->
   block ->
   bool
