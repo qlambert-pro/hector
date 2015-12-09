@@ -352,18 +352,18 @@ let return_built_in_constant id =
 let rec is_error_code_test ee =
   match ee with
 
-  | (((Ast_c.Binary (e1, Ast_c.Logical Ast_c.NotEq, (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
+  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.NotEq, _), (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
     (match (Def.is_pointer e1) with
        Def.IsntPtr -> Some true
      | _           -> None)
 
-  | (((Ast_c.Binary (e1, Ast_c.Logical Ast_c.SupEq, (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii)
-  |  (((Ast_c.Binary (e1, Ast_c.Logical Ast_c.Eq, (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
+  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.SupEq, _), (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii)
+  |  (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.Eq, _), (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
     (match (Def.is_pointer e1) with
        Def.IsntPtr -> None
      | _           -> Some true)
 
-  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.OrLog), e2)), typ), ii) ->
+  | (((Ast_c.Binary (e1, ((Ast_c.Logical Ast_c.OrLog), _), e2)), typ), ii) ->
     (match (is_error_code_test e1, is_error_code_test e2) with
        (Some true, _)
      | (_, Some true) -> Some true
@@ -371,21 +371,21 @@ let rec is_error_code_test ee =
      | (_, None)      -> None
      | _              -> Some false)
 
-  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.AndLog), e2)), typ), ii) ->
+  | (((Ast_c.Binary (e1, ((Ast_c.Logical Ast_c.AndLog), _), e2)), typ), ii) ->
     (match (is_error_code_test e1, is_error_code_test e2) with
        (Some true, Some true) -> Some true
      | (None, _)
      | (_, None)      -> None
      | _              -> Some false)
 
-  | (((Ast_c.Binary (e1, (Ast_c.Arith Ast_c.And), e2)), typ), ii)
-  | (((Ast_c.Binary (e1, (Ast_c.Arith Ast_c.Or), e2)), typ), ii) -> None
+  | (((Ast_c.Binary (e1, ((Ast_c.Arith Ast_c.And), _), e2)), typ), ii)
+  | (((Ast_c.Binary (e1, ((Ast_c.Arith Ast_c.Or), _), e2)), typ), ii) -> None
 
   | (((Ast_c.FunCall ((((Ast_c.Ident (Ast_c.RegularName ("IS_ERR", _))), _), _),
                       _)), _), _)
-  | (((Ast_c.Binary (_, Ast_c.Logical Ast_c.Eq , (((Ast_c.Unary (_, Ast_c.Not)),
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq, _) , (((Ast_c.Unary (_, Ast_c.Not)),
                                                    _), _))), _), _)
-  | (((Ast_c.Binary (_, Ast_c.Logical Ast_c.Eq , (((Ast_c.Unary (_,
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq, _) , (((Ast_c.Unary (_,
                                                                  Ast_c.UnMinus)),
                                                    _), _))), _), _) -> Some true
 
@@ -394,10 +394,10 @@ let rec is_error_code_test ee =
        Def.IsntPtr -> Some false
      | _           -> Some true)
 
-  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq), ((Ast_c.Ident
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq, _), ((Ast_c.Ident
                                                       (Ast_c.RegularName("NULL",_)),
                                                     _), _))), _), _)
-  | (((Ast_c.Binary (_, Ast_c.Logical Ast_c.Inf, (((Ast_c.Constant (Ast_c.Int
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Inf, _), (((Ast_c.Constant (Ast_c.Int
                                                                       ("0",
                                                                        _))), _),
                                                   _))), _), _) -> Some true
@@ -461,74 +461,6 @@ let is_error_handling_block is_assigned_error_code
        is_error_handling_block_aux fin_lineno expr
 
      | _ -> true)
-
-
-(*
-let is_error_handling_block (Block (_, exp, _, _, part, _, _, stmtlist)) =
-  (match part with
-     Def.Then ->
-     (match is_error_code_test exp with
-        Some true -> true
-      | _         -> false)
-
-   | Def.Else ->
-     (match is_error_code_test exp with
-        Some _ -> false
-      | _      -> true))
-  ||
-  (match Def.return_exists_in_list stmtlist with
-     None    -> false
-   | Some st ->
-     let return_expr =
-       match Ast_c.unwrap st with
-         Ast_c.Jump (Ast_c.ReturnExpr (e, _)) -> Some e
-       | _ -> None
-     in
-     (match return_expr with
-        Some ((Ast_c.Ident (Ast_c.RegularName(id, _))), _)
-      | Some ((Ast_c.ParenExpr ((((Ast_c.Ident (Ast_c.RegularName(id, _))),
-                                  _), _))), _) ->
-        not (return_built_in_constant id)
-
-      | Some ((Ast_c.Cast (_, (((Ast_c.ParenExpr ((((Ast_c.Ident ident),
-                                                    _), _))), _), _))), _)
-      | Some ((Ast_c.Cast (_, (((Ast_c.Ident ident), _), _))), _) ->
-        false
-      | _ -> true))
-
-let get_returned_expression_and_line (Block (_, exp, _, _, part,
-                                    blk_strtlineno, _, stmtlist)) =
-  let blank_type_info = ref (None, Ast_c.NotTest) in
-  match Def.return_exists_in_list stmtlist with
-    None    -> None
-  | Some st ->
-    let return_expr =
-      match Ast_c.unwrap st with
-        Ast_c.Jump (Ast_c.ReturnExpr (e, _)) -> Some e
-      | _ -> None
-    in
-
-    (match return_expr with
-       Some ((Ast_c.Ident (Ast_c.RegularName(id, ii))), typ) ->
-       let fin_lineno = blk_strtlineno in
-       let expr = (((Ast_c.Ident (Ast_c.RegularName(id, ii))), typ), []) in
-       Some (fin_lineno, expr)
-     | Some ((Ast_c.ParenExpr ((((Ast_c.Ident (Ast_c.RegularName(id, ii))),
-                                 _), _))), _) ->
-       let fin_lineno = Def.find_startline_no (Def.create_stmtlist st) in
-       let expr = (((Ast_c.Ident (Ast_c.RegularName(id, ii))),
-                    blank_type_info), []) in
-       Some (fin_lineno, expr)
-
-     | Some ((Ast_c.Cast (_, (((Ast_c.ParenExpr ((((Ast_c.Ident ident),
-                                                   _), _))), _), _))), _)
-     | Some ((Ast_c.Cast (_, (((Ast_c.Ident ident), _), _))), _) ->
-       let fin_lineno = Def.find_startline_no (Def.create_stmtlist st) in
-       let expr = (((Ast_c.Ident ident), blank_type_info), []) in
-       Some (fin_lineno, expr)
-
-     | _ -> None)
-*)
 
 let rec exp_exists_in_stmtlist exp = function
     []-> false

@@ -22,29 +22,38 @@
 # Configuration section
 #############################################################################
 
--include Makefile.config
 
-VERSION=$(shell cat globals/config.ml.in |grep version |perl -p -e 's/.*"(.*)".*/$$1/;')
 
 ##############################################################################
 # Variables
 ##############################################################################
+
+KAPUTT_FLAGS=
+KAPUTT_LIBS=
+KAPUTT_INCLUDE=
+KAPUTT_DEP=
+
+
 TARGET=hector
 
-
 SRC=flag_cocci.ml var_dec.ml def.ml resource.ml block.ml report.ml\
-    c_function.ml org.ml analyzer.ml main.ml
+    c_function.ml org.ml analyzer.ml
 
-OPTLIBFLAGS=
+SRCI=var_dec.mli resource.mli block.mli c_function.mli org.mli analyzer.mli
 
-SEXPSYSCMA=bigarray.cma nums.cma
+TEST=
 
-SYSLIBS=str.cma unix.cma $(SEXPSYSCMA)
-LIBS=commons/commons.cma globals/globals.cma parsing_c/parsing_c.cma
+MAIN=main.ml
+
+SYSLIBS=str.cma unix.cma bigarray.cma nums.cma $(KAPUTT_LIBS)
+LIBS=coccinelle/commons/commons.cma coccinelle/globals/globals.cma\
+     coccinelle/parsing_cocci/cocci_parser.cma\
+     coccinelle/parsing_c/parsing_c.cma
 
 #used for clean: and depend: and a little for rec & rec.opt
-MAKESUBDIRS=commons globals parsing_c
-INCLUDEDIRS=commons commons/ocamlextra globals parsing_c
+MAKESUBDIRS=coccinelle/commons coccinelle/globals coccinelle/parsing_c
+INCLUDEDIRS=coccinelle/commons coccinelle/commons/ocamlextra\
+	    coccinelle/globals coccinelle/parsing_c $(KAPUTT_INCLUDE)
 
 ##############################################################################
 # Generic variables
@@ -53,7 +62,9 @@ INCLUDEDIRS=commons commons/ocamlextra globals parsing_c
 INCLUDES=$(INCLUDEDIRS:%=-I %)
 
 OBJS=    $(SRC:.ml=.cmo)
+MAIN_OBJ=$(MAIN:.ml=.cmo)
 OPTOBJS= $(SRC:.ml=.cmx)
+MAIN_OPTOBJS= $(MAIN:.ml=.cmx)
 
 EXEC=$(TARGET)
 
@@ -73,11 +84,11 @@ OPTFLAGS=
 # the following is essential for Coccinelle to compile under gentoo
 # but is now defined above in this file
 
-OCAMLC=ocamlc$(OPTBIN) $(OCAMLCFLAGS)  $(INCLUDES)
+OCAMLC=ocamlc$(OPTBIN) $(OCAMLCFLAGS)  $(INCLUDES) $(KAPUTT_FLAGS)
 OCAMLOPT=ocamlopt$(OPTBIN) $(OPTFLAGS) $(INCLUDES)
 OCAMLLEX=ocamllex #-ml # -ml for debugging lexer, but slightly slower
 OCAMLYACC=ocamlyacc -v
-OCAMLDEP=ocamldep $(INCLUDES)
+OCAMLDEP=ocamldep $(INCLUDES) $(KAPUTT_FLAGS)
 OCAMLMKTOP=ocamlmktop -g -custom $(INCLUDES)
 
 # can also be set via 'make static'
@@ -89,84 +100,53 @@ BYTECODE_STATIC=-custom
 ##############################################################################
 # Top rules
 ##############################################################################
-.PHONY:: all all.opt byte opt top clean distclean configure
-.PHONY:: $(MAKESUBDIRS) $(MAKESUBDIRS:%=%.opt) subdirs subdirs.opt
+.PHONY:: default depend all byte opt top clean realclean
 
-all: Makefile.config byte
+default: byte
 
-opt: all.opt
-all.opt: opt-compil
+all: byte opt test
 
-world:
-	$(MAKE) byte
-	$(MAKE) opt-compil
+byte: $(EXEC)
 
-byte: .depend
-	$(MAKE) subdirs
-	$(MAKE) $(EXEC)
+opt:  $(EXEC).opt
 
-opt-compil: .depend
-	$(MAKE) subdirs.opt
-	$(MAKE) $(EXEC).opt
+top:  $(EXEC).top
 
-top: $(EXEC).top
+test: KAPUTT_PATH=$(shell ocamlfind query kaputt)
+test: KAPUTT_FLAGS= -pp '$(KAPUTT_PATH)/kaputt_pp.byte on camlp4o'
+test: KAPUTT_LIBS= $(KAPUTT_PATH)/kaputt.cma
+test: KAPUTT_INCLUDE= $(KAPUTT_PATH)
+test: KAPUTT_DEP= $(TEST)
+test: $(TEST) $(LIBS) $(OBJS)
+	@echo "[L] test"
+	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $(LIBS) $(OBJS)
 
-subdirs:
-	$(MAKE) -C commons OCAMLCFLAGS="$(OCAMLCFLAGS)"
-	+for D in $(MAKESUBDIRS); do $(MAKE) $$D || exit 1 ; done
+coccinelle/configure:
+	@echo "Coccinelle: ./autogen"
+	@cd coccinelle && ./autogen
 
-subdirs.opt:
-	$(MAKE) -C commons all.opt OCAMLCFLAGS="$(OCAMLCFLAGS)"
-	+for D in $(MAKESUBDIRS); do $(MAKE) $$D.opt || exit 1 ; done
+coccinelle/Makefile.config: coccinelle/configure
+	@echo "Coccinelle: ./configure"
+	@cd coccinelle && ./configure
 
-$(MAKESUBDIRS):
-	$(MAKE) -C $@ OCAMLCFLAGS="$(OCAMLCFLAGS)" all
+$(LIBS): coccinelle/configure coccinelle/Makefile.config
+	@$(MAKE) -C coccinelle OCAMLCFLAGS="$(OCAMLCFLAGS)" $(@:coccinelle/%=%)
 
-$(MAKESUBDIRS:%=%.opt):
-	$(MAKE) -C $(@:%.opt=%) OCAMLCFLAGS="$(OCAMLCFLAGS)" all.opt
-
-#dependencies:
-# commons:
-# globals:
-# menhirlib:
-# parsing_cocci: commons globals menhirlib
-# parsing_c:parsing_cocci
-# ctl:globals commons
-# engine: parsing_cocci parsing_c ctl
-# popl09:engine
-# extra: parsing_cocci parsing_c ctl
-
-clean::
-	set -e; for i in $(MAKESUBDIRS); do $(MAKE) -C $$i $@; done
-
-$(LIBS): $(MAKESUBDIRS)
-$(LIBS:.cma=.cmxa): $(MAKESUBDIRS:%=%.opt)
+$(LIBS:.cma=.cmxa): coccinelle/configure coccinelle/Makefile.config
+	@$(MAKE) -C coccinelle OCAMLCFLAGS="$(OCAMLCFLAGS)" $(@:coccinelle/%=%)
 
 $(OBJS):$(LIBS)
 $(OPTOBJS):$(LIBS:.cma=.cmxa)
 
-$(EXEC): $(LIBS) $(OBJS)
-	$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS)  $^
+$(EXEC): $(LIBS) $(OBJS) $(MAIN_OBJ)
+	@echo "[L] hector"
+	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $^
 
-$(EXEC).opt: $(LIBS:.cma=.cmxa) $(OPTOBJS)
-	$(OCAMLOPT) $(STATIC) -o $@ $(SYSLIBS:.cma=.cmxa) $(OPTLIBFLAGS)  $^
+$(EXEC).opt: $(LIBS:.cma=.cmxa) $(OPTOBJS) $(MAIN_OPTOBJS)
+	@$(OCAMLOPT) $(STATIC) -o $@ $(SYSLIBS:.cma=.cmxa) $^
 
 $(EXEC).top: $(LIBS) $(OBJS)
-	$(OCAMLMKTOP) -custom -o $@ $(SYSLIBS) $^
-
-clean::
-	rm -f $(TARGET) $(TARGET).opt $(TARGET).top
-	rm -f .depend
-
-
-.PHONY:: configure
-
-configure:
-	./configure
-
-Makefile.config:    
-	@echo "Makefile.config is missing. Have you run ./configure?"
-	@exit 1
+	@$(OCAMLMKTOP) -custom -o $@ $(SYSLIBS) $^
 
 static:
 	rm -f spatch.opt spatch
@@ -181,37 +161,42 @@ purebytecode:
 # Generic ocaml rules
 ##############################################################################
 
-.SUFFIXES: .ml .mli .cmo .cmi .cmx
+%.mlt: tests/%.mlt
+	@echo "Copying $@"
+	@cp $< $@
+	# this is a hack to force recompile
+	@rm $(@:.mlt=.cmo)
 
-.ml.cmo:
-	$(OCAMLC)    -c $<
-.mli.cmi:
-	$(OCAMLC)    -c $<
-.ml.cmx:
-	$(OCAMLOPT)  -c $<
+%.cmo: %.ml %.ml.d
+	@echo "[C] $<"
+	@$(OCAMLC)    -c $<
 
-.ml.mldepend:
-	$(OCAMLC) -i $<
+%.cmi: %.mli %.mli.d
+	@echo "[C] $<"
+	@$(OCAMLC)    -c $<
 
-clean::
-	rm -f *.cm[iox] *.o *.annot
-	rm -f *~ .*~ *.exe #*#
+%.cmx: %.ml
+	@$(OCAMLOPT)  -c $<
 
-beforedepend::
+%.ml.d:: %.ml %.mlt
+	@$(OCAMLDEP) $< > $@
+	@echo $(<:.ml=.cmo): $(<:.ml=.mlt) >> $@
+	@echo $(<:.ml=.cmx): $(<:.ml=.mlt) >> $@
 
-depend:: beforedepend
-	$(OCAMLDEP) *.mli *.ml > .depend
-	set -e; for i in $(MAKESUBDIRS); do $(MAKE) -C $$i $@; done
+%.ml.d:: %.ml
+	@$(OCAMLDEP) $< > $@
 
-.depend::
-	@if [ ! -f .depend ] ; then $(MAKE) depend ; fi
+%.mli.d: %.mli
+	@$(OCAMLDEP) $< > $@
 
--include .depend
+clean:
+	@rm -f $(TARGET) $(TARGET).opt $(TARGET).top
+	@rm -f *.d
+	@rm -f *.cm[iox] *.o *.annot
+	@rm -f *~ *.exe
+	@rm -f *.mlt
 
--include Makefile.local
+realclean: clean
+	make -C coccinelle clean
 
-TOLICENSIFY=$(MAKESUBDIRS)
-
-licensify:
-	ocaml str.cma tools/licensify.ml
-	set -e; for i in $(TOLICENSIFY); do cd $$i; ocaml str.cma ../tools/licensify.ml; cd ..; done
+-include $(MAIN:.ml=.ml.d) $(SRC:.ml=.ml.d) $(SRCI:.mli=.mli.d)

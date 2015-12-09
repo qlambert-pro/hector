@@ -6,6 +6,11 @@
 *.pyc
 *.mllib
 *.mldylib
+*.mlt
+*.d
+
+hector
+test
 
 *~
 .depend

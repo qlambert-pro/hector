@@ -444,18 +444,18 @@ let has_multiple_st = function
 let rec is_error_code_test ee =
   match ee with
 
-  | (((Ast_c.Binary (e1, Ast_c.Logical Ast_c.NotEq, (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
+  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.NotEq, _), (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
     (match (Def.is_pointer e1) with
        Def.IsntPtr -> Some true
      | _           -> None)
 
-  | (((Ast_c.Binary (e1, Ast_c.Logical Ast_c.SupEq, (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii)
-  |  (((Ast_c.Binary (e1, Ast_c.Logical Ast_c.Eq, (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
+  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.SupEq, _), (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii)
+  |  (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.Eq, _), (((Ast_c.Constant (Ast_c.Int ("0", _))), typ2), ii2))), typ), ii) ->
     (match (Def.is_pointer e1) with
        Def.IsntPtr -> None
      | _           -> Some true)
 
-  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.OrLog), e2)), typ), ii) ->
+  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.OrLog, _), e2)), typ), ii) ->
     (match (is_error_code_test e1, is_error_code_test e2) with
        (Some true, _)
      | (_, Some true) -> Some true
@@ -463,21 +463,21 @@ let rec is_error_code_test ee =
      | (_, None)      -> None
      | _              -> Some false)
 
-  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.AndLog), e2)), typ), ii) ->
+  | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.AndLog, _), e2)), typ), ii) ->
     (match (is_error_code_test e1, is_error_code_test e2) with
        (Some true, Some true) -> Some true
      | (None, _)
      | (_, None)      -> None
      | _              -> Some false)
 
-  | (((Ast_c.Binary (e1, (Ast_c.Arith Ast_c.And), e2)), typ), ii)
-  | (((Ast_c.Binary (e1, (Ast_c.Arith Ast_c.Or), e2)), typ), ii) -> None
+  | (((Ast_c.Binary (e1, (Ast_c.Arith Ast_c.And, _), e2)), typ), ii)
+  | (((Ast_c.Binary (e1, (Ast_c.Arith Ast_c.Or, _), e2)), typ), ii) -> None
 
   | (((Ast_c.FunCall ((((Ast_c.Ident (Ast_c.RegularName ("IS_ERR", _))), _), _),
                       _)), _), _)
-  | (((Ast_c.Binary (_, Ast_c.Logical Ast_c.Eq , (((Ast_c.Unary (_, Ast_c.Not)),
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq, _) , (((Ast_c.Unary (_, Ast_c.Not)),
                                                    _), _))), _), _)
-  | (((Ast_c.Binary (_, Ast_c.Logical Ast_c.Eq , (((Ast_c.Unary (_,
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq, _) , (((Ast_c.Unary (_,
                                                                  Ast_c.UnMinus)),
                                                    _), _))), _), _) -> Some true
 
@@ -486,10 +486,10 @@ let rec is_error_code_test ee =
        Def.IsntPtr -> Some false
      | _           -> Some true)
 
-  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq), ((Ast_c.Ident
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Eq, _), ((Ast_c.Ident
                                                       (Ast_c.RegularName("NULL",_)),
                                                     _), _))), _), _)
-  | (((Ast_c.Binary (_, Ast_c.Logical Ast_c.Inf, (((Ast_c.Constant (Ast_c.Int
+  | (((Ast_c.Binary (_, (Ast_c.Logical Ast_c.Inf, _), (((Ast_c.Constant (Ast_c.Int
                                                                       ("0",
                                                                        _))), _),
                                                   _))), _), _) -> Some true
@@ -565,7 +565,7 @@ let rec return_error e typ = function
     | Ast_c.Jump (Ast_c.ReturnExpr (((Ast_c.Ident _), _), _)) ->
       true
 
-    | Ast_c.Jump (Ast_c.ReturnExpr (((Ast_c.Binary (_, opr, _)), _), _)) ->
+    | Ast_c.Jump (Ast_c.ReturnExpr (((Ast_c.Binary (_, (opr, _), _)), _), _)) ->
       if find_op_type opr
       then is_if_error_code
       else false
@@ -612,21 +612,21 @@ let rec invert_st st =
   let nst = mk_expr_st st in
   match st with
   | (((Ast_c.Binary ((((Ast_c.ParenExpr (((Ast_c.Assignment (e1, op1, e2), _), _))), _), _),
-                     (Ast_c.Logical Ast_c.Eq),
+                     (Ast_c.Logical Ast_c.Eq, _),
                      ((Ast_c.Ident (Ast_c.RegularName("NULL", _)), _), _))), _), _) ->
     ([mk_expr_st ((Ast_c.Assignment (e1, op1, (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), blank_type_info), [])), blank_type_info), [])],
      [mk_expr_st ((Ast_c.Assignment (e1, op1, e2), blank_type_info), [])])
 
   | (((Ast_c.Binary ((((Ast_c.ParenExpr (((Ast_c.Assignment (e1, op1, e2), _), _))), _), _),
-                     (Ast_c.Logical Ast_c.NotEq),
+                     (Ast_c.Logical Ast_c.NotEq, _),
                      ((Ast_c.Ident (Ast_c.RegularName("NULL", _)), _), _))), _), _) ->
     ([mk_expr_st ((Ast_c.Assignment (e1, op1, e2), blank_type_info), [])],
      [mk_expr_st ((Ast_c.Assignment (e1, op1, ((Ast_c.Ident (Ast_c.RegularName("NULL",[])), blank_type_info), [])), blank_type_info), [])])
 
   | (((Ast_c.Binary ((((Ast_c.ParenExpr (e1)), _), _),
-                     (Ast_c.Logical Ast_c.Eq),
+                     (Ast_c.Logical Ast_c.Eq, _),
                      ((Ast_c.Ident (Ast_c.RegularName("NULL", _)), _), _))), _), _) ->
-    ([mk_expr_st (((Ast_c.Assignment (e1, (Ast_c.SimpleAssign), (((Ast_c.Ident (Ast_c.RegularName("NULL",[]))), blank_type_info), []))), blank_type_info), [])],
+    ([mk_expr_st (((Ast_c.Assignment (e1, (Ast_c.SimpleAssign, []), (((Ast_c.Ident (Ast_c.RegularName("NULL",[]))), blank_type_info), []))), blank_type_info), [])],
      [mk_expr_st e1])
 
   | (((Ast_c.Assignment (e1, op, e2)), _), _) ->
@@ -636,7 +636,7 @@ let rec invert_st st =
   | (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName("IS_ERR",ii3))), typ1), ii1), es) ), typ), ii) ->
     if List.length es > 0
     then ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))),
-                                          (Ast_c.SimpleAssign),
+                                          (Ast_c.SimpleAssign, []),
                                           ((Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
           [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else ([nst],[nst])
@@ -644,45 +644,45 @@ let rec invert_st st =
   | (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName("dma_mapping_error",ii3))), typ1), ii1), es) ), typ), ii) ->
     if List.length es > 0
     then ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))),
-                                          (Ast_c.SimpleAssign),
+                                          (Ast_c.SimpleAssign, []),
                                           ((Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
           [mk_expr_st(List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else ([nst],[nst])
 
   | (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName("is_bad",ii3))), typ1), ii1), es) ), typ), ii) ->
     if (List.length es> 0) then
-      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st(List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else ([nst],[nst])
   | (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName("IS_ERR_OR_NULL",ii3))), typ1), ii1), es) ), typ), ii) ->
     if (List.length es> 0) then
-      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else ([nst],[nst])
   | (((Ast_c.Binary   ((((Ast_c.FunCall (e1, es)), typ1), ii1),
-                       (Ast_c.Logical Ast_c.Eq),(((Ast_c.Unary (e, Ast_c.UnMinus)), typ4), ii4) )), typ), ii)->
+                       (Ast_c.Logical Ast_c.Eq, _),(((Ast_c.Unary (e, Ast_c.UnMinus)), typ4), ii4) )), typ), ii)->
     if (List.length es = 1) then
-      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else
       ([mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall (e1, es)), typ1), ii1),
-                                       (Ast_c.SimpleAssign),
+                                       (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st (((Ast_c.FunCall (e1, es)), typ1), ii1)])
 
   | (((Ast_c.Binary   ((((Ast_c.FunCall(e1, es)), typ1), ii1),
-                       (Ast_c.Logical Ast_c.NotEq),(((Ast_c.Unary (e, Ast_c.UnMinus)), typ4), ii4) )), typ), ii)->
+                       (Ast_c.Logical Ast_c.NotEq, _),(((Ast_c.Unary (e, Ast_c.UnMinus)), typ4), ii4) )), typ), ii)->
     if (List.length es = 1) then
       [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))],
       [mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))),
-                                      (Ast_c.SimpleAssign),
+                                      (Ast_c.SimpleAssign, []),
                                       (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])]
     else
       [mk_expr_st (((Ast_c.FunCall(e1, es)), typ1), ii1)],
-      [mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall(e1, es)), typ1), ii1), (Ast_c.SimpleAssign),
+      [mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall(e1, es)), typ1), ii1), (Ast_c.SimpleAssign, []),
                                       (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])]
   | ((Ast_c.FunCall (((Ast_c.Ident (Ast_c.RegularName("unlikely",ii3)), typ1), ii1), es), typ), ii) ->
     let args_list = Def.remove_optionlist (Def.create_argslist [] es) in
@@ -690,27 +690,27 @@ let rec invert_st st =
   | (((Ast_c.Unary    ((((Ast_c.ParenExpr ((((Ast_c.FunCall ((((Ast_c.Ident (Ast_c.RegularName("IS_ERR",ii1))), typ4), ii4), es)), typ3), ii3))), typ2), ii2), Ast_c.Not)), typ), ii) ->
     if (List.length es = 1) then
       ([mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))],
-       [mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+       [mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
     else ([nst],[nst])
   | (((Ast_c.Unary ((((Ast_c.FunCall  (e, es)), typ1), ii1), Ast_c.Not)), typ), ii)->
     let ptr_args = Def.find_ptr_args_list ((Def.remove_optionlist (Def.create_argslist [] es))) in
     if (List.length ptr_args > 0) then
-      ([mk_expr_st ((Ast_c.Assignment ((List.hd ptr_args), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((List.hd ptr_args), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else
-      ([mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [(Ast_c.ExprStatement (None),[])])
-  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.OrLog), e2)), typ), ii)->
+  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.OrLog, _), e2)), typ), ii)->
     let (norm_exp1, opp_exp1)  = invert_st e1 in
     let (norm_exp2, opp_exp2)  = invert_st e2 in
     ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
   | (((Ast_c.FunCall  (e, es)), typ1), ii1)->
     if (List.length es =0) then
       (
-        [mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.SimpleAssign),
+        [mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.SimpleAssign, []),
                                         (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ1), [])), typ1), [])], [mk_expr_st(((Ast_c.FunCall  (e, es)), typ1), ii1)])
     else if (List.length es >0) then
       ([(Ast_c.ExprStatement (None),[])],
@@ -718,187 +718,145 @@ let rec invert_st st =
     else ([nst],[nst])
   | (((Ast_c.Unary    ((((Ast_c.ParenExpr (((Ast_c.FunCall ((e, es)), typ3), ii3))), typ2), ii2), Ast_c.Not)), typ), ii) ->
     if (List.length es = 1) then
-      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else
-      ([mk_expr_st ((Ast_c.Assignment (((Ast_c.FunCall ((e, es)), typ3), ii3), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment (((Ast_c.FunCall ((e, es)), typ3), ii3), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
        [mk_expr_st ((Ast_c.FunCall ((e, es)), typ3), ii3)])
   | (((Ast_c.Binary ((((Ast_c.FunCall  (e, es)), typ2), ii2),
-                     (Ast_c.Logical Ast_c.Eq),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
+                     (Ast_c.Logical Ast_c.Eq, _),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
     if (List.length es = 1) then
-      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+      ([mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ1), [])), typ), [])],
        [mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))])
     else ([nst],[nst])
   | (((Ast_c.Binary ((((Ast_c.FunCall  (e, es)), typ2), ii2),
-                     (Ast_c.Logical Ast_c.NotEq),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
+                     (Ast_c.Logical Ast_c.NotEq, _),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
     if (List.length es = 1) then
       ([mk_expr_st (List.hd (Def.remove_optionlist (Def.create_argslist [] es)))],
-       [mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign),
+       [mk_expr_st ((Ast_c.Assignment ((List.hd (Def.remove_optionlist (Def.create_argslist [] es))), (Ast_c.SimpleAssign, []),
                                        (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ1), [])), typ), [])])
     else ([nst],[nst])
 
-  | (((Ast_c.Unary ((((Ast_c.ParenExpr ((((Ast_c.Assignment (e1, (Ast_c.SimpleAssign), e2)), typ2), ii2))), typ1), ii1), Ast_c.Not)), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign),
+  | (((Ast_c.Unary ((((Ast_c.ParenExpr ((((Ast_c.Assignment (e1,
+                                                             (Ast_c.SimpleAssign,
+                                                             _), e2)), typ2), ii2))), typ1), ii1), Ast_c.Not)), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
-     [mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign), e2), typ), [])])
+     [mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign, []), e2), typ), [])])
 
-  | (((Ast_c.Binary (e11, (Ast_c.Logical Ast_c.Eq),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),
+  | (((Ast_c.Binary (e11, (Ast_c.Logical Ast_c.Eq, _),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])], [mk_expr_st e11])
 
-  | (((Ast_c.Binary (e11, (Ast_c.Logical Ast_c.NotEq),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
-    ([mk_expr_st e11],[mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
+  | (((Ast_c.Binary (e11, (Ast_c.Logical Ast_c.NotEq, _),(((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1))), typ), ii) ->
+    ([mk_expr_st e11],[mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
 
-  | (((Ast_c.Binary ((((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1),(Ast_c.Logical Ast_c.Eq),e11)), typ), ii) ->
-    ([mk_expr_st((Ast_c.Assignment (e11, (Ast_c.SimpleAssign), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
+  | (((Ast_c.Binary ((((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1),
+                      ii1),(Ast_c.Logical Ast_c.Eq, _),e11)), typ), ii) ->
+    ([mk_expr_st((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
      [mk_expr_st e11])
-  | (((Ast_c.Binary ((((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1), ii1),(Ast_c.Logical Ast_c.NotEq),e11)), typ), ii) ->
-    ([mk_expr_st e11],[mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
+  | (((Ast_c.Binary ((((Ast_c.Ident (Ast_c.RegularName("NULL",ii3))), typ1),
+                      ii1),(Ast_c.Logical Ast_c.NotEq, _),e11)), typ), ii) ->
+    ([mk_expr_st e11],[mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
 
   | (((Ast_c.Binary   (((((Ast_c.FunCall  (e, es)), typ2), ii2)),
-                       (Ast_c.Logical Ast_c.Eq), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e, (Ast_c.SimpleAssign),
+                       (Ast_c.Logical Ast_c.Eq, _), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment (e, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],
      [(Ast_c.ExprStatement (None),[])])
-  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.Eq), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign),
+  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.Eq, _), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],[mk_expr_st e1])
 
-  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.Inf), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign),
+  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.Inf, _), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],[mk_expr_st e1])
 
-  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.NotEq), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
-    ([mk_expr_st e1], [mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
+  | (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.NotEq, _), ((Ast_c.Constant (Ast_c.Int ("0", _)), typ1), ii1))), typ), ii) ->
+    ([mk_expr_st e1], [mk_expr_st ((Ast_c.Assignment (e1, (Ast_c.SimpleAssign, []), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
   | (((Ast_c.ParenExpr ((((Ast_c.Unary (e11, Ast_c.Not)), typ), ii))), typ1), ii1) ->
-    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),
+    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])], [mk_expr_st e11])
   | (((Ast_c.Unary ((((Ast_c.ParenExpr (e11)), typ1), ii1), Ast_c.Not)), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),
+    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),
                                      (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ1), [])), typ1), [])],[mk_expr_st e11])
 
   | (((Ast_c.Unary (e11, Ast_c.Not)), typ), ii)  ->
     (match (Def.is_pointer e11) with
        Def.IsPtr  ->
-       ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),
+       ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),
                                         (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],[mk_expr_st e11])
      | Def.UnknownType ->
 
-       ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),
+       ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),
                                         (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])],[mk_expr_st e11])
 
      | Def.IsntPtr->
-       ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),
+       ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),
                                         (( Ast_c.Ident (Ast_c.RegularName("0",[])), typ), [])), typ), [])],[mk_expr_st e11]))
 
-  | (((Ast_c.Binary ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.Logical Ast_c.Eq),e22)), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.SimpleAssign),e22), typ), [])],
+  | (((Ast_c.Binary ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.Logical
+                                                                 Ast_c.Eq, _),e22)), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment ((((Ast_c.FunCall  (e, es)), typ1), ii1), (Ast_c.SimpleAssign, []),e22), typ), [])],
      [])
 
-  | (((Ast_c.Binary (e11, (Ast_c.Logical Ast_c.Eq),e22)), typ), ii) ->
-    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign),e22), typ), [])],[mk_expr_st e11])
+  | (((Ast_c.Binary (e11, (Ast_c.Logical Ast_c.Eq, _),e22)), typ), ii) ->
+    ([mk_expr_st ((Ast_c.Assignment (e11, (Ast_c.SimpleAssign, []),e22), typ), [])],[mk_expr_st e11])
   | ((exp, typ), ii)->
     ([mk_expr_st ((exp, typ), ii)],
-     [mk_expr_st ((Ast_c.Assignment (((exp, typ), ii), (Ast_c.SimpleAssign), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
+     [mk_expr_st ((Ast_c.Assignment (((exp, typ), ii), (Ast_c.SimpleAssign, []), (( Ast_c.Ident (Ast_c.RegularName("NULL",[])), typ), [])), typ), [])])
 
 
 let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
   let {ast = prog; init_labels = init_labels; labels = lbl_list} = c_function in
   match prog with
     [] -> exe_paths
-  | h::t-> let start_line = Def.find_startline_no (Def.create_stmtlist h) in
-    let end_line = Def.find_endline_no (Def.create_stmtlist h) in
-    if (fin_lineno >= start_line && fin_lineno <= end_line) ||
-       fin_lineno > end_line
+  | h::t->
+    let start_line = Def.find_startline_no (Def.create_stmtlist h) in
+    let end_line   = Def.find_endline_no   (Def.create_stmtlist h) in
+
+    let generate_exe_paths_simple_aux st =
+      if (fin_lineno >= start_line && fin_lineno <= end_line)
+      then
+        let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
+            {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+        generate_exe_paths_simple fin_lineno new_exe_paths
+          {labels = lbl_list; init_labels = init_labels; ast = t}
+      else
+      if not(List.exists is_return_or_goto (Def.create_stmtlist st))
+      then
+        let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
+            {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+        generate_exe_paths_simple fin_lineno new_exe_paths
+          {labels = lbl_list; init_labels = init_labels; ast = t}
+      else generate_exe_paths_simple fin_lineno exe_paths
+          {labels = lbl_list; init_labels = init_labels; ast = t}
+    in
+    if fin_lineno >= start_line
     then
       match Ast_c.unwrap h with
-      | Ast_c.Labeled (Ast_c.Label (name, st)) ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else
-        if not (List.exists is_return_or_goto (Def.create_stmtlist st))
-        then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+      | Ast_c.Labeled (Ast_c.Label (_, st))
+      | Ast_c.Labeled (Ast_c.Case  (_, st))
+      | Ast_c.Labeled (Ast_c.CaseRange (_, _, st))
+      | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
+      | Ast_c.Iteration  (Ast_c.MacroIteration (_, _, st))
+      | Ast_c.Labeled (Ast_c.Default st) ->
+        generate_exe_paths_simple_aux st
 
-      |  Ast_c.Labeled (Ast_c.Case  (e, st)) ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else if (not(List.exists is_return_or_goto (Def.create_stmtlist st))) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+      | Ast_c.Compound statxs ->
+        generate_exe_paths_simple_aux h
 
-      |  Ast_c.Labeled (Ast_c.CaseRange  (e, e2, st)) ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else
-        if not(List.exists is_return_or_goto (Def.create_stmtlist st))
-        then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-
-      |  Ast_c.Labeled (Ast_c.Default st) ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else
-        if not(List.exists is_return_or_goto (Def.create_stmtlist st))
-        then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-
-      |  Ast_c.Compound statxs ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist h)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else if not(List.exists is_return_or_goto (Def.create_stmtlist h))
-        then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist h)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-      |  Ast_c.Selection  (Ast_c.If (e, st1, st2)) ->
+      | Ast_c.Selection  (Ast_c.If (e, st1, st2)) ->
         let (norm_exp,opp_exp) = (
           match e with
-            (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.OrLog), e2)), typex), iiex) ->
+            (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.OrLog, _), e2)), typex), iiex) ->
             let (norm_exp1,opp_exp1) = invert_st e1 in
             let (norm_exp2,opp_exp2) = invert_st e2 in
             ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
-          | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.AndLog), e2)), typex), iiex) ->
+          | (((Ast_c.Binary (e1, (Ast_c.Logical Ast_c.AndLog, _), e2)), typex), iiex) ->
             let (norm_exp1,opp_exp1) = invert_st e1 in
             let (norm_exp2,opp_exp2) = invert_st e2 in
             ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
@@ -1002,11 +960,11 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
 
         let (norm_exp,opp_exp) = (
           match e with
-            (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.OrLog), e2)), typex), iiex)->
+            (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.OrLog, _), e2)), typex), iiex)->
             let (norm_exp1,opp_exp1) = invert_st e1 in
             let (norm_exp2,opp_exp2) = invert_st e2 in
             ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
-          |  (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.AndLog), e2)), typex), iiex)->
+          |  (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.AndLog, _), e2)), typex), iiex)->
             let (norm_exp1,opp_exp1) = invert_st e1 in
             let (norm_exp2,opp_exp2) = invert_st e2 in
             ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
@@ -1040,11 +998,11 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
       |  Ast_c.Iteration  (Ast_c.DoWhile (st, e)) ->
         let (norm_exp,opp_exp) = (
           match e with
-            (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.OrLog), e2)), typex), iiex)->
+            (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.OrLog, _), e2)), typex), iiex)->
             let (norm_exp1,opp_exp1) = invert_st e1 in
             let (norm_exp2,opp_exp2) = invert_st e2 in
             ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
-          |  (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.AndLog), e2)), typex), iiex)->
+          |  (((Ast_c.Binary   (e1, (Ast_c.Logical Ast_c.AndLog, _), e2)), typex), iiex)->
             let (norm_exp1,opp_exp1) = invert_st e1 in
             let (norm_exp2,opp_exp2) = invert_st e2 in
             ((norm_exp1@norm_exp2),(opp_exp1@opp_exp2))
@@ -1079,39 +1037,6 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
 
       | Ast_c.Iteration  (Ast_c.For (Ast_c.ForDecl _,(e2opt,il2),(e3opt, il3),st11)) ->
         failwith "for loop with declaration in first argument not supported"
-      |  Ast_c.Iteration  (Ast_c.For (Ast_c.ForExp(e1opt,il1),(e2opt,il2),(e3opt, il3),st)) ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast =(Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else if (not(List.exists is_return_or_goto (Def.create_stmtlist st))) then
-          let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno (new_exe_paths1)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else ( let new_exe_paths2 = generate_exe_paths_simple fin_lineno exe_paths
-                   {labels = lbl_list; init_labels = init_labels; ast = []} in
-               generate_exe_paths_simple fin_lineno new_exe_paths2
-                 {labels = lbl_list; init_labels = init_labels; ast = t}
-             )
-      |  Ast_c.Iteration  (Ast_c.MacroIteration (s,es,st)) ->
-        if (fin_lineno>= start_line && fin_lineno<=end_line) then
-          let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else if (not(List.exists is_return_or_goto (Def.create_stmtlist st))) then
-          let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
-          generate_exe_paths_simple fin_lineno (new_exe_paths1)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
-        else ( let new_exe_paths2 = generate_exe_paths_simple fin_lineno exe_paths
-                   {labels = lbl_list; init_labels = init_labels; ast = []} in
-               generate_exe_paths_simple fin_lineno new_exe_paths2
-                 {labels = lbl_list; init_labels = init_labels; ast = t}
-             )
-
       |   Ast_c.Jump (Ast_c.Goto name) ->
         generate_exe_paths_simple fin_lineno exe_paths
           {labels = lbl_list; init_labels = init_labels; ast = t}
@@ -1254,59 +1179,53 @@ let rec assign_var_is_null var = function
       else assign_var_is_null var t
     |_-> assign_var_is_null var t
 
-let rec find_recent_id_values_paths_inner id id_value any_access  mark =  function
-    []-> id_value
-  | h::t->
+let rec find_recent_id_values_paths_inner id id_value any_access mark = function
+    []   -> id_value
+  | h::t ->
     match Ast_c.unwrap h with
-    | Ast_c.Decl decl ->
-      (match decl with
-         Ast_c.DeclList decls ->
-         (match Ast_c.unwrap decls with
-            [one] ->
-            let onedecl = Ast_c.unwrap2 one in
-            (match onedecl.Ast_c.v_namei with
-               Some (nm, vl) ->
-               (match vl with
-                  Ast_c.ValInit (ii, init) ->
-                  (match Ast_c.unwrap init with
-                     Ast_c.InitExpr (e1) ->
-                     (match id with
-                        (((Ast_c.Ident (ident)), typ11), ii11)->
-                        if (Def.compare_names nm ident) then
-                          find_recent_id_values_paths_inner  id (Some e1) any_access false t
-                        else find_recent_id_values_paths_inner  id id_value any_access mark t
-                      | (((Ast_c.RecordAccess   (e, ident)), typ11), ii11) ->
-                        if (Def.compare_names nm ident)
-                        then find_recent_id_values_paths_inner id (Some e1) any_access false t
-                        else find_recent_id_values_paths_inner id id_value any_access mark t
-                      | (((Ast_c.RecordPtAccess   (e, ident)), typ11), ii11) ->
-                        if (Def.compare_names nm ident) then
-                          find_recent_id_values_paths_inner  id (Some e1) any_access false t
-                        else find_recent_id_values_paths_inner  id id_value any_access mark t
-                      | _-> find_recent_id_values_paths_inner  id id_value any_access mark t)
-                   | _-> find_recent_id_values_paths_inner  id id_value any_access mark t)
-                |	Ast_c.ConstrInit _ ->
-                  failwith "constrinit not supported"
-                |	Ast_c.NoInit -> find_recent_id_values_paths_inner  id id_value any_access mark t )
-             |  None-> find_recent_id_values_paths_inner  id id_value any_access mark t )
-          | _-> find_recent_id_values_paths_inner  id id_value any_access mark t
-         )
-       | _-> find_recent_id_values_paths_inner  id id_value any_access mark t)
+    | Ast_c.Decl (Ast_c.DeclList decls)->
+      (match Ast_c.unwrap decls with
+         [one] ->
+         let onedecl = Ast_c.unwrap2 one in
+         (match onedecl.Ast_c.v_namei with
+            Some (nm, vl) ->
+            (match vl with
+               Ast_c.ValInit (ii, init) ->
+               (match Ast_c.unwrap init with
+                  Ast_c.InitExpr (e1) ->
+                  (match id with
+                     (((Ast_c.Ident ident), _), _)
+                   | (((Ast_c.RecordAccess (_, ident)), _), _)
+                   | (((Ast_c.RecordPtAccess   (_, ident)), _), _) ->
+                     if (Def.compare_names nm ident)
+                     then find_recent_id_values_paths_inner id (Some e1) any_access false t
+                     else find_recent_id_values_paths_inner id id_value  any_access mark  t
+                   | _ -> find_recent_id_values_paths_inner id id_value any_access mark t)
+                | _ -> find_recent_id_values_paths_inner id id_value any_access mark t)
+             | Ast_c.ConstrInit _ ->
+               failwith "constrinit not supported"
+             | Ast_c.NoInit -> find_recent_id_values_paths_inner id id_value any_access mark t )
+          | None -> find_recent_id_values_paths_inner id id_value any_access mark t)
+       | _ -> find_recent_id_values_paths_inner id id_value any_access mark t)
 
-    |  Ast_c.ExprStatement (Some (((Ast_c.ParenExpr ((((Ast_c.Assignment (e1, op, (((Ast_c.FunCall  (e, es)), typ4), ii4))), typ3), ii3))), typ), ii))->
+    | Ast_c.ExprStatement (Some (((Ast_c.ParenExpr ((((Ast_c.Assignment (e1, op, (((Ast_c.FunCall  (e, es)), typ4), ii4))), typ3), ii3))), typ), ii))->
       let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
       let args_list = find_ptr_args_list args_list in
-      if (args_list_contain_id id args_list) then
-        find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ4), ii4))  any_access false t
+      if (args_list_contain_id id args_list)
+      then find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ4), ii4))  any_access false t
       else find_recent_id_values_paths_inner  id id_value any_access mark t
+
     | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, ((( Ast_c.FunCall  (e, es)), typ1), ii1))), typ), ii)) ->
       let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
       let args_list = find_ptr_args_list args_list in
-      if (args_list_contain_id id args_list) then
-        if (assign_var_is_null e1 t) then
-          find_recent_id_values_paths_inner  id id_value any_access mark t
+      if (args_list_contain_id id args_list)
+      then
+        if (assign_var_is_null e1 t)
+        then find_recent_id_values_paths_inner  id id_value any_access mark t
         else find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ1), ii1)) true false t
-      else if (Def.compare_exps id e1) then find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ1), ii1)) any_access false t
+      else
+      if (Def.compare_exps id e1)
+      then find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ1), ii1)) any_access false t
       else find_recent_id_values_paths_inner  id id_value any_access mark t
 
     | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, e2)), typ), ii)) ->
@@ -1364,7 +1283,6 @@ let remove_blks_that_returns_resource c_function blocks =
   in List.fold_right remove_blks_that_returns_resource_aux blocks []
 
 
-
 let rec recheck_blks c_function = function
     [] -> []
   | block::t->
@@ -1413,34 +1331,24 @@ let find_errorhandling c_function =
 
       | Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
         let outer_EHC  = find_errorhandling_aux t in
-        let st1_normal = Def.create_stmtlist st1 in
-        let stmt_list_st1 = gather_goto_code c_function [] st1_normal in
-        let st2_normal = Def.create_stmtlist st2 in
-        let stmt_list_st2 = gather_goto_code c_function [] st2_normal in
-        let h_normal   = Def.create_stmtlist h in
-        let stmt_list_st2 =
-          if has_multiple_st stmt_list_st2
-          then stmt_list_st2
-          else []
+
+        let create_block st part =
+          let st_normal = Def.create_stmtlist st in
+          let stmt_list_st = gather_goto_code c_function [] st_normal in
+          let h_normal   = Def.create_stmtlist h in
+
+          let branch_st_lineno = Def.find_startline_no st_normal in
+          let branch_en_lineno = Def.find_endline_no stmt_list_st in
+          let goto = Def.goto_exists_in_list st_normal in
+          (stmt_list_st, Block.mk_block (Def.find_startline_no h_normal) e goto
+             st_normal part branch_st_lineno branch_en_lineno stmt_list_st)
         in
 
+        let (stmt_list_st1, block1) = create_block st1 Def.Then in
         let inner_EHC1 = find_errorhandling_aux stmt_list_st1 in
+
+        let (stmt_list_st2, block2) = create_block st2 Def.Else in
         let inner_EHC2 = find_errorhandling_aux stmt_list_st2 in
-
-        let branch1_st_lineno = Def.find_startline_no st1_normal in
-        let branch1_en_lineno = Def.find_endline_no stmt_list_st1 in
-        let goto1 = Def.goto_exists_in_list st1_normal in
-        let block1 = Block.mk_block (Def.find_startline_no h_normal) e goto1
-            st1_normal Def.Then branch1_st_lineno branch1_en_lineno stmt_list_st1
-        in
-
-        let branch2_st_lineno = Def.find_startline_no st2_normal in
-        let branch2_en_lineno = Def.find_endline_no stmt_list_st2 in
-        let goto2 = Def.goto_exists_in_list st2_normal in
-        let block2 = Block.mk_block (Def.find_startline_no h_normal) e goto2
-            st2_normal Def.Else branch2_st_lineno branch2_en_lineno stmt_list_st2
-        in
-
 
         let inner_EHC =
           match Def.inner_block_in_compound_stmt st1,
@@ -1657,9 +1565,6 @@ let find_idvalues_list exe_paths_list id_values args_list =
   | _           -> []
 
 
-let same_id_values list =
-  List.for_all (fun v -> Def.compare_exps v (List.hd list)) list
-
 let rec find_recent_id_values_paths id values = function
     []   -> values
   | h::t ->
@@ -1668,9 +1573,6 @@ let rec find_recent_id_values_paths id values = function
     match id_value with
       None   -> find_recent_id_values_paths id values      t
     | Some a -> find_recent_id_values_paths id (a::values) t
-
-let rec list_of_id_values exe_paths_list =
-  List.map (fun id -> (id, find_recent_id_values_paths id [] exe_paths_list))
 
 (* FYI the empty list is used as None because reasons ... -_-' *)
 let get_identifier_values c_function block offset args_list =
@@ -1688,13 +1590,13 @@ let get_identifier_values c_function block offset args_list =
   in
 
   let id_values = filter_null_out id_values in
-(* TODO
-  let id_values =
-    if same_id_values id_values &&
-       List.length id_values != 0
-    then [(List.hd id_values)]
-    else [] in
-     *)
+  (* TODO
+     let id_values =
+      if same_id_values id_values &&
+         List.length id_values != 0
+      then [(List.hd id_values)]
+      else [] in
+  *)
   id_values
 
 
@@ -1966,18 +1868,18 @@ let find_app_model_blk miss_st miss_blk =
   let rec find_app_model_blk_aux (diff, model) = function
       []   -> model
     | block::t ->
-    let miss_blk_strtlineno_diff = Block.compare_branch_start miss_blk block in
-    if Block.does_block_contains_statement block miss_st
-    then
-      if miss_blk_strtlineno_diff < 0 &&
-         diff = 0
-      then Some block
-      else
-      if miss_blk_strtlineno_diff > diff
+      let miss_blk_strtlineno_diff = Block.compare_branch_start miss_blk block in
+      if Block.does_block_contains_statement block miss_st
       then
-        find_app_model_blk_aux (miss_blk_strtlineno_diff, Some block) t
+        if miss_blk_strtlineno_diff < 0 &&
+           diff = 0
+        then Some block
+        else
+        if miss_blk_strtlineno_diff > diff
+        then
+          find_app_model_blk_aux (miss_blk_strtlineno_diff, Some block) t
+        else find_app_model_blk_aux (diff, model) t
       else find_app_model_blk_aux (diff, model) t
-    else find_app_model_blk_aux (diff, model) t
   in
   find_app_model_blk_aux (0, None)
 
@@ -2108,10 +2010,10 @@ let resource_of_release_temp block error_blocks c_function
 
 
 let option_map f lst =
-    let aux acc x = match f x with
-        | Some item -> item :: acc
-                       | None -> acc in
-    List.rev (List.fold_left aux [] lst)
+  let aux acc x = match f x with
+    | Some item -> item :: acc
+    | None -> acc in
+  List.rev (List.fold_left aux [] lst)
 
 let get_resources c_function error_blocks =
   let get_resource_release acc block = Block.get_resource_release block acc in

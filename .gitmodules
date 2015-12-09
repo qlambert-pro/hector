@@ -1,0 +1,3 @@
+[submodule "coccinelle"]
+	path = coccinelle
+	url = https://github.com/coccinelle/coccinelle.git
