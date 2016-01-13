@@ -1,6 +1,6 @@
 let lines =
-["Copyright 2013, Inria";
-"Suman Saha, Julia Lawall, Gilles Muller";
+["Copyright 2013-2016, Inria";
+"Suman Saha, Julia Lawall, Gilles Muller, Quentin Lambert";
 "This file is part of Hector.";
 "";
 "Hector is free software: you can redistribute it and/or modify";

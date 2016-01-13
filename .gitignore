@@ -6,7 +6,6 @@
 *.pyc
 *.mllib
 *.mldylib
-*.mlt
 *.d
 
 hector
@@ -25,6 +24,7 @@ myocamlbuild.ml
 python/pycocci.ml
 parsing_cocci/lexer_cli.ml
 
+tests/compare_org_files
 
 config.log
 config.status
