@@ -26,7 +26,7 @@ let ref_var_mark = ref false
 type c_function =
   {ast: Ast_c.statement list;
    init_labels: Ast_c.statement list;
-   (*      cfg: Control_flow.cflow; *)
+   cfg: Annotated_cfg.t;
    labels: (Ast_c.name * Ast_c.statement list) list}
 
 let any_ref_var_access_stmt stmt ref_vars =
@@ -308,7 +308,8 @@ let rec gather_goto_code c_function goto_code = function
         then []
         else
           gather_goto_code c_function goto_code new_goto_code
-      else []
+      else
+          []
     | _-> gather_goto_code c_function (goto_code@[h]) t
 
 let rec is_locally_dec branch_lineno = function
@@ -401,10 +402,12 @@ let rec create_init_lbl_prog_list init_lbl_list = function
       init_lbl_list@[h]
     | _ -> create_init_lbl_prog_list [] t
 
-let mk_c_function body =
+let mk_c_function toplevel body =
   {ast = body;
    init_labels = create_init_lbl_prog_list [] body;
+   cfg = Annotated_cfg.of_ast_c toplevel;
    labels = Def.create_lbl_list [] [] body}
+
 
 
 let rec find_case_stmts fin_lineno case_stmts = function
@@ -832,7 +835,7 @@ let rec invert_st st =
 
 
 let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
-  let {ast = prog; init_labels = init_labels; labels = lbl_list} = c_function in
+  let {ast = prog; init_labels = init_labels; cfg = cfg; labels = lbl_list} = c_function in
   match prog with
     [] -> exe_paths
   | h::t->
@@ -843,18 +846,18 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
       if (fin_lineno >= start_line && fin_lineno <= end_line)
       then
         let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st)} in
         generate_exe_paths_simple fin_lineno new_exe_paths
-          {labels = lbl_list; init_labels = init_labels; ast = t}
+          {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
       else
       if not(List.exists is_return_or_goto (Def.create_stmtlist st))
       then
         let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st)} in
         generate_exe_paths_simple fin_lineno new_exe_paths
-          {labels = lbl_list; init_labels = init_labels; ast = t}
+          {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
       else generate_exe_paths_simple fin_lineno exe_paths
-          {labels = lbl_list; init_labels = init_labels; ast = t}
+          {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
     in
     if fin_lineno >= start_line
     then
@@ -913,43 +916,43 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
         else if (fin_lineno>= start_line_inner1 && fin_lineno <= end_line_inner1)
         then
           let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st1)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st1)} in
           generate_exe_paths_simple fin_lineno new_exe_paths1
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
         else if (fin_lineno>= start_line_inner2 && fin_lineno <= end_line_inner2)
         then
           let new_exe_paths2 = generate_exe_paths_simple fin_lineno exe_paths2
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st2)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st2)} in
           generate_exe_paths_simple fin_lineno new_exe_paths2
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st1))) && (not(List.exists is_return_or_goto (Def.create_stmtlist st2))) && ((List.length st2_new) >0)then
           let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st1)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st1)} in
           generate_exe_paths_simple fin_lineno (new_exe_paths1)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st1))) && (not(List.exists is_return_or_goto (Def.create_stmtlist st2))) && ((List.length st2_new) =0)then
           let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st1)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st1)} in
           generate_exe_paths_simple fin_lineno (new_exe_paths1)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st1))) then
           let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st1)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st1)} in
           generate_exe_paths_simple fin_lineno new_exe_paths1
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st2))) && ((List.length st2_new) >0)  then(
           let new_exe_paths2 = generate_exe_paths_simple fin_lineno exe_paths2
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st2)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st2)} in
           generate_exe_paths_simple fin_lineno new_exe_paths2
-            {labels = lbl_list; init_labels = init_labels; ast = t})
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t})
 
         else generate_exe_paths_simple fin_lineno exe_paths2
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
 
       |  Ast_c.Selection  (Ast_c.Switch (e, st)) ->
@@ -961,22 +964,22 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
         if(fin_lineno>= start_line_inner && fin_lineno <= end_line_inner) then
           let case_stmts = find_case_stmts fin_lineno []  (Def.create_stmtlist st) in
           let new_exe_paths  = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = case_stmts}  in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = case_stmts}  in
           generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st))) then
           let switch_st_compound = create_compound_st_for_switch e [] [] (Def.create_stmtlist st) in
 
           let new_exe_paths = generate_exe_paths_simple fin_lineno []
-              {labels = lbl_list; init_labels = init_labels; ast = switch_st_compound} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = switch_st_compound} in
           let switch_exe = if(List.length new_exe_paths =0) then exe_paths1
             else exe_path_for_switch [] new_exe_paths exe_paths1
           in
 
           generate_exe_paths_simple fin_lineno switch_exe
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
         else generate_exe_paths_simple fin_lineno exe_paths1
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
       |  Ast_c.Iteration  (Ast_c.While (e, st)) ->
 
         let (norm_exp,opp_exp) = (
@@ -1002,19 +1005,19 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
         in
         if (fin_lineno>= start_line && fin_lineno<=end_line) then
           let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+              {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
           generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
 
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st))) then
           let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+              {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
           generate_exe_paths_simple fin_lineno (new_exe_paths1)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
         else ( let new_exe_paths2 = generate_exe_paths_simple fin_lineno exe_paths2
-                   {labels = lbl_list; init_labels = init_labels; ast = []} in
+                   {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = []} in
                generate_exe_paths_simple fin_lineno new_exe_paths2
-                 {labels = lbl_list; init_labels = init_labels; ast = t}
+                 {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
              )
       |  Ast_c.Iteration  (Ast_c.DoWhile (st, e)) ->
         let (norm_exp,opp_exp) = (
@@ -1040,19 +1043,19 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
         in
         if (fin_lineno>= start_line && fin_lineno<=end_line) then
           let new_exe_paths = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st)} in
           generate_exe_paths_simple fin_lineno new_exe_paths
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
         else if (not(List.exists is_return_or_goto (Def.create_stmtlist st))) then
           let new_exe_paths1 = generate_exe_paths_simple fin_lineno exe_paths1
-              {labels = lbl_list; init_labels = init_labels; ast = (Def.create_stmtlist st)} in
+              {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = (Def.create_stmtlist st)} in
           generate_exe_paths_simple fin_lineno (new_exe_paths1)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
         else ( let new_exe_paths2 = generate_exe_paths_simple fin_lineno exe_paths2
-                   {labels = lbl_list; init_labels = init_labels; ast = []} in
+                   {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = []} in
                generate_exe_paths_simple fin_lineno new_exe_paths2
-                 {labels = lbl_list; init_labels = init_labels; ast = t}
+                 {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
              )
 
 
@@ -1060,19 +1063,19 @@ let rec generate_exe_paths_simple fin_lineno exe_paths c_function =
         failwith "for loop with declaration in first argument not supported"
       |   Ast_c.Jump (Ast_c.Goto name) ->
         generate_exe_paths_simple fin_lineno exe_paths
-          {labels = lbl_list; init_labels = init_labels; ast = t}
+          {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
 
       |   Ast_c.Jump (Ast_c.Return) -> exe_paths
       |   Ast_c.Jump (Ast_c.ReturnExpr e) -> exe_paths
       |   Ast_c.Jump (Ast_c.GotoComputed e) -> generate_exe_paths_simple fin_lineno exe_paths
-                                                 {labels = lbl_list; init_labels = init_labels; ast = t}
+                                                 {labels = lbl_list; cfg = cfg; init_labels = init_labels; ast = t}
       | _->
         if(List.length exe_paths) = 0 then
           generate_exe_paths_simple fin_lineno (exe_paths@[[h]])
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
         else
           generate_exe_paths_simple fin_lineno (map_append [h] exe_paths)
-            {labels = lbl_list; init_labels = init_labels; ast = t}
+            {labels = lbl_list; init_labels = init_labels; cfg = cfg; ast = t}
 
     else exe_paths
 
@@ -1229,13 +1232,14 @@ let rec find_recent_id_values_paths_inner id id_value any_access mark = function
           | None -> find_recent_id_values_paths_inner id id_value any_access mark t)
        | _ -> find_recent_id_values_paths_inner id id_value any_access mark t)
 
-    | Ast_c.ExprStatement (Some (((Ast_c.ParenExpr ((((Ast_c.Assignment (e1, op, (((Ast_c.FunCall  (e, es)), typ4), ii4))), typ3), ii3))), typ), ii))->
-      let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
-      let args_list = find_ptr_args_list args_list in
-      if (args_list_contain_id id args_list)
-      then find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ4), ii4))  any_access false t
-      else find_recent_id_values_paths_inner  id id_value any_access mark t
-
+    (* assigned funcall *)
+    | Ast_c.ExprStatement (Some (((Ast_c.ParenExpr ((((Ast_c.Assignment (e1, op,
+                                                                         (((Ast_c.FunCall
+                                                                              (e,
+                                                                               es)),
+                                                                          typ1),
+                                                                          ii1))),
+                                                      typ), ii))), _), _))
     | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, ((( Ast_c.FunCall  (e, es)), typ1), ii1))), typ), ii)) ->
       let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
       let args_list = find_ptr_args_list args_list in
@@ -1249,10 +1253,13 @@ let rec find_recent_id_values_paths_inner id id_value any_access mark = function
       then find_recent_id_values_paths_inner  id (Some ((( Ast_c.FunCall  (e, es)), typ1), ii1)) any_access false t
       else find_recent_id_values_paths_inner  id id_value any_access mark t
 
+    (* assignement *)
     | Ast_c.ExprStatement (Some (((Ast_c.Assignment (e1, op, e2)), typ), ii)) ->
-      if (Def.compare_exps id e1) then(
-        find_recent_id_values_paths_inner  id (Some e2) any_access false t)
+      if (Def.compare_exps id e1)
+      then (find_recent_id_values_paths_inner id (Some e2) any_access false t)
       else (find_recent_id_values_paths_inner id id_value any_access mark t)
+
+    (* funcall *)
     | Ast_c.ExprStatement (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (fn_n, [ii3]))), typ10), ii10), es)), typ), ii)) ->
       (match id_value with
          None-> let args_list = remove_string_args(Def.remove_optionlist (Def.create_argslist [] es)) in
@@ -1268,8 +1275,10 @@ let rec find_recent_id_values_paths_inner id id_value any_access mark = function
          else find_recent_id_values_paths_inner  id
              (Some (((Ast_c.FunCall  ((((Ast_c.Ident (Ast_c.RegularName (fn_n, [ii3]))), typ10), ii10), es)), typ), ii)) any_access true t
       )
-    | _-> if (Def.exp_exists_in_stmt (Some id) h) then find_recent_id_values_paths_inner  id id_value true mark t
-      else find_recent_id_values_paths_inner  id id_value any_access mark t
+    | _ ->
+      if (Def.exp_exists_in_stmt (Some id) h)
+      then find_recent_id_values_paths_inner id id_value true mark t
+      else find_recent_id_values_paths_inner id id_value any_access mark t
 
 
 let rec find_recent_id_values_paths id values = function
@@ -1318,93 +1327,49 @@ let rec recheck_blks c_function = function
     else
       block::(recheck_blks c_function t)
 
+(* TODO TEMP *)
+let create_block c_function index =
+  let {cfg = cfg} = c_function in
+  let node = cfg#nodes#assoc index in
+  let {Annotated_cfg.parser_node = parser_node} = node in
+  let [(if_index, _)] = (cfg#predecessors index)#tolist in
+  let {Annotated_cfg.parser_node = if_parser_node} = cfg#nodes#assoc if_index in
+
+  let Some full_if_statement =
+    Control_flow_c.extract_fullstatement if_parser_node
+  in
+
+  let (if_expression, st1, st2) =
+    match Ast_c.unwrap full_if_statement with
+      Ast_c.Selection (Ast_c.If (e, st1, st2)) -> (e, st1, st2)
+    | _ -> failwith "should be a if statement"
+  in
+
+  let (st, part) =
+    match Control_flow_c.unwrap parser_node with
+      Control_flow_c.TrueNode _ -> (st1, Def.Then)
+    | Control_flow_c.FalseNode
+    | Control_flow_c.FallThroughNode -> (st2, Def.Else)
+    | _ -> failwith "this should be the head of a error handling branch"
+  in
+  (***************************)
+
+  let st_normal = Def.create_stmtlist st in
+  let stmt_list_st = gather_goto_code c_function [] st_normal in
+  let h_normal = Def.create_stmtlist full_if_statement in
+
+  let branch_st_lineno = Def.find_startline_no st_normal in
+  let branch_en_lineno = Def.find_endline_no stmt_list_st in
+  let goto = Def.goto_exists_in_list st_normal in
+  Block.mk_block (index, node) (Def.find_startline_no h_normal) if_expression goto
+    st_normal part branch_st_lineno branch_en_lineno stmt_list_st
+(************)
 
 let find_errorhandling c_function =
-  let {ast = ast} = c_function in
-  let rec find_errorhandling_aux statements =
-    match statements with
-      []   -> []
-    | h::t ->
-      let build_errorhandling_block_list st =
-        let outer_EHC = find_errorhandling_aux t in
-        if Def.inner_block_in_compound_stmt st
-        then
-          let inner_EHC =
-            find_errorhandling_aux (Def.create_stmtlist st) in
-          inner_EHC@outer_EHC
-        else
-          outer_EHC
-      in
-      match Ast_c.unwrap h with
-      | Ast_c.Labeled (Ast_c.Label (_, st))
-      | Ast_c.Labeled (Ast_c.CaseRange  (_, _, st))
-      | Ast_c.Labeled (Ast_c.Case  (_, st))
-      | Ast_c.Selection  (Ast_c.Switch (_, st))
-      | Ast_c.Iteration  (Ast_c.While (_, st))
-      | Ast_c.Iteration  (Ast_c.DoWhile (st, _))
-      | Ast_c.Iteration (Ast_c.For (Ast_c.ForExp _, _, _, st))
-      | Ast_c.Iteration (Ast_c.MacroIteration (_, _, st))
-      | Ast_c.Labeled (Ast_c.Default st) ->
-        build_errorhandling_block_list st
-
-      | Ast_c.Compound _ ->
-        build_errorhandling_block_list h
-
-      | Ast_c.Selection (Ast_c.If (e, st1, st2)) ->
-        let outer_EHC  = find_errorhandling_aux t in
-
-        let create_block st part =
-          let st_normal = Def.create_stmtlist st in
-          let stmt_list_st = gather_goto_code c_function [] st_normal in
-          let h_normal   = Def.create_stmtlist h in
-
-          let branch_st_lineno = Def.find_startline_no st_normal in
-          let branch_en_lineno = Def.find_endline_no stmt_list_st in
-          let goto = Def.goto_exists_in_list st_normal in
-          (stmt_list_st, Block.mk_block (Def.find_startline_no h_normal) e goto
-             st_normal part branch_st_lineno branch_en_lineno stmt_list_st)
-        in
-
-        let (stmt_list_st1, block1) = create_block st1 Def.Then in
-        let inner_EHC1 = find_errorhandling_aux stmt_list_st1 in
-
-        let (stmt_list_st2, block2) = create_block st2 Def.Else in
-        let inner_EHC2 = find_errorhandling_aux stmt_list_st2 in
-
-        let inner_EHC =
-          match Def.inner_block_in_compound_stmt st1,
-                Def.inner_block_in_compound_stmt st2,
-                stmt_list_st1,
-                stmt_list_st2,
-                return_error e Def.Then stmt_list_st1,
-                return_error e Def.Else stmt_list_st2
-          with
-            (true, true, _, _, _, _) -> inner_EHC1@inner_EHC2
-          | (true, _, _, [], _, _    )
-          | (true, _, _,  _, _, false) -> inner_EHC1
-          | (true, _, _,  _, _, _    ) -> block2::inner_EHC1
-          | (_, true, [], _, _    , _)
-          | (_, true,  _, _, false, _) -> inner_EHC2
-          | (_, true,  _, _, _    , _) -> block1::inner_EHC2
-          | (_, _, x::xs, y::ys, true, true) -> block1::[block2]
-          | (_, _, x::xs, y::ys, true, _   ) -> [block1]
-          | (_, _, x::xs, y::ys, _   , true) -> [block2]
-          | (_, _, x::xs, _    , true, _   ) ->
-            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
-            [block1]
-          | (_, _, _    , x::xs, _   , true) ->
-            Var_dec.all_ehc := !Var_dec.all_ehc + 1;
-            [block2]
-          | _ -> []
-        in
-        inner_EHC@outer_EHC
-      | Ast_c.Iteration (Ast_c.For (Ast_c.ForDecl _, _, _, _)) ->
-        failwith "for loop with declaration in first argument not supported"
-      | _ -> find_errorhandling_aux t
-  in
-  let error_blocks = find_errorhandling_aux ast in
-  let updated_blk_list = recheck_blks c_function error_blocks in
-  List.rev (remove_blks_that_returns_resource c_function updated_blk_list)
+  let {cfg = cfg} = c_function in
+  let branch_heads = Annotated_cfg.get_error_handling_branch_head cfg in
+  Graph_operations.NodeiSet.fold
+    (fun index acc -> (create_block c_function index)::acc) branch_heads []
 
 
 let find_model_block_by_release_statement c_function miss_st =
@@ -1596,11 +1561,8 @@ let rec find_recent_id_values_paths id values = function
     | Some a -> find_recent_id_values_paths id (a::values) t
 
 (* FYI the empty list is used as None because reasons ... -_-' *)
-let get_identifier_values c_function block offset args_list =
-  let fin_lineno =
-    match block with
-      None   -> 0
-    | Some b -> Block.extract_branch_start b in
+let get_identifier_values c_function b offset args_list =
+  let fin_lineno = Block.extract_branch_start b in
   let exe_paths_list = generate_exe_paths_simple (fin_lineno + offset)
       [] c_function in
 
@@ -2002,9 +1964,7 @@ let find_first_model_blk miss_st errblk_list =
 let resource_of_release_temp block error_blocks c_function
     (Resource.Resource (alloc, args_list, _)) =
 
-  let id_values1 =
-    get_identifier_values c_function (Some block) 0 args_list
-  in
+  let id_values1 = get_identifier_values c_function block 0 args_list in
 
   let alloc_call =
     match alloc with
@@ -2037,17 +1997,12 @@ let option_map f lst =
   List.rev (List.fold_left aux [] lst)
 
 let get_resources c_function error_blocks =
+
   let get_resource_release acc block = Block.get_resource_release block acc in
   let releases = List.fold_left get_resource_release [] error_blocks in
-  let resource_of_release (Resource.Release (args_list, h)) =
-    let match_model = find_model_block_by_release_statement c_function h in
 
-    let model_blk =
-      match (find_first_model_blk h error_blocks, match_model) with
-        (Some model, _) -> Some model
-      | (         _, e) -> e
-    in
-
+  (* this -1 offset is really weird ... *)
+  let resource_of_release (Resource.Release (args_list, h), model_blk) =
     let id_values = get_identifier_values c_function model_blk (-1) args_list in
 
     if List.length id_values = 1

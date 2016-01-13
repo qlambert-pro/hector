@@ -19,10 +19,14 @@
  * Hector under other licenses.
  * *)
 
+open Graph_operations
+
+exception NoCFG
+
 type resource_handling =
     Allocation
   | Release
-  | None
+  | NoResource
 
 type node = {
   is_error_handling: bool;
@@ -35,3 +39,6 @@ type edge
 type t = (node, edge) Ograph_extended.ograph_extended
 
 val of_ast_c: Ast_c.toplevel -> t
+
+val get_error_handling_branch_head:
+  t -> NodeiSet.t

@@ -1,0 +1,82 @@
+(* **
+ * Copyright 2013-2016, Inria
+ * Suman Saha, Julia Lawall, Gilles Muller, Quentin Lambert
+ * This file is part of Hector.
+
+ * Hector is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, according to version 2 of the License.
+
+ * Hector is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+
+ * You should have received a copy of the GNU General Public License
+ * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
+
+ * The authors reserve the right to distribute this or future versions of
+ * Hector under other licenses.
+ * *)
+
+open Kaputt
+
+let get_c_functions filename =
+  let (program, _) = Parse_c.parse_c_and_cpp false filename in
+  let (functions', _) = Common.unzip program in
+  let functions'' = List.tl (List.rev functions') in
+  Flag_parsing_c.verbose_type := false;
+  let functions =
+    List.map fst
+      (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
+  in
+  let get_c_functions_aux acc toplevel =
+    match toplevel with
+      Ast_c.Definition (defbis, _) ->
+      let {Ast_c.f_body = body';
+           Ast_c.f_name = (Ast_c.RegularName (name, _))
+          } = defbis in
+      let body = Def.remove_stmtElelist body' in
+      (try (mk_c_function toplevel body)::acc with
+        Control_flow_c_build.Error _
+      | Annotated_cfg.NoCFG -> acc)
+    | _ -> failwith "the file should only define functions"
+  in
+  List.fold_left get_c_functions_aux [] functions
+
+
+
+let mk_cfg_test title filename msg test res compare =
+  let c_functions = get_c_functions filename in
+  let r = test c_functions in
+  let f () = Assertion.is_true
+      ~msg: (title ^ msg ^ filename ^ "\n")
+      (compare r res) in
+  Kaputt.Test.make_simple_test
+    ~title: (title ^ ": " ^ filename)
+    f
+
+let concat_find_errorhandling c_functions =
+  List.concat (List.map find_errorhandling c_functions)
+
+let is_length xs l =
+  (List.length xs) = l
+
+let () =
+  Test.run_tests ~output: (Test.Text_output stderr)
+    [
+      mk_cfg_test
+        "find_errorhandling" "./tests/complex.c"
+        " should return a list of length 2 for " concat_find_errorhandling 2
+        is_length;
+      mk_cfg_test
+        "find_errorhandling" "./tests/more_complex.c"
+        " should return a list of length 4 for " concat_find_errorhandling 4
+        is_length;
+      (* implement test for get_resources
+         mk_cfg_test
+         "get resources" "./tests/complex.c"
+         " should return the empty list for " concat_find_errorhandling 2
+         is_length;
+      *)
+    ]

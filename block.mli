@@ -19,19 +19,31 @@
  * Hector under other licenses.
  * *)
 
-type block
+type oldblock = Block of int * Ast_c.expression *
+                      Ast_c.statement option * Ast_c.statement list *
+                      Def.block_part * int * int * Ast_c.statement list
+              | BlockSimple of int * Ast_c.statement list
+
+
+type block = {
+  node: (Ograph_extended.nodei * Annotated_cfg.node) option;
+  oldblock: oldblock;
+}
 
 val mk_block:
+  (Ograph_extended.nodei * Annotated_cfg.node) ->
   int -> Ast_c.expression -> Ast_c.statement option ->
   Ast_c.statement list -> Def.block_part -> int -> int ->
   Ast_c.statement list -> block
 
-val mk_block_simple: int -> Ast_c.statement list -> block
+val mk_block_simple:
+  int -> Ast_c.statement list -> block
 
 (* TODO probably not satisfying *)
 val extract_statements: block -> Ast_c.statement list
 val extract_branch_start: block -> int
 val extract_test_case: block -> Ast_c.expression
+val extract_index: block -> Ograph_extended.nodei
 
 val compare_branch_start: block -> block -> int
 val compare_branch_end_with_start: block -> block -> int
@@ -49,8 +61,8 @@ val has_goto: block -> bool
 (* TODO clean that *)
 val get_resource_release:
   block ->
-  Resource.release list ->
-  Resource.release list
+  (Resource.release * block) list ->
+  (Resource.release * block) list
 
 val find_all_resource_release_without_argument:
   block -> Ast_c.statement list

@@ -21,10 +21,12 @@
 
 open Graph_operations
 
+exception NoCFG
+
 type resource_handling =
     Allocation
   | Release
-  | None
+  | NoResource
 
 type node = {
   is_error_handling: bool;
@@ -32,22 +34,33 @@ type node = {
   parser_node: Control_flow_c.node
 }
 
-let mk_node is_error_handling resource_handling_type parser_node =
-  {is_error_handling = is_error_handling;
-   resource_handling_type = resource_handling_type;
-   parser_node = parser_node
-  }
+let mk_node is_error_handling resource_handling_type parser_node = {
+  is_error_handling = is_error_handling;
+  resource_handling_type = resource_handling_type;
+  parser_node = parser_node
+}
 
 type edge = Direct
 
 type t = (node, edge) Ograph_extended.ograph_extended
 
 (**** Unwrapper and boolean function on Control_flow_c ****)
-let is_if_statement node =
-  let {parser_node = parser_node} = node in
+let is_loop node =
+  let {parser_node = ((_, info), _)} = node in
+  let {Control_flow_c.is_loop = is_loop} = info in
+  is_loop
+
+(*TODO actually use the graph rather than node type*)
+let is_killing_error_branch node =
+  let {parser_node = ((_, info), _) as parser_node} = node in
+  let {Control_flow_c.is_loop = is_loop} = info in
   match Control_flow_c.unwrap parser_node with
-    Control_flow_c.IfHeader _ -> true
-  | _ -> false
+    Control_flow_c.FalseNode
+  | Control_flow_c.IfHeader _
+  | Control_flow_c.SwitchHeader _
+  | Control_flow_c.FallThroughNode -> true
+  | _ -> is_loop
+
 
 let is_after_node node =
   let {parser_node = parser_node} = node in
@@ -55,11 +68,41 @@ let is_after_node node =
     Control_flow_c.AfterNode _ -> true
   | _ -> false
 
-let test_returned_expression predicate node =
+
+let is_selection node =
   let {parser_node = parser_node} = node in
   match Control_flow_c.unwrap parser_node with
-    Control_flow_c.ReturnExpr (_, e) -> predicate e
+    Control_flow_c.IfHeader _ -> true
   | _ -> false
+
+
+let is_fallthrough node =
+  let {parser_node = parser_node} = node in
+  match Control_flow_c.unwrap parser_node with
+    Control_flow_c.FallThroughNode -> true
+  | _ -> false
+
+
+let is_top node =
+  let {parser_node = parser_node} = node in
+  match Control_flow_c.unwrap parser_node with
+    Control_flow_c.TopNode -> true
+  | _ -> false
+
+
+let test_returned_expression predicate default node =
+  let {parser_node = parser_node} = node in
+  match Control_flow_c.unwrap parser_node with
+    Control_flow_c.ReturnExpr (_, (e, _)) -> predicate e
+  | _ -> default
+
+
+let test_if_header predicate default node =
+  let {parser_node = parser_node} = node in
+  match Control_flow_c.unwrap parser_node with
+    Control_flow_c.IfHeader (_, (e, _)) -> predicate e
+  | _ -> default
+
 
 let get_error_branch node =
   let {parser_node = parser_node} = node in
@@ -88,57 +131,79 @@ let is_on_error_branch cfg node head =
   | (Ast_operations.Else, Control_flow_c.FallThroughNode ) -> true
   | _ -> false
 
+let base_visitor f = {
+  Visitor_c.default_visitor_c with
+  Visitor_c.kexpr =
+    (fun (k, visitor) e ->
+       Ast_operations.apply_on_assignment
+         f
+         e;
+       k e);
+  Visitor_c.konedecl =
+    (fun (k, visitor) dl ->
+       Ast_operations.apply_on_initialisation
+         f
+         dl;
+       k dl)
+}
+
+let base_error_visitor f = {
+  Visitor_c.default_visitor_c with
+  Visitor_c.kexpr =
+    (fun (k, visitor) e ->
+       Ast_operations.apply_on_error_assignment
+         f
+         e;
+       k e);
+  Visitor_c.konedecl =
+    (fun (k, visitor) dl ->
+       Ast_operations.apply_on_error_initialisation
+         f
+         dl;
+       k dl)
+}
+
 let is_killing_reach identifier node =
   let {parser_node = parser_node} = node in
   let error_assignment = ref false in
-  let visitor = {
-    Visitor_c.default_visitor_c with
-    Visitor_c.kexpr =
-      (fun (k, visitor) e ->
-         Ast_operations.apply_on_assignment_left_side
-           (fun x -> error_assignment :=
-               !error_assignment ||
-               Ast_operations.expression_equal identifier x)
-           e;
-         k e);
-    Visitor_c.konedecl =
-      (fun (k, visitor) dl ->
-         Ast_operations.apply_on_initialised_variable
-           (fun x -> error_assignment :=
-               !error_assignment ||
-               Ast_operations.expression_equal identifier x)
-           dl;
-         k dl)
-  }
+  let visitor = base_visitor
+      (fun r l -> error_assignment :=
+          !error_assignment ||
+          Ast_operations.expression_equal identifier r)
   in
   Visitor_c.vk_node visitor parser_node;
   !error_assignment
 
-(*TODO clean / de-obfuscate*)
-(* **
- * This function use a hack:
- * apply_on_error_assignment tests whether a variable receive an error value
- * this is why it is being used even if we are not actually using the left hand
- * side of the assignment
- * *)
 let is_error_assignment node =
   let {parser_node = parser_node} = node in
   let error_assignment = ref false in
-  let visitor = {
-    Visitor_c.default_visitor_c with
-    Visitor_c.kexpr =
-      (fun (k, visitor) e ->
-         Ast_operations.apply_on_error_assignment_left_side
-           (fun e -> error_assignment := true)
-           e;
-         k e);
-    Visitor_c.konedecl =
-      (fun (k, visitor) dl ->
-         Ast_operations.apply_on_error_initialised_variable
-           (fun e -> error_assignment := true)
-           dl;
-         k dl)
-  }
+  let visitor = base_error_visitor
+      (fun l r ->
+         error_assignment :=
+           match r with
+             Some r ->
+             (match Ast_operations.is_error r with
+                Some true
+              | None -> true
+              | _    -> !error_assignment)
+           | None -> true)
+  in
+  Visitor_c.vk_node visitor parser_node;
+  !error_assignment
+
+let is_error_of_error_assignement identifier node =
+  let {parser_node = parser_node} = node in
+  let error_assignment = ref (Some false) in
+  let visitor = base_error_visitor
+      (fun x r ->
+         if Ast_operations.expression_equal x identifier
+         then
+           error_assignment :=
+             match r with
+               Some r -> Ast_operations.is_error r
+             | None   -> None
+         else
+           ())
   in
   Visitor_c.vk_node visitor parser_node;
   !error_assignment
@@ -146,21 +211,8 @@ let is_error_assignment node =
 let identifiers_of_error_assignment node =
   let {parser_node = parser_node} = node in
   let identifiers = ref [] in
-  let visitor = {
-    Visitor_c.default_visitor_c with
-    Visitor_c.kexpr =
-      (fun (k, visitor) e ->
-         Ast_operations.apply_on_error_assignment_left_side
-           (fun x -> identifiers := x::!identifiers)
-           e;
-         k e);
-    Visitor_c.konedecl =
-      (fun (k, visitor) dl ->
-         Ast_operations.apply_on_error_initialised_variable
-           (fun x -> identifiers := x::!identifiers)
-           dl;
-         k dl)
-  }
+  let visitor = base_error_visitor
+      (fun x r -> identifiers := x::!identifiers)
   in
   Visitor_c.vk_node visitor parser_node;
   !identifiers
@@ -172,92 +224,155 @@ let get_error_assignments cfg =
     cfg
 
 
-let get_reachable_returns cfg error_assignments =
-  let get_reachable_returns_aux acc (index, node) =
+let filter_returns cfg identifier nodes =
+  NodeiSet.filter
+    (fun index ->
+       test_returned_expression
+         (Ast_operations.expression_equal identifier)
+         false
+         (cfg#nodes#assoc index))
+    nodes
+
+
+let add_branch_nodes_leading_to_return cfg returns nodes acc =
+  NodeiSet.fold
+    (fun return acc ->
+       let branch_nodes =
+         conditional_get_post_dominated
+           (fun (index, node) -> NodeiSet.mem index nodes)
+           cfg
+           return
+       in
+       NodeiSet.union branch_nodes acc)
+    returns acc
+
+let add_post_dominated cfg index acc =
+  let post_dominated =
+    conditional_get_post_dominated
+      (fun (_, node) -> true)
+      cfg index
+  in
+  NodeiSet.union post_dominated acc
+
+let get_nodes_leading_to_error_return cfg error_assignments =
+  let get_reachable_nodes acc (index, node) =
     let identifiers = identifiers_of_error_assignment node in
-    let reachable_nodes_by_identifier =
-      List.map
-        (fun identifier -> conditional_breadth_first_search
-            (fun (idx, node) -> not (is_killing_reach identifier node))
-            cfg index)
-        identifiers
-    in
-    let reachable_returns_by_identifier =
-      List.map2
-        (fun reachable_nodes identifier ->
-           (NodeiSet.filter
-              (fun index ->
-                 test_returned_expression
-                   (Ast_operations.expression_equal_unwrap identifier)
-                   (cfg#nodes#assoc index))
-              reachable_nodes))
-        reachable_nodes_by_identifier
-        identifiers
-    in
-    let reachable_returns =
-      List.fold_left (fun acc s -> NodeiSet.union acc s)
-        NodeiSet.empty reachable_returns_by_identifier in
-    NodeiSet.union acc reachable_returns
+    List.fold_left
+      (fun acc identifier ->
+         let is_error = is_error_of_error_assignement identifier node in
+         match is_error with
+           Some true ->
+           let nodes =
+             breadth_first_fold
+               (get_basic_node_config
+                  (fun _ (idx, node) -> not (is_killing_reach identifier node)))
+               cfg index
+           in
+           let reachable_returns = filter_returns cfg identifier nodes in
+           if reachable_returns != NodeiSet.empty
+           then
+             let error_branch_nodes =
+               add_branch_nodes_leading_to_return
+                 cfg reachable_returns nodes acc
+             in
+             if NodeiSet.mem index error_branch_nodes
+             then
+               add_post_dominated cfg index error_branch_nodes
+             else
+               error_branch_nodes
+           else
+             acc
+         | None ->
+           let nodes =
+             breadth_first_fold
+               (get_basic_node_config
+                  (fun _ (idx, node) ->
+                     let is_on_error_branch_result =
+                       fold_predecessors
+                         (fun acc (_, head) ->
+                            acc &&
+                            (not (test_if_header (fun _ -> true) false head) ||
+                             is_on_error_branch cfg head node))
+                         true cfg idx
+                     in
+                     not (is_killing_reach identifier node) &&
+                     is_on_error_branch_result))
+               cfg index
+           in
+           let reachable_returns = filter_returns cfg identifier nodes in
+           if reachable_returns != NodeiSet.empty
+           then
+             add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
+           else
+             acc
+         | _ -> acc)
+      acc identifiers
   in
-  List.fold_left get_reachable_returns_aux NodeiSet.empty error_assignments
+  List.fold_left get_reachable_nodes NodeiSet.empty error_assignments
 
-
-(* **
- * Returns true if head is in a block leading directly to an error return
- * statement
- * *)
-let is_returning_error error_returns cfg head =
-  let rec is_returning_error_aux index =
-    let node = cfg#nodes#assoc index in
-    test_returned_expression Ast_operations.is_error node ||
-    NodeiSet.mem index error_returns ||
-    (match (cfg#successors index)#tolist with
-       [(succ, _)] -> is_returning_error_aux succ
-     | _           -> false)
-  in
-  is_returning_error_aux head
-
-let get_returning_branch_heads cfg node =
-  let successors = (cfg#successors node)#tolist in
-  List.map fst successors
-
-
-let annotate_error_handling_block cfg head =
-  let rec annotate_error_handling_block_aux cfg node =
-    let {parser_node = parser_node} = cfg#nodes#assoc node in
-    let ncfg = cfg#replace_node (node, (mk_node true None parser_node)) in
-    (match (cfg#successors node)#tolist with
-       [(succ, _)] -> annotate_error_handling_block_aux ncfg succ
-     | []          -> ncfg
-     | _           ->
-       failwith
-         "annotate_error_handling_block should be called on an error handling block")
-  in
-  annotate_error_handling_block_aux cfg head
-
-
+(*TODO optimise number of pass*)
+(*TODO replace as computed rather than store*)
 let annotate_error_handling cfg =
   let error_assignments = get_error_assignments cfg in
-  let error_returns = get_reachable_returns cfg error_assignments in
-  let annotate_error_handling_aux acc (index, node)=
-    if is_if_statement node
-    then
-      let returning_branch_heads = get_returning_branch_heads acc index in
-
-      let annotate_if_error_handling acc branch_head =
-        if (is_returning_error error_returns acc branch_head ||
-            is_on_error_branch acc node (cfg#nodes#assoc branch_head))
-        then
-          annotate_error_handling_block acc branch_head
-        else
-          acc
-      in
-      List.fold_left annotate_if_error_handling acc returning_branch_heads
-
-    else
-      acc
+  let error_branch_nodes = get_nodes_leading_to_error_return cfg
+      error_assignments in
+  let error_returns =
+    find_all
+      (fun (_, node) ->
+         let error_type =
+           test_returned_expression Ast_operations.is_error (Some false) node
+         in
+         match error_type with
+           Some true -> true
+         | _         -> false)
+      cfg
   in
-  fold_node annotate_error_handling_aux cfg cfg
+  let error_return_post_dominated =
+    List.fold_left
+      (fun acc (index, _) ->
+         let nodes =
+           conditional_get_post_dominated (fun _ -> true) cfg index
+         in
+         NodeiSet.union acc nodes)
+      NodeiSet.empty error_returns
+  in
+  fold_node
+    (fun cfg (index, node) ->
+       if NodeiSet.mem index error_branch_nodes ||
+          NodeiSet.mem index error_return_post_dominated
+       then
+         let {parser_node = parser_node} = node in
+         cfg#replace_node (index, (mk_node true NoResource parser_node))
+       else
+         cfg)
+    cfg cfg
+
+
+let is_head cfg (index, node) =
+  let predecessors = cfg#predecessors index in
+  let {is_error_handling = is_error_handling} = node in
+  is_error_handling &&
+  predecessors#exists
+    (fun (index, _) ->
+       let node = cfg#nodes#assoc index in
+       let {is_error_handling = is_error_handling} = node in
+       is_selection node &&
+       not (is_error_handling))
+
+
+let filter_heads cfg nodes =
+  NodeiSet.filter
+    (fun index ->
+       let node = cfg#nodes#assoc index in
+       is_head cfg (index, node))
+    nodes
+
+(*TODO maybe optimise*)
+let get_error_handling_branch_head cfg =
+  let nodes = find_all (is_head cfg) cfg in
+  List.fold_left
+    (fun acc (index, _) -> NodeiSet.add index acc) NodeiSet.empty
+    nodes
 
 
 (*TODO implement*)
@@ -265,12 +380,12 @@ let annotate_resource_handling cfg =
   cfg
 
 
-(* TODO improve to only one pass *)
+(*TODO improve to only one pass*)
 let of_ast_c ast =
   let cocci_cfg =
     match Control_flow_c_build.ast_to_control_flow ast with
-      Some cfg -> cfg
-    | None     -> failwith "unable to build control_flow_c"
+      Some cfg -> Control_flow_c_build.annotate_loop_nodes cfg
+    | None     -> raise NoCFG
   in
 
   let process_node (g, added_nodes) (index, node) =
@@ -282,7 +397,7 @@ let of_ast_c ast =
          * It uses add_nodei so that coccinelle can be used to debug with
          * --control-flow
          * *)
-        let (g, index') = g#add_nodei index (mk_node false None node) in
+        let (g, index') = g#add_nodei index (mk_node false NoResource node) in
         Hashtbl.add added_nodes index index';
         (g, added_nodes)
       else

@@ -1,20 +1,20 @@
 int f1() {
-	int a = 42;
+	int * a = NULL;
 	int b = 35;
 
 	struct foo * bar = allocate_resource();
 
-	a = f();
+	a = g();
 
 	b = f();
 
-	if (ERR_PTR == g()) {
+	if (ERR_PTR == a) {
 		printk("stuff that went wrong");
 		release_resource(bar);
 		return a;
 	}
 
-	if (a < b) {
+	if (12 < b) {
 		initialise_resource(bar);
 	}
 

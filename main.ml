@@ -22,10 +22,10 @@
 open Common
 
 
-let collec_all_fn = 
-  let extract_functions acc el =  
+let collec_all_fn =
+  let extract_functions acc el =
     match el with
-      Ast_c.Definition (defbis, _) -> 
+      Ast_c.Definition (defbis, _) ->
       let { Ast_c.f_name = name;
             Ast_c.f_type = (_, (paramst, _));
             Ast_c.f_body = statxs;
@@ -41,25 +41,25 @@ let collec_all_fn =
     | Ast_c.MacroTop _ -> acc
     | Ast_c.Namespace _ -> failwith "namespaces not supported"
   in
-  List.fold_left extract_functions [] 
+  List.fold_left extract_functions []
 
 let test_type_c infile =
   let (program2, _stat) =
     Common.profile_code "parsing" (fun () -> Parse_c.parse_c_and_cpp false infile) in
-  let _program2 =
-    Common.profile_code "type inference" (fun () -> 
-        program2 
-        +> Common.unzip 
-        +> (fun (program, infos) -> 
-            Type_annoter_c.annotate_program !Type_annoter_c.initial_env 
+  let program2' =
+    Common.profile_code "type inference" (fun () ->
+        program2
+        +> Common.unzip
+        +> (fun (program, infos) ->
+            Type_annoter_c.annotate_program !Type_annoter_c.initial_env
               program +> List.map fst,
             infos
           )
         +> Common.uncurry Common.zip)
   in
-  let (program, infos) = Common.unzip program2 in
+  let (program, infos) = Common.unzip program2' in
 
-  let all_fn = Common.profile_code "collec_all_fn" (fun () -> 
+  let all_fn = Common.profile_code "collec_all_fn" (fun () ->
       collec_all_fn program) in
   let rec loop = function
       []-> []
@@ -119,11 +119,13 @@ let real_diff = ref false
 let org_file = ref (None : string option)
 let verbose = ref false
 let macros = ref ""
+let profile = ref false
 
 let options = [
   (* if you want command line arguments, put them here:
      "option name", operation described in man Arg, "description"; *)
-  "--profile", Arg.Unit (function () -> Common.profile := Common.PALL) ,
+  "--profile", Arg.Unit (function () -> Common.profile := Common.PALL;
+      profile := true),
   "   gather timing information about the main coccinelle functions";
   "-diff", Arg.Set diff,
   "  diff output"; (* diff after indent *)
@@ -146,7 +148,7 @@ let _ =
   if !macros = "" then macros := ("/usr/local/lib/coccinelle/standard.h");
   Parse_c.init_defs_builtins !macros;
   (match !org_file with Some x -> Org.parse_org x | _ -> ());
-  Common.print_to_stderr := !verbose;
+  Common.print_to_stderr := !verbose || !profile;
   Flag_parsing_c.verbose_lexing := !verbose;
   Flag_parsing_c.verbose_parsing := !verbose;
   Flag_parsing_c.verbose_type := !verbose;

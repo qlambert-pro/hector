@@ -22,32 +22,52 @@
 open Common
 
 (* TODO These should be reimplemented with records and losing the constructors *)
-type block = Block of int * Ast_c.expression *
+type oldblock = Block of int * Ast_c.expression *
                       Ast_c.statement option * Ast_c.statement list *
                       Def.block_part * int * int * Ast_c.statement list
-           | BlockSimple of int * Ast_c.statement list
+              | BlockSimple of int * Ast_c.statement list
 
-let mk_block block_start test_case goto st_normal part branch_start branch_end
+type block = {
+  node: (Ograph_extended.nodei * Annotated_cfg.node) option;
+  oldblock: oldblock;
+}
+
+let mk_block (index, node) block_start test_case goto st_normal part branch_start branch_end
     statements =
-  Block (block_start, test_case, goto, st_normal, part, branch_start,
-         branch_end, statements)
+  {node = Some (index, node);
+   oldblock = Block (block_start, test_case, goto, st_normal, part, branch_start,
+                     branch_end, statements);
+  }
 
-let mk_block_simple branch_start statements = BlockSimple (branch_start, statements)
+let mk_block_simple branch_start statements =
+  {node = None;
+   oldblock = BlockSimple (branch_start, statements);
+  }
 
-let extract_statements (Block (_, _, _, _, _, _, _, statements)) =
+let extract_statements block =
+  let {oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in
   statements
 
-let extract_branch_start = function
+let extract_branch_start block =
+  let {oldblock = oldblock} = block in
+  match oldblock with
     Block (_, _, _, _, _, branch_start, _, _)
   | BlockSimple (branch_start, _) ->
     branch_start
 
-let extract_test_case (Block (_, test_case, _, _, _, _, _, _)) =
+let extract_test_case block =
+  let {oldblock = (Block (_, test_case, _, _, _, _, _, _))} = block in
   test_case
 
+let extract_index block =
+  let {node = Some (index, _)} = block in
+  index
+
 let compare_branch_start block1 block2 =
+  let {oldblock = oldblock1} = block1 in
+  let {oldblock = oldblock2} = block2 in
   let (branch_start1, branch_start2) =
-    match (block1, block2) with
+    match (oldblock1, oldblock2) with
       ((Block (_, _, _, _, _, branch_start1, _, _)),
        (Block (_, _, _, _, _, branch_start2, _, _)))
     | ((Block (_, _, _, _, _, branch_start1, _, _)),
@@ -61,8 +81,10 @@ let compare_branch_start block1 block2 =
   branch_start1 - branch_start2
 
 let compare_branch_end_with_start block1 block2 =
+  let {oldblock = oldblock1} = block1 in
+  let {oldblock = oldblock2} = block2 in
   let (branch_end, branch_start) =
-    match (block1, block2) with
+    match (oldblock1, oldblock2) with
       ((Block (_, _, _, _, _, _, branch_end1, _)),
        (Block (_, _, _, _, _, branch_start2, _, _)))
     | ((Block (_, _, _, _, _, branch_end1, _, _)),
@@ -76,7 +98,8 @@ let compare_branch_end_with_start block1 block2 =
   branch_end - branch_start
 
 
-let has_goto (Block (_, _, goto, _, _, _, _, _)) =
+let has_goto block =
+  let {oldblock = (Block (_, _, goto, _, _, _, _, _))} = block in
   match goto with
     Some _ -> true
   | None   -> false
@@ -101,7 +124,8 @@ let rec release_by_address arg = function
         )
     | _-> release_by_address arg t
 
-let contains_expression (Block (_, _, _, _, _, _, _, statements)) arg =
+let contains_expression block arg =
+  let {oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in
   let contains_expression_aux h =
     match Ast_c.unwrap h with
       Ast_c.ExprStatement (Some ((( Ast_c.FunCall  (e, es)), typ), ii)) ->
@@ -118,8 +142,8 @@ let contains_expression (Block (_, _, _, _, _, _, _, statements)) arg =
   List.exists contains_expression_aux statements
 
 
-let expression_used_as_argument (Block (_, _, _, _, _, _, _, statements))
-    return_val =
+let expression_used_as_argument block return_val =
+  let {oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in
   let rec expression_used_as_argument_aux = function
       []-> false
     | h::t->
@@ -133,8 +157,8 @@ let expression_used_as_argument (Block (_, _, _, _, _, _, _, statements))
   expression_used_as_argument_aux statements
 
 
-let does_block_contains_statement (Block (_, _, _, _, _, _, _, statements))
-    statement =
+let does_block_contains_statement block statement =
+  let {oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in
   Def.stmt_exists_in_list statement statements
 
 let return_built_in_constant id =
@@ -430,8 +454,9 @@ let rec is_error_code_test ee =
 
   | _ ->  Some false
 
-let is_error_handling_block is_assigned_error_code
-    (Block (_, exp, _, _, part, blk_strtlineno, _, stmtlist)) =
+let is_error_handling_block is_assigned_error_code block =
+  let {oldblock = (Block (_, exp, _, _, part, blk_strtlineno, _, stmtlist))} =
+    block in
   match Def.return_exists_in_list stmtlist with
     None    -> false
   | Some st ->
@@ -560,7 +585,9 @@ let first_arg_is_array args_list =
   | h::t -> args_contains_array h
 
 (* return the list a resource release statements present in the block *)
-let get_resource_release (Block (_, _, _, _, _, _, _, statements)) acc =
+let get_resource_release block acc =
+  let {node = Some (index, _);
+       oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in
   let get_resource_release_aux (rr_ops_list, tail) statement =
     let ntail =
       if tail = []
@@ -571,19 +598,21 @@ let get_resource_release (Block (_, _, _, _, _, _, _, statements)) acc =
       Ast_c.ExprStatement (Some (((Ast_c.FunCall ((((Ast_c.Ident
                                                        (Ast_c.RegularName (_,
                                                                            [ii3]))),
-                                                   _), _), es)), _), _)) ->
+                                                    _), _), es)), _), _)) ->
+
       let args_list = Def.remove_optionlist (create_argslist [] es) in
       if (List.length args_list) = 0 &&
          not (Def.stmt_exists_in_list statement
-                (List.map (function Resource.Release (_, s) -> s) rr_ops_list))
+                (List.map (function (Resource.Release (_, s), _) -> s) rr_ops_list))
       then
-        (((Resource.Release ([], statement))::rr_ops_list), ntail)
+        (((Resource.Release ([], statement), block)::rr_ops_list), ntail)
       else
       if not (first_arg_is_array args_list ||
               Def.string_exists_in_explist args_list ||
               Def.stmt_exists_in_list statement
-                (List.map (function Resource.Release (_, s) -> s) rr_ops_list))
+                (List.map (function (Resource.Release (_, s), _) -> s) rr_ops_list))
       then
+
         let ptr_args_list = find_ptr_args_list args_list in
         if not (ptr_args_list = [] ||
                 all_exp_exists_in_list tail ptr_args_list)
@@ -591,7 +620,7 @@ let get_resource_release (Block (_, _, _, _, _, _, _, statements)) acc =
           let unused_args = unused_ptr_args tail ptr_args_list in
           if no_exp_exists_in_stmtlist tail unused_args
           then
-            (((Resource.Release (unused_args, statement))::rr_ops_list), ntail)
+            (((Resource.Release (unused_args, statement), block)::rr_ops_list), ntail)
           else
             (rr_ops_list, ntail)
         else
@@ -600,13 +629,18 @@ let get_resource_release (Block (_, _, _, _, _, _, _, statements)) acc =
         (rr_ops_list, ntail)
     | _ -> (rr_ops_list, ntail)
   in
-  fst (List.fold_left get_resource_release_aux (acc, List.tl statements) statements)
+  if statements == []
+  then []
+  else
+    fst (List.fold_left get_resource_release_aux
+           (acc, List.tl statements) statements)
 
-let get_returned_expression (Block (_, _, _, _, _, _, _, stmtlist)) =
+let get_returned_expression block =
+  let {oldblock = (Block (_, _, _, _, _, _, _, stmtlist))} = block in
   Def.return_exists_in_list stmtlist
 
-let find_all_resource_release_without_argument (Block (_, _, _, _, _, _, _,
-                                                       statements)) =
+let find_all_resource_release_without_argument block =
+  let {oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in
   let find_all_resource_release_without_argument_aux s acc =
     match Ast_c.unwrap s with
       Ast_c.ExprStatement (Some (((Ast_c.FunCall  (_, es)), _), _)) ->
@@ -629,8 +663,8 @@ let rec create_stmtlist = function
     []->[]
   | h::t-> ((Ast_c.ExprStatement (Some h),[]))::(create_stmtlist t)
 
-let return_st_access_resource (Resource.Resource (_, _, miss_st))
-    (Block (_, _, _, _, _, _, _, statements)) =
+let return_st_access_resource (Resource.Resource (_, _, miss_st)) block =
+  let {oldblock = (Block (_, _, _, _, _, _, _, statements))} = block in 
   let rec return_st_access_resource_aux = function
       []   -> false
     | h::t ->

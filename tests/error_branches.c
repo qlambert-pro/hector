@@ -76,3 +76,10 @@ int f6() {
 		return a;
 	return 1;
 }
+
+int f7() {
+	int rc = allocate_and_init();
+	if (rc != 0)
+		do_stuff();
+	return rc;
+}

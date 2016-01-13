@@ -50,15 +50,19 @@ let all_def = ref []
 let analyze_blk c_function rr_ops_list iifunc1 all_def func_name errblks_list
     block =
 
+  let miss_rr_ops_list' =
+    find_missing_resource_release block errblks_list c_function rr_ops_list
+  in
+
   let miss_rr_ops_list =
-    find_missing_resource_release block errblks_list c_function rr_ops_list in
+    C_function.find_interproc_calls all_def block c_function miss_rr_ops_list'
+  in
 
-  let miss_rr_ops_list_new5 =
-    C_function.find_interproc_calls all_def block c_function miss_rr_ops_list in
+  Report.generate_report_new func_name block iifunc1 miss_rr_ops_list
 
-  Report.generate_report_new func_name block iifunc1 miss_rr_ops_list_new5
 
-let analyze_def full_file all_fn ((defbis, iifunc1::_) : Ast_c.definition) =
+
+let analyze_def toplevel full_file all_fn ((defbis, iifunc1::_) : Ast_c.definition) =
   let {Ast_c.f_name = name;
        Ast_c.f_body = body;
       } = defbis
@@ -69,16 +73,29 @@ let analyze_def full_file all_fn ((defbis, iifunc1::_) : Ast_c.definition) =
   Var_dec.file_info := Ast_c.file_of_info iifunc1;
 
   let clean_ast = Def.remove_stmtElelist body in
-  let c_function = C_function.mk_c_function clean_ast in
 
-  let error_blocks = C_function.find_errorhandling c_function in
-  let resource_releases = C_function.get_resources c_function error_blocks in
-  List.iter (analyze_blk c_function resource_releases iifunc1 !all_def func_name
-               error_blocks) error_blocks
+  try
+    let c_function = C_function.mk_c_function toplevel clean_ast in
+
+    let error_blocks =
+      Common.profile_code "find_errorhandling"
+        (fun () -> C_function.find_errorhandling c_function)
+    in
+    let resource_releases = C_function.get_resources c_function error_blocks in
+
+    List.iter (analyze_blk c_function resource_releases iifunc1 !all_def func_name
+                 error_blocks) error_blocks
+  with
+    Control_flow_c_build.Error _
+  | Annotated_cfg.NoCFG ->
+    ()
 
 let analyze_toplevel file all_fn x =
   match x with
-    Ast_c.Definition def -> analyze_def file all_fn def
+    Ast_c.Definition def ->
+    let {Ast_c.f_name = (Ast_c.RegularName (name, _))} = Ast_c.unwrap def in
+    Printf.eprintf "%s\n%!" name;
+    analyze_def x file all_fn def
   | Ast_c.Declaration _
   | Ast_c.CppTop _
   | Ast_c.EmptyDef _

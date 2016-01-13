@@ -250,7 +250,9 @@ let built_in_constants = [
   "DTERR_MD_FIELD_OVERFLOW";
   "DTERR_TZDISP_OVERFLOW";
   "PGRES_POLLING_FAILED";
-  "InvalidOid"]
+  "InvalidOid";
+  "ERR_PTR";
+  "PTR_ERR"]
 
 let is_simple_assignment op =
   match unwrap op with
@@ -259,7 +261,7 @@ let is_simple_assignment op =
 
 let rec is_pointer ((expression, info), _) =
   match expression with
-  | Cast (_, e)
+    Cast (_, e)
   | ParenExpr e -> is_pointer e
   | _ ->
     match !info with
@@ -274,84 +276,66 @@ let expressions_of_arguments arguments =
   in
   List.fold_left expressions_of_arguments_aux [] arguments
 
-let rec is_funcall ((expression, _), _) =
+let rec is_error ((expression, _), _) =
   match expression with
     Cast (_, e)
-  | ParenExpr e -> is_funcall e
-  | FunCall _ -> true
-  | _ -> false
-
-(*TODO maybe use built_in_constants*)
-let rec is_error_return_code ((expression, _), _) =
-  match expression with
-    Cast (_, e)
-  | ParenExpr e -> is_error_return_code e
+  | ParenExpr e -> is_error e
   | Unary (_, UnMinus)
-  | Unary ((((Constant (Int ("0", _))), _), _), Tilde) -> true
-  | Ident (RegularName(s, _)) ->
-    s = "ERR_PTR" || s = "PTR_ERR"
-  | _ -> false
+  | Unary ((((Constant (Int ("0", _))), _), _), Tilde) -> Some true
+  | Ident (RegularName(s, _)) when List.exists ((=) s) built_in_constants ->
+    Some true
+  | FunCall _ -> None
+  | _ -> Some false
+
+let is_error_return_code e =
+  match is_error e with
+    Some true -> true
+  | _         -> false
 
 let is_error_right_value e =
-  is_error_return_code e ||
-  is_funcall e
+  match is_error e with
+    Some true
+  | None      -> true
+  | _         -> false
 
-let is_error_built_in_constant = function
-    RegularName (id, _) -> List.exists ((=) id) built_in_constants
-  | _ -> false
-
-let is_error e =
-  let rec is_error_aux ((expression, _), _) =
-    match expression with
-      ParenExpr e
-    | Cast (_, e) ->
-      is_error_aux e
-    | Ident id ->
-      is_error_built_in_constant id
-    | FunCall _ -> true
-    | _ -> false
-  in
-  is_error_aux (unwrap e)
 
 let expression_equal expression1 expression2 =
-  Lib_parsing_c.al_expr expression1 = Lib_parsing_c.al_expr expression2
+  Lib_parsing_c.real_al_expr expression1 = Lib_parsing_c.real_al_expr expression2
 
-let expression_equal_unwrap expression1 (expression2, _) =
-  expression_equal expression1 expression2
-
-let conditional_apply_on_error_assignment_left_side p f (expression, _) =
+let conditional_apply_on_error_assignment p f (expression, _) =
   match unwrap expression with
     Assignment (e1, op, e2)
     when is_simple_assignment op &&
          p e2 ->
-    f e1
+    f e1 (Some e2)
   | FunCall (_, arguments') ->
     let arguments = expressions_of_arguments arguments' in
     let pointers = List.find_all is_pointer arguments in
     (match pointers with
-       [p] -> f p
+       [p] -> f p None
      | _   -> ())
   | e -> ()
 
-let apply_on_error_assignment_left_side f e =
-  conditional_apply_on_error_assignment_left_side is_error_right_value f e
+let apply_on_error_assignment f e =
+  conditional_apply_on_error_assignment is_error_right_value f e
 
-let apply_on_assignment_left_side f e =
-  conditional_apply_on_error_assignment_left_side (fun e -> true) f e
+let apply_on_assignment f e =
+  conditional_apply_on_error_assignment (fun e -> true) f e
 
-let conditional_apply_on_initialised_variable p f declaration =
+let conditional_apply_on_initialisation p f declaration =
   match declaration.v_namei with
     Some (n, ValInit (_, (InitExpr e, _))) when p e ->
     (*TODO create the correct type and infos*)
-    f (mk_e (Ident n) [])
+    f (mk_e (Ident n) []) (Some e)
   | _ -> ()
 
-let apply_on_error_initialised_variable f declaration =
-  conditional_apply_on_initialised_variable is_error_right_value f declaration
+let apply_on_error_initialisation f declaration =
+  conditional_apply_on_initialisation is_error_right_value f declaration
 
-let apply_on_initialised_variable f declaration =
-  conditional_apply_on_initialised_variable (fun e -> true) f declaration
+let apply_on_initialisation f declaration =
+  conditional_apply_on_initialisation (fun e -> true) f declaration
 
+(*TODO None ..*)
 type branch_side =
     Then
   | Else
@@ -385,3 +369,14 @@ let rec which_is_the_error_branch f (expression, _) =
   | Assignment (_, op, e)
     when is_simple_assignment op && is_error_right_value e -> f Then
   | _ -> f None
+
+(*TODO does not handle complex if case with || or &&*)
+let rec is_testing_identifier identifier (expression, _) =
+  match unwrap expression with
+    ParenExpr e        -> is_testing_identifier identifier e
+  | Unary (e, _)       -> expression_equal identifier e
+  | Binary (e1, _, e2) -> expression_equal identifier e1 ||
+                          expression_equal identifier e2
+  | Assignment (_, op, e) when is_simple_assignment op ->
+    expression_equal identifier e
+  | _ -> false

@@ -24,8 +24,19 @@ open Kaputt
 let get_cfgs filename =
   let (program, _) = Parse_c.parse_c_and_cpp false filename in
   let (functions', _) = Common.unzip program in
-  let functions = List.tl (List.rev functions') in
-  List.map of_ast_c functions
+  let functions'' = List.tl (List.rev functions') in
+  Flag_parsing_c.verbose_type := false;
+  let functions =
+    List.map fst
+      (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
+  in
+  let aux acc toplevel =
+    try (of_ast_c toplevel)::acc with
+      Control_flow_c_build.Error _
+    | NoCFG -> acc
+  in
+  List.rev (List.fold_left aux [] functions)
+
 
 
 let mk_cfg_test title filename msg test res compare =
@@ -49,9 +60,9 @@ let concat_identifiers_of_error_assignement cfgs =
   in
   List.concat identifiers
 
-let concat_get_reachable_returns cfgs =
+let concat_get_nodes_leading_to_error_return cfgs =
   let error_assignments = List.map get_error_assignments cfgs in
-  List.map2 get_reachable_returns cfgs error_assignments
+  List.map2 get_nodes_leading_to_error_return cfgs error_assignments
 
 
 (* **
@@ -71,7 +82,13 @@ let is_error_handling_node cfg index =
   is_error_handling
 
 let compute_is_error_handling_node node_indices = function
-    [cfg] -> List.map (is_error_handling_node cfg) node_indices
+    [cfg] ->
+    let pock = List.map (is_error_handling_node cfg) node_indices in
+    (*
+    List.iter (Printf.eprintf "%B\n%!") pock;
+       *)
+    pock
+
   | cfgs  -> List.map2 is_error_handling_node cfgs node_indices
 
 let compare_with_size sets l =
@@ -87,9 +104,17 @@ let () =
         " should return the empty list for " concat_get_error_assignements []
         (=);
       mk_cfg_test
+        "get_error_assignements" "./tests/complex.c"
+        " should return a list of length 8 for " concat_get_error_assignements
+        8 is_length;
+      mk_cfg_test
         "get_error_assignements" "./tests/error_assignements.c"
         " should return a list of length 3 for " concat_get_error_assignements
         3 is_length;
+      mk_cfg_test
+        "get_error_assignements" "./tests/more_complex.c"
+        " should return a list of length 5 for " concat_get_error_assignements
+        5 is_length;
       mk_cfg_test
         "identifiers_of_error_assignement" "./tests/no_error_assignements.c"
         " should return the empty list for "
@@ -99,17 +124,21 @@ let () =
         " should return a list of length 3 for "
         concat_identifiers_of_error_assignement 3 is_length;
       mk_cfg_test
-        "get_reachable_returns" "./tests/no_reachable_returns.c"
-        " should return the empty set for " concat_get_reachable_returns
-        0 compare_with_size;
+        "get_nodes_leading_to_error_return" "./tests/no_reachable_returns.c"
+        " should return the empty set for "
+        concat_get_nodes_leading_to_error_return 0 compare_with_size;
       mk_cfg_test
-        "get_reachable_returns" "./tests/simple_reachable_returns.c"
-        " should return a set of 1 element for " concat_get_reachable_returns
-        1 compare_with_size;
+        "get_nodes_leading_to_error_return" "./tests/simple_reachable_returns.c"
+        " should return a set of 1 element for "
+        concat_get_nodes_leading_to_error_return 2 compare_with_size;
       mk_cfg_test
-        "get_reachable_returns" "./tests/reachable_returns.c"
-        " should return a set of 2 elements for " concat_get_reachable_returns
-        2 compare_with_size;
+        "get_nodes_leading_to_error_return" "./tests/reachable_returns.c"
+        " should return a set of 21 elements for "
+        concat_get_nodes_leading_to_error_return 21 compare_with_size;
+      mk_cfg_test
+        "get_nodes_leading_to_error_return" "./tests/more_complex.c"
+        " should return a set of 33 elements for "
+        concat_get_nodes_leading_to_error_return 33 compare_with_size;
       (*I am using "spatch --control-flow" to figure out the indices*)
       mk_cfg_test
         "is_on_error_branch" "./tests/simple_reachable_returns.c"
@@ -123,9 +152,9 @@ let () =
         "is_on_error_branch" "./tests/error_branches.c"
         " does not behave as expected on "
         (compute_is_on_error_branch
-           [10; 10; 10; 10; 10; 8]
-           [11; 11; 11; 11; 11; 9])
-        [true; false; true; true; false; false] (=);
+           [7; 10; 10; 10; 10; 10; 8]
+           [8; 11; 11; 11; 11; 11; 9])
+        [true; true; false; true; true; false; false] (=);
       mk_cfg_test
         "annotate_error_handling" "./tests/simple_reachable_returns.c"
         " should return true for node 9 of "

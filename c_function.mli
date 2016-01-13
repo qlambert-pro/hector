@@ -21,7 +21,7 @@
 
 type c_function
 
-val mk_c_function: Ast_c.statement list -> c_function
+val mk_c_function: Ast_c.toplevel -> Ast_c.statement list -> c_function
 
 val find_interproc_calls:
   (Ast_c.name * 'a * Ast_c.statement list) list ->
@@ -40,6 +40,10 @@ val is_resource_allocated_properly:
 val is_resource_released:
   Block.block -> Block.block list -> c_function -> Resource.resource -> bool
 
+(* **
+ * Return true if the allocation was the last time the released resource was
+ * used.
+ * *)
 val resource_of_release_temp:
   Block.block -> Block.block list -> c_function -> Resource.resource -> bool
 

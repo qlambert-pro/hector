@@ -24,20 +24,28 @@ type branch_side =
   | Else
   | None
 
-val is_error_built_in_constant : Ast_c.name -> bool
-val is_error : Ast_c.expression Ast_c.wrap -> bool
+val is_error : Ast_c.expression -> bool option
 val expression_equal : Ast_c.expression -> Ast_c.expression -> bool
-val expression_equal_unwrap :
-  Ast_c.expression -> Ast_c.expression Ast_c.wrap -> bool
 
 (* Side Effects *)
-val apply_on_error_assignment_left_side:
-  (Ast_c.expression -> unit) -> Ast_c.expression -> unit
-val apply_on_assignment_left_side:
-  (Ast_c.expression -> unit) -> Ast_c.expression -> unit
-val apply_on_error_initialised_variable:
-  (Ast_c.expression -> unit) -> Ast_c.onedecl -> unit
-val apply_on_initialised_variable:
-  (Ast_c.expression -> unit) -> Ast_c.onedecl -> unit
+val apply_on_error_assignment:
+  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
+  unit
+
+val apply_on_assignment:
+  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
+  unit
+
+val apply_on_error_initialisation:
+  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.onedecl ->
+  unit
+
+val apply_on_initialisation:
+  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.onedecl ->
+  unit
+
 val which_is_the_error_branch:
   (branch_side -> unit) -> Ast_c.expression -> unit
+
+val is_testing_identifier:
+  Ast_c.expression -> Ast_c.expression -> bool
