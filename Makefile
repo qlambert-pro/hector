@@ -36,12 +36,14 @@ KAPUTT_DEP=
 
 TARGET=hector
 
-SRC=flag_cocci.ml var_dec.ml def.ml resource.ml block.ml report.ml\
-    c_function.ml org.ml analyzer.ml
+SRC=flag_cocci.ml var_dec.ml def.ml ast_operations.ml graph_operations.ml\
+    annotated_cfg.ml resource.ml block.ml report.ml c_function.ml org.ml\
+    analyzer.ml
 
-SRCI=var_dec.mli resource.mli block.mli c_function.mli org.mli analyzer.mli
+SRCI=var_dec.mli ast_operations.mli graph_operations.mli annotated_cfg.mli\
+		 resource.mli block.mli c_function.mli org.mli analyzer.mli
 
-TEST=
+TEST=annotated_cfg.mlt
 
 MAIN=main.ml
 
@@ -63,6 +65,7 @@ INCLUDES=$(INCLUDEDIRS:%=-I %)
 
 OBJS=    $(SRC:.ml=.cmo)
 MAIN_OBJ=$(MAIN:.ml=.cmo)
+
 OPTOBJS= $(SRC:.ml=.cmx)
 MAIN_OPTOBJS= $(MAIN:.ml=.cmx)
 
@@ -104,7 +107,7 @@ BYTECODE_STATIC=-custom
 
 default: byte
 
-all: byte opt test
+all: byte opt
 
 byte: $(EXEC)
 
@@ -145,7 +148,7 @@ $(EXEC): $(LIBS) $(OBJS) $(MAIN_OBJ)
 $(EXEC).opt: $(LIBS:.cma=.cmxa) $(OPTOBJS) $(MAIN_OPTOBJS)
 	@$(OCAMLOPT) $(STATIC) -o $@ $(SYSLIBS:.cma=.cmxa) $^
 
-$(EXEC).top: $(LIBS) $(OBJS)
+$(EXEC).top: $(LIBS) $(OBJS) $(MAIN_OBJ)
 	@$(OCAMLMKTOP) -custom -o $@ $(SYSLIBS) $^
 
 static:
@@ -161,12 +164,6 @@ purebytecode:
 # Generic ocaml rules
 ##############################################################################
 
-%.mlt: tests/%.mlt
-	@echo "Copying $@"
-	@cp $< $@
-	# this is a hack to force recompile
-	@rm $(@:.mlt=.cmo)
-
 %.cmo: %.ml %.ml.d
 	@echo "[C] $<"
 	@$(OCAMLC)    -c $<
@@ -180,8 +177,8 @@ purebytecode:
 
 %.ml.d:: %.ml %.mlt
 	@$(OCAMLDEP) $< > $@
-	@echo $(<:.ml=.cmo): $(<:.ml=.mlt) >> $@
-	@echo $(<:.ml=.cmx): $(<:.ml=.mlt) >> $@
+	@echo $(<:.ml=.cmo) : $(<:.ml=.mlt) >> $@
+	@echo $(<:.ml=.cmx) : $(<:.ml=.mlt) >> $@
 
 %.ml.d:: %.ml
 	@$(OCAMLDEP) $< > $@
@@ -190,11 +187,10 @@ purebytecode:
 	@$(OCAMLDEP) $< > $@
 
 clean:
-	@rm -f $(TARGET) $(TARGET).opt $(TARGET).top
+	@rm -f test $(TARGET) $(TARGET).opt $(TARGET).top
 	@rm -f *.d
 	@rm -f *.cm[iox] *.o *.annot
 	@rm -f *~ *.exe
-	@rm -f *.mlt
 
 realclean: clean
 	make -C coccinelle clean

@@ -1,0 +1,138 @@
+(* **
+ * Copyright 2013-2016, Inria
+ * Suman Saha, Julia Lawall, Gilles Muller, Quentin Lambert
+ * This file is part of Hector.
+
+ * Hector is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, according to version 2 of the License.
+
+ * Hector is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+
+ * You should have received a copy of the GNU General Public License
+ * along with Hector.  If not, see <http://www.gnu.org/licenses/>.
+
+ * The authors reserve the right to distribute this or future versions of
+ * Hector under other licenses.
+ * *)
+
+open Kaputt
+
+let get_cfgs filename =
+  let (program, _) = Parse_c.parse_c_and_cpp false filename in
+  let (functions', _) = Common.unzip program in
+  let functions = List.tl (List.rev functions') in
+  List.map of_ast_c functions
+
+
+let mk_cfg_test title filename msg test res compare =
+  let cfgs = get_cfgs filename in
+  let r = test cfgs in
+  let f () = Assertion.is_true
+      ~msg: (title ^ msg ^ filename ^ "\n")
+      (compare r res) in
+  Kaputt.Test.make_simple_test
+    ~title: (title ^ ": " ^ filename)
+    f
+
+let concat_get_error_assignements cfgs =
+  List.concat (List.map get_error_assignments cfgs)
+
+let concat_identifiers_of_error_assignement cfgs =
+  let error_assignments = List.concat (List.map get_error_assignments cfgs) in
+  let identifiers = List.map
+      (fun (_, node) -> identifiers_of_error_assignment node)
+      error_assignments
+  in
+  List.concat identifiers
+
+let concat_get_reachable_returns cfgs =
+  let error_assignments = List.map get_error_assignments cfgs in
+  List.map2 get_reachable_returns cfgs error_assignments
+
+
+(* **
+ * this function expects indices to be valid
+ * *)
+let compute_is_on_error_branch node_indices head_indices cfgs =
+  List.map2
+    (fun x (a, b) ->
+       is_on_error_branch x (x#nodes#assoc a) (x#nodes#assoc b))
+    cfgs (List.combine node_indices head_indices)
+
+let is_length xs l =
+  (List.length xs) = l
+
+let is_error_handling_node cfg index =
+  let {is_error_handling = is_error_handling} = cfg#nodes#assoc index in
+  is_error_handling
+
+let compute_is_error_handling_node node_indices = function
+    [cfg] -> List.map (is_error_handling_node cfg) node_indices
+  | cfgs  -> List.map2 is_error_handling_node cfgs node_indices
+
+let compare_with_size sets l =
+  let sizes =
+    List.fold_left (fun acc s -> acc + (NodeiSet.cardinal s)) 0 sets in
+  sizes = l
+
+let () =
+  Test.run_tests ~output: (Test.Text_output stderr)
+    [
+      mk_cfg_test
+        "get_error_assignements" "./tests/no_error_assignements.c"
+        " should return the empty list for " concat_get_error_assignements []
+        (=);
+      mk_cfg_test
+        "get_error_assignements" "./tests/error_assignements.c"
+        " should return a list of length 3 for " concat_get_error_assignements
+        3 is_length;
+      mk_cfg_test
+        "identifiers_of_error_assignement" "./tests/no_error_assignements.c"
+        " should return the empty list for "
+        concat_identifiers_of_error_assignement [] (=);
+      mk_cfg_test
+        "identifiers_of_error_assignement" "./tests/error_assignements.c"
+        " should return a list of length 3 for "
+        concat_identifiers_of_error_assignement 3 is_length;
+      mk_cfg_test
+        "get_reachable_returns" "./tests/no_reachable_returns.c"
+        " should return the empty set for " concat_get_reachable_returns
+        0 compare_with_size;
+      mk_cfg_test
+        "get_reachable_returns" "./tests/simple_reachable_returns.c"
+        " should return a set of 1 element for " concat_get_reachable_returns
+        1 compare_with_size;
+      mk_cfg_test
+        "get_reachable_returns" "./tests/reachable_returns.c"
+        " should return a set of 2 elements for " concat_get_reachable_returns
+        2 compare_with_size;
+      (*I am using "spatch --control-flow" to figure out the indices*)
+      mk_cfg_test
+        "is_on_error_branch" "./tests/simple_reachable_returns.c"
+        " should return true for node 8 and 9 of "
+        (compute_is_on_error_branch [8] [9]) [true] (=);
+      mk_cfg_test
+        "is_on_error_branch" "./tests/simple_reachable_returns.c"
+        " should return false for node 8 and 10 of "
+        (compute_is_on_error_branch [8] [10]) [false] (=);
+      mk_cfg_test
+        "is_on_error_branch" "./tests/error_branches.c"
+        " does not behave as expected on "
+        (compute_is_on_error_branch
+           [10; 10; 10; 10; 10; 8]
+           [11; 11; 11; 11; 11; 9])
+        [true; false; true; true; false; false] (=);
+      mk_cfg_test
+        "annotate_error_handling" "./tests/simple_reachable_returns.c"
+        " should return true for node 9 of "
+        (compute_is_error_handling_node [9]) [true] (=);
+      mk_cfg_test
+        "annotate_error_handling" "./tests/error_handling.c"
+        " does not behave as expected on "
+        (compute_is_error_handling_node [9; 12; 18; 19; 28; 29; 32])
+        [false; true; true; true; false; false; false] (=);
+    ]
