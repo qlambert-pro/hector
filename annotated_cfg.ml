@@ -284,7 +284,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
              acc
          | None ->
            let nodes =
-             breadth_first_fold
+             depth_first_fold
                (get_basic_node_config
                   (fun _ (idx, node) ->
                      let is_on_error_branch_result =

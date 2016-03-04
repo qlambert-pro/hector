@@ -78,17 +78,22 @@ val breadth_first_fold:
   ('node, 'edge, 'g) readable_graph ->
   nodei -> 'res
 
+val depth_first_fold:
+  ('node, 'edge, 'g, 'acc, 'res) fold_configuration ->
+  ('node, 'edge, 'g) readable_graph ->
+  nodei -> 'res
+
 val get_forward_config:
   (NodeiSet.t -> nodei * 'node -> bool) ->
-  ('acc -> nodei -> 'res -> 'res) ->
   (NodeiSet.t -> nodei -> 'acc -> 'acc) ->
-  'res -> 'acc -> ('node, 'edge, 'g, 'acc, 'res) fold_configuration
+  ('acc -> nodei -> 'res -> 'res) ->
+  'acc -> 'res -> ('node, 'edge, 'g, 'acc, 'res) fold_configuration
 
 val get_backward_config:
   (NodeiSet.t -> nodei * 'node -> bool) ->
-  ('acc -> nodei -> 'res -> 'res) ->
   (NodeiSet.t -> nodei -> 'acc -> 'acc) ->
-  'res -> 'acc -> ('node, 'edge, 'g, 'acc, 'res) fold_configuration
+  ('acc -> nodei -> 'res -> 'res) ->
+  'acc -> 'res -> ('node, 'edge, 'g, 'acc, 'res) fold_configuration
 
 val get_basic_node_config:
   (NodeiSet.t -> nodei * 'node -> bool) ->

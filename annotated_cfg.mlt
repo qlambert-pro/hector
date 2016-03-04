@@ -129,7 +129,7 @@ let () =
         concat_get_nodes_leading_to_error_return 0 compare_with_size;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/simple_reachable_returns.c"
-        " should return a set of 1 element for "
+        " should return a set of 2 element for "
         concat_get_nodes_leading_to_error_return 2 compare_with_size;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/reachable_returns.c"

@@ -152,9 +152,68 @@ let breadth_first_fold config g index =
      local_value      = initial_local_value;
      result           = initial_result}
 
+type ('a, 'b) depth_first_fold_data =
+  {visited_nodes: NodeiSet.t;
+   current_node:  nodei;
+   local_value:   'b;
+   result:        'a;}
 
-let get_forward_config predicate compute_result compute_local_value
-    initial_result initial_local_value =
+let depth_first_fold config g index =
+  let {get_next_nodes      = get_next_nodes;
+       predicate           = p;
+       compute_result      = compute_result;
+       compute_local_value = compute_local_value;
+       initial_result      = initial_result;
+       initial_local_value = initial_local_value;
+      } = config
+  in
+  let nodes = g#nodes in
+  let rec depth_first_fold_aux
+      {visited_nodes = visited_nodes;
+       current_node  = s;
+       local_value   = local_value;
+       result        = result} =
+    let node = nodes#assoc s in
+
+    let new_local_value =
+      compute_local_value visited_nodes s local_value
+    in
+    let new_result =
+      compute_result new_local_value s result
+    in
+
+    if p visited_nodes (s, node)
+    then
+      let new_visited_nodes = NodeiSet.add s visited_nodes in
+
+      let next_nodes = get_next_nodes g s NodeiSet.empty in
+
+      NodeiSet.fold
+        (fun index (visited_nodes, result) ->
+           depth_first_fold_aux
+             {visited_nodes = visited_nodes;
+              current_node  = index;
+              local_value   = new_local_value;
+              result        = result})
+        next_nodes (new_visited_nodes, new_result)
+    else
+      (visited_nodes, new_result)
+  in
+  let initial_set = NodeiSet.singleton index in
+  let next_nodes = get_next_nodes g index NodeiSet.empty in
+  snd (
+      NodeiSet.fold
+        (fun index (visited_nodes, result) ->
+           depth_first_fold_aux
+             {visited_nodes = visited_nodes;
+              current_node  = index;
+              local_value   = initial_local_value;
+              result        = result})
+        next_nodes (initial_set, initial_result))
+
+
+let get_forward_config predicate compute_local_value compute_result
+    initial_local_value initial_result =
   {get_next_nodes      = add_successors;
    predicate           = predicate;
    compute_result      = compute_result;
@@ -163,8 +222,8 @@ let get_forward_config predicate compute_result compute_local_value
    initial_local_value = initial_local_value;}
 
 
-let get_backward_config predicate compute_result compute_local_value
-    initial_result initial_local_value =
+let get_backward_config predicate compute_local_value compute_result
+    initial_local_value initial_result =
   {get_next_nodes      = add_predecessors;
    predicate           = predicate;
    compute_result      = compute_result;
