@@ -159,6 +159,6 @@ let _ =
   in
   Common.main_boilerplate
     (fun () -> List.iter (function x -> cat (
-         try Common.timeout_function 60 (function () -> test_type_c x)
+         try Common.timeout_function "60" 60 (function () -> test_type_c x)
          with _ -> []))
          files)
