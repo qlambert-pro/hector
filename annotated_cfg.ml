@@ -285,18 +285,28 @@ let get_nodes_leading_to_error_return cfg error_assignments =
          | None ->
            let nodes =
              depth_first_fold
-               (get_basic_node_config
+               (get_forward_config
                   (fun _ (idx, node) ->
-                     let is_on_error_branch_result =
-                       fold_predecessors
-                         (fun acc (_, head) ->
-                            acc &&
-                            (not (test_if_header (fun _ -> true) false head) ||
-                             is_on_error_branch cfg head node))
-                         true cfg idx
-                     in
-                     not (is_killing_reach identifier node) &&
-                     is_on_error_branch_result))
+                     not (is_killing_reach identifier node))
+                  (*TODO is_testing_identifier is incorrect*)
+                  (* add complex if cases to prove it *)
+                  (*TODO use a finer memory of the error branch *)
+                  (fun _ i (pred, acc) ->
+                     match pred with
+                       None -> (Some i, acc)
+                     | Some pred ->
+                       let is_on_error_branch_result =
+                         let head = cfg#nodes#assoc pred in
+                         (not (test_if_header
+                                 (Ast_operations.is_testing_identifier
+                                    identifier) false head) ||
+                          is_on_error_branch cfg head node)
+                       in
+                       (Some i, acc || is_on_error_branch_result))
+                  (fun (_, acc) i res -> if acc then NodeiSet.add i res else res)
+                  (None, false)
+                  NodeiSet.empty
+               )
                cfg index
            in
            let reachable_returns = filter_returns cfg identifier nodes in
