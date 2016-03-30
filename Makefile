@@ -33,12 +33,15 @@ KAPUTT_LIBS=
 KAPUTT_INCLUDE=
 KAPUTT_DEP=
 
+FILTER_TARGET=filter
 
 TARGET=hector
 
 SRC=flag_cocci.ml var_dec.ml def.ml ast_operations.ml graph_operations.ml\
     annotated_cfg.ml resource.ml block.ml report.ml c_function.ml org.ml\
     analyzer.ml
+
+FILTER_SRC=tools/filter_using_error_handling.ml
 
 SRCI=var_dec.mli ast_operations.mli graph_operations.mli annotated_cfg.mli\
 		 resource.mli block.mli c_function.mli org.mli analyzer.mli
@@ -65,6 +68,7 @@ INCLUDES=$(INCLUDEDIRS:%=-I %)
 
 OBJS=    $(SRC:.ml=.cmo)
 MAIN_OBJ=$(MAIN:.ml=.cmo)
+FILTER_OBJ=$(FILTER_SRC:.ml=.cmo)
 
 OPTOBJS= $(SRC:.ml=.cmx)
 MAIN_OPTOBJS= $(MAIN:.ml=.cmx)
@@ -94,11 +98,6 @@ OCAMLYACC=ocamlyacc -v
 OCAMLDEP=ocamldep $(INCLUDES) $(KAPUTT_FLAGS)
 OCAMLMKTOP=ocamlmktop -g -custom $(INCLUDES)
 
-# can also be set via 'make static'
-STATIC= #-ccopt -static
-
-# can also be unset via 'make purebytecode'
-BYTECODE_STATIC=-custom
 
 ##############################################################################
 # Top rules
@@ -145,20 +144,16 @@ $(EXEC): $(LIBS) $(OBJS) $(MAIN_OBJ)
 	@echo "[L] hector"
 	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $^
 
+$(FILTER_TARGET): $(LIBS) $(OBJS) $(FILTER_OBJ)
+	@echo "[L] filter"
+	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $^
+
+
 $(EXEC).opt: $(LIBS:.cma=.cmxa) $(OPTOBJS) $(MAIN_OPTOBJS)
 	@$(OCAMLOPT) $(STATIC) -o $@ $(SYSLIBS:.cma=.cmxa) $^
 
 $(EXEC).top: $(LIBS) $(OBJS) $(MAIN_OBJ)
 	@$(OCAMLMKTOP) -custom -o $@ $(SYSLIBS) $^
-
-static:
-	rm -f spatch.opt spatch
-	$(MAKE) STATIC="-ccopt -static" spatch.opt
-	cp spatch.opt spatch
-
-purebytecode:
-	rm -f spatch.opt spatch
-	$(MAKE) BYTECODE_STATIC="" spatch
 
 ##############################################################################
 # Generic ocaml rules
