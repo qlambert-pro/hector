@@ -37,7 +37,7 @@ FILTER_TARGET=filter
 
 TARGET=hector
 
-SRC=flag_cocci.ml var_dec.ml def.ml ast_operations.ml graph_operations.ml\
+SRC= var_dec.ml def.ml ast_operations.ml graph_operations.ml\
     annotated_cfg.ml resource.ml block.ml report.ml c_function.ml org.ml\
     analyzer.ml
 
@@ -182,7 +182,7 @@ $(EXEC).top: $(LIBS) $(OBJS) $(MAIN_OBJ)
 	@$(OCAMLDEP) $< > $@
 
 clean:
-	@rm -f test $(TARGET) $(TARGET).opt $(TARGET).top
+	@rm -f $(FILTER_TARGET) test $(TARGET) $(TARGET).opt $(TARGET).top
 	@rm -f *.d
 	@rm -f *.cm[iox] *.o *.annot
 	@rm -f *~ *.exe
