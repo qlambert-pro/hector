@@ -19,6 +19,8 @@
  * Hector under other licenses.
  * *)
 
+let current_ast = ref ("", [])
+
 type line_data =
   {name: string;
    file: string;
@@ -122,18 +124,31 @@ let is_error_handling cfg line_number =
        Visitor_c.vk_node v n.Annotated_cfg.parser_node; !is_found)
     nodes
 
+
 let is_relevant_data path d =
   let short_filename = d.allocation.file in
   let filename =
     path ^ (String.sub short_filename 2 ((String.length short_filename)-2))
   in
-  let (program, _) = Parse_c.parse_c_and_cpp false filename in
-  let (functions', _) = Common.unzip program in
-  let functions'' = List.tl (List.rev functions') in
-  Flag_parsing_c.verbose_type := false;
+  Printf.eprintf
+    "Reading: %s (%s,%s)\n%!"
+    d.allocation.file
+    d.allocation.line_number
+    d.release.line_number;
   let functions =
-    List.map fst
-      (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
+    if filename = (fst !current_ast)
+    then
+      (snd !current_ast)
+    else
+      let (program, _) = Parse_c.parse_c_and_cpp false filename in
+      let (functions', _) = Common.unzip program in
+      let functions'' = List.tl (List.rev functions') in
+      current_ast :=
+        (filename,
+        List.map fst
+          (Type_annoter_c.annotate_program !Type_annoter_c.initial_env
+              functions''));
+      snd !current_ast
   in
   let f = List.find (is_function_name d.allocation.f_name) functions in
   let cfg =
@@ -148,10 +163,16 @@ let is_relevant_data path d =
     alloc && release
   | None -> false
 
+
 (*first arg is the data presented as pairs*)
 let data' = read_file Sys.argv.(1)
 (*second arg is the path to the linux repo ended with /*)
 let path = Sys.argv.(2)
+
+let () = Flag_parsing_c.verbose_type := false;
+  Flag_parsing_c.verbose_lexing := false;
+  Flag_parsing_c.show_parsing_error := false;
+  Flag_parsing_c.verbose_parsing := false
 
 let data = List.find_all (is_relevant_data path) data'
 
