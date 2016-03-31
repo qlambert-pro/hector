@@ -182,10 +182,10 @@ let depth_first_fold config g index =
       compute_result new_local_value s result
     in
 
-    if p visited_nodes (s, node)
+    let new_visited_nodes = NodeiSet.add s visited_nodes in
+    if (p visited_nodes (s, node)) &&
+       new_visited_nodes <> visited_nodes
     then
-      let new_visited_nodes = NodeiSet.add s visited_nodes in
-
       let next_nodes = get_next_nodes g s NodeiSet.empty in
 
       NodeiSet.fold
