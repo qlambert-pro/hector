@@ -116,7 +116,7 @@ let is_error_handling cfg line_number =
          then
            let (_, _, (l1,_), (l2,_)) = Lib_parsing_c.lin_col_by_pos i in
            is_found := !is_found || (l1 <= ln && l2 >= ln)
-         else 
+         else
            ())
   in
   List.exists
@@ -150,18 +150,21 @@ let is_relevant_data path d =
               functions''));
       snd !current_ast
   in
-  let f = List.find (is_function_name d.allocation.f_name) functions in
-  let cfg =
-    try Some (Annotated_cfg.of_ast_c f) with
-      Control_flow_c_build.Error _
-    | Annotated_cfg.NoCFG -> None
-  in
-  match cfg with
-    Some cfg ->
-    let alloc = not (is_error_handling cfg d.allocation.line_number) in
-    let release = is_error_handling cfg d.release.line_number in
-    alloc && release
-  | None -> false
+  try
+    (let f = List.find (is_function_name d.allocation.f_name) functions in
+     let cfg =
+       try Some (Annotated_cfg.of_ast_c f) with
+         Control_flow_c_build.Error _
+       | Annotated_cfg.NoCFG -> None
+     in
+     match cfg with
+       Some cfg ->
+       let alloc = not (is_error_handling cfg d.allocation.line_number) in
+       let release = is_error_handling cfg d.release.line_number in
+       alloc && release
+     | None -> false)
+  with
+    Not_found -> false
 
 
 (*first arg is the data presented as pairs*)
