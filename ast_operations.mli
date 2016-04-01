@@ -24,11 +24,26 @@ type branch_side =
   | Else
   | None
 
-val is_error : Ast_c.expression -> bool option
+type error =
+    Clear
+  | Ambiguous
+
+type value =
+    NonError
+  | Error of error
+
+type assignment =
+    Value of value
+  | Variable of Ast_c.expression
+
+val get_assignment_type:
+  Ast_c.expression -> assignment
+
 val expression_equal : Ast_c.expression -> Ast_c.expression -> bool
 
 (* Side Effects *)
 val apply_on_error_assignment:
+  (Ast_c.expression -> value) ->
   (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
   unit
 
@@ -37,6 +52,7 @@ val apply_on_assignment:
   unit
 
 val apply_on_error_initialisation:
+  (Ast_c.expression -> value) ->
   (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.onedecl ->
   unit
 
@@ -45,6 +61,7 @@ val apply_on_initialisation:
   unit
 
 val which_is_the_error_branch:
+  (Ast_c.expression -> value) ->
   (branch_side -> unit) -> Ast_c.expression -> unit
 
 val is_testing_identifier:

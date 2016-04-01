@@ -276,27 +276,43 @@ let expressions_of_arguments arguments =
   in
   List.fold_left expressions_of_arguments_aux [] arguments
 
-let rec is_error ((expression, _), _) =
-  match expression with
-    Cast (_, e)
-  | ParenExpr e -> is_error e
-  | Unary (_, UnMinus)
-  | Unary ((((Constant (Int ("0", _))), _), _), Tilde) -> Some true
-  | Ident (RegularName(s, _)) when List.exists ((=) s) built_in_constants ->
-    Some true
-  | FunCall _ -> None
-  | _ -> Some false
+type error=
+    Clear
+  | Ambiguous
 
-let is_error_return_code e =
-  match is_error e with
-    Some true -> true
-  | _         -> false
+type value =
+    NonError
+  | Error of error
 
-let is_error_right_value e =
-  match is_error e with
-    Some true
-  | None      -> true
-  | _         -> false
+type assignment =
+    Value of value
+  | Variable of Ast_c.expression
+
+let get_assignment_type =
+  let rec aux expression' =
+    let ((expression, _), _) = expression' in
+    match expression with
+      Cast (_, e)
+    | ParenExpr e -> aux e
+    | Unary (_, UnMinus)
+    | Unary ((((Constant (Int ("0", _))), _), _), Tilde) -> Value (Error Clear)
+    | Ident (RegularName(s, _)) when List.exists ((=) s) built_in_constants ->
+      Value (Error Clear)
+    | Ident _ -> Variable expression'
+    | FunCall _ -> Value (Error Ambiguous)
+    | _ -> Value NonError
+  in
+  aux
+
+let is_error_return_code alias_f e =
+  match alias_f e with
+    Error Clear -> true
+  | _           -> false
+
+let is_error_right_value alias_f e =
+  match alias_f e with
+    Error _ -> true
+  | _       -> false
 
 
 let expression_equal expression1 expression2 =
@@ -316,8 +332,8 @@ let conditional_apply_on_error_assignment p f (expression, _) =
      | _   -> ())
   | e -> ()
 
-let apply_on_error_assignment f e =
-  conditional_apply_on_error_assignment is_error_right_value f e
+let apply_on_error_assignment alias_f f e =
+  conditional_apply_on_error_assignment (is_error_right_value alias_f) f e
 
 let apply_on_assignment f e =
   conditional_apply_on_error_assignment (fun e -> true) f e
@@ -329,8 +345,8 @@ let conditional_apply_on_initialisation p f declaration =
     f (mk_e (Ident n) []) (Some e)
   | _ -> ()
 
-let apply_on_error_initialisation f declaration =
-  conditional_apply_on_initialisation is_error_right_value f declaration
+let apply_on_error_initialisation alias_f f declaration =
+  conditional_apply_on_initialisation (is_error_right_value alias_f) f declaration
 
 let apply_on_initialisation f declaration =
   conditional_apply_on_initialisation (fun e -> true) f declaration
@@ -341,7 +357,7 @@ type branch_side =
   | Else
   | None
 
-let rec which_is_the_error_branch f (expression, _) =
+let rec which_is_the_error_branch alias_f f (expression, _) =
   let not_f = function
       Then -> f Else
     | Else -> f Then
@@ -349,25 +365,25 @@ let rec which_is_the_error_branch f (expression, _) =
   in
   match unwrap expression with
     ParenExpr e
-  | Cast (_, e) -> which_is_the_error_branch f e
-  | Unary (e, Not) -> which_is_the_error_branch not_f e
-  | Binary (e1, (Logical OrLog, _), e2) -> which_is_the_error_branch f e1
+  | Cast (_, e) -> which_is_the_error_branch alias_f f e
+  | Unary (e, Not) -> which_is_the_error_branch alias_f not_f e
+  | Binary (e1, (Logical OrLog, _), e2) -> which_is_the_error_branch alias_f f e1
   | Binary (e1, (Logical Eq   , _), e2)
-    when is_error_return_code e1 || is_error_return_code e2 ->
+    when is_error_return_code alias_f e1 || is_error_return_code alias_f e2 ->
     f Then
   | Binary (e1, (Logical NotEq, _), e2)
-    when is_error_return_code e1 || is_error_return_code e2 -> f Else
+    when is_error_return_code alias_f e1 || is_error_return_code alias_f e2 -> f Else
   | Binary (e1, (Logical Eq   , _), e2)
-    when not (is_error_return_code e1 || is_error_return_code e2) ->
+    when not (is_error_return_code alias_f e1 || is_error_return_code alias_f e2) ->
     f Else
   | Binary (e1, (Logical NotEq, _),e2)
-    when not (is_error_return_code e1 || is_error_return_code e2) ->
+    when not (is_error_return_code alias_f e1 || is_error_return_code alias_f e2) ->
     f Then
   | Binary (e1, (Logical Inf  , _), ((Constant (Int ("0", _)), _), _)) ->
     f Then
   | FunCall _ -> f Then
   | Assignment (_, op, e)
-    when is_simple_assignment op && is_error_right_value e -> f Then
+    when is_simple_assignment op && is_error_right_value alias_f e -> f Then
   | _ -> f None
 
 (*TODO does not handle complex if case with || or &&*)

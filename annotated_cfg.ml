@@ -21,6 +21,8 @@
 
 open Graph_operations
 
+module Asto = Ast_operations
+
 exception NoCFG
 
 type resource_handling =
@@ -45,6 +47,11 @@ type edge = Direct
 type t = (node, edge) Ograph_extended.ograph_extended
 
 (**** Unwrapper and boolean function on Control_flow_c ****)
+let get_assignment_type_through_alias cfg i e =
+  match Asto.get_assignment_type e with
+    Asto.Variable e -> Asto.NonError
+  | Asto.Value v    -> v
+
 let is_loop node =
   let {parser_node = ((_, info), _)} = node in
   let {Control_flow_c.is_loop = is_loop} = info in
@@ -104,14 +111,15 @@ let test_if_header predicate default node =
   | _ -> default
 
 
-let get_error_branch node =
+let get_error_branch cfg (i, node) =
   let {parser_node = parser_node} = node in
-  let branch_side = ref Ast_operations.Then in
+  let branch_side = ref Asto.Then in
   let visitor = {
     Visitor_c.default_visitor_c with
     Visitor_c.kexpr =
       (fun (k, visitor) e ->
-         Ast_operations.which_is_the_error_branch
+         Asto.which_is_the_error_branch
+           (get_assignment_type_through_alias cfg i)
            (fun x -> branch_side := x) e)
   }
   in
@@ -122,42 +130,44 @@ let get_error_branch node =
  * "node" is expected to be a IfHeader
  * and "head" one of the following node
  * *)
-let is_on_error_branch cfg node head =
+let is_on_error_branch cfg (i, node) head =
   let {parser_node = parser_node} = head in
-  let error_branch_side = get_error_branch node in
+  let error_branch_side = get_error_branch cfg (i,node) in
   match (error_branch_side, Control_flow_c.unwrap parser_node) with
-    (Ast_operations.Then, Control_flow_c.TrueNode _)
-  | (Ast_operations.Else, Control_flow_c.FalseNode )
-  | (Ast_operations.Else, Control_flow_c.FallThroughNode ) -> true
+    (Asto.Then, Control_flow_c.TrueNode _)
+  | (Asto.Else, Control_flow_c.FalseNode )
+  | (Asto.Else, Control_flow_c.FallThroughNode ) -> true
   | _ -> false
 
 let base_visitor f = {
   Visitor_c.default_visitor_c with
   Visitor_c.kexpr =
     (fun (k, visitor) e ->
-       Ast_operations.apply_on_assignment
+       Asto.apply_on_assignment
          f
          e;
        k e);
   Visitor_c.konedecl =
     (fun (k, visitor) dl ->
-       Ast_operations.apply_on_initialisation
+       Asto.apply_on_initialisation
          f
          dl;
        k dl)
 }
 
-let base_error_visitor f = {
+let base_error_visitor cfg i f = {
   Visitor_c.default_visitor_c with
   Visitor_c.kexpr =
     (fun (k, visitor) e ->
-       Ast_operations.apply_on_error_assignment
+       Asto.apply_on_error_assignment
+         (get_assignment_type_through_alias cfg i)
          f
          e;
        k e);
   Visitor_c.konedecl =
     (fun (k, visitor) dl ->
-       Ast_operations.apply_on_error_initialisation
+       Asto.apply_on_error_initialisation
+         (get_assignment_type_through_alias cfg i)
          f
          dl;
        k dl)
@@ -169,49 +179,51 @@ let is_killing_reach identifier node =
   let visitor = base_visitor
       (fun r l -> error_assignment :=
           !error_assignment ||
-          Ast_operations.expression_equal identifier r)
+          Asto.expression_equal identifier r)
   in
   Visitor_c.vk_node visitor parser_node;
   !error_assignment
 
-let is_error_assignment node =
+let is_error_assignment cfg (i, node) =
   let {parser_node = parser_node} = node in
   let error_assignment = ref false in
   let visitor = base_error_visitor
+      cfg i
       (fun l r ->
          error_assignment :=
            match r with
              Some r ->
-             (match Ast_operations.is_error r with
-                Some true
-              | None -> true
+             (match get_assignment_type_through_alias cfg i r with
+                Asto.Error _ -> true
               | _    -> !error_assignment)
            | None -> true)
   in
   Visitor_c.vk_node visitor parser_node;
   !error_assignment
 
-let is_error_of_error_assignement identifier node =
+let assignement_type_of_error_assignement cfg identifier (i, node) =
   let {parser_node = parser_node} = node in
-  let error_assignment = ref (Some false) in
+  let error_assignment = ref Asto.NonError in
   let visitor = base_error_visitor
+      cfg i
       (fun x r ->
-         if Ast_operations.expression_equal x identifier
+         if Asto.expression_equal x identifier
          then
            error_assignment :=
              match r with
-               Some r -> Ast_operations.is_error r
-             | None   -> None
+               Some r -> get_assignment_type_through_alias cfg i r
+             | None   -> Asto.NonError
          else
            ())
   in
   Visitor_c.vk_node visitor parser_node;
   !error_assignment
 
-let identifiers_of_error_assignment node =
+let identifiers_of_error_assignment cfg (i, node) =
   let {parser_node = parser_node} = node in
   let identifiers = ref [] in
   let visitor = base_error_visitor
+      cfg i
       (fun x r -> identifiers := x::!identifiers)
   in
   Visitor_c.vk_node visitor parser_node;
@@ -220,7 +232,7 @@ let identifiers_of_error_assignment node =
 
 let get_error_assignments cfg =
   find_all
-    (fun (_, node) -> is_error_assignment node)
+    (fun n -> is_error_assignment cfg n)
     cfg
 
 
@@ -228,7 +240,7 @@ let filter_returns cfg identifier nodes =
   NodeiSet.filter
     (fun index ->
        test_returned_expression
-         (Ast_operations.expression_equal identifier)
+         (Asto.expression_equal identifier)
          false
          (cfg#nodes#assoc index))
     nodes
@@ -256,12 +268,14 @@ let add_post_dominated cfg index acc =
 
 let get_nodes_leading_to_error_return cfg error_assignments =
   let get_reachable_nodes acc (index, node) =
-    let identifiers = identifiers_of_error_assignment node in
+    let identifiers = identifiers_of_error_assignment cfg (index, node) in
     List.fold_left
       (fun acc identifier ->
-         let is_error = is_error_of_error_assignement identifier node in
-         match is_error with
-           Some true ->
+         let assignement_type =
+           assignement_type_of_error_assignement cfg identifier (index, node)
+         in
+         match assignement_type with
+           Asto.Error Asto.Clear ->
            let nodes =
              breadth_first_fold
                (get_basic_node_config
@@ -282,7 +296,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                error_branch_nodes
            else
              acc
-         | None ->
+         | Asto.Error Asto.Ambiguous ->
            let nodes =
              depth_first_fold
                (get_forward_config
@@ -298,15 +312,14 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                        let is_on_error_branch_result =
                          let head = cfg#nodes#assoc pred in
                          (not (test_if_header
-                                 (Ast_operations.is_testing_identifier
+                                 (Asto.is_testing_identifier
                                     identifier) false head) ||
-                          is_on_error_branch cfg head node)
+                          is_on_error_branch cfg (pred, head) node)
                        in
                        (Some i, acc || is_on_error_branch_result))
                   (fun (_, acc) i res -> if acc then NodeiSet.add i res else res)
                   (None, false)
-                  NodeiSet.empty
-               )
+                  NodeiSet.empty)
                cfg index
            in
            let reachable_returns = filter_returns cfg identifier nodes in
@@ -328,13 +341,14 @@ let annotate_error_handling cfg =
       error_assignments in
   let error_returns =
     find_all
-      (fun (_, node) ->
+      (fun (i, node) ->
          let error_type =
-           test_returned_expression Ast_operations.is_error (Some false) node
+           test_returned_expression (get_assignment_type_through_alias cfg i)
+             Asto.NonError node
          in
          match error_type with
-           Some true -> true
-         | _         -> false)
+           Asto.Error Asto.Clear -> true
+         | _                     -> false)
       cfg
   in
   let error_return_post_dominated =
