@@ -371,10 +371,12 @@ let rec which_is_the_error_branch alias_f f (expression, _) =
   | FunCall _ -> f Then
   | Assignment (_, op, e)
     when is_simple_assignment op && is_error_right_value alias_f e -> f Then
+  | Ident _ -> f Then
   | _ -> f None
 
 (*TODO does not handle complex if case with || or &&*)
-let rec is_testing_identifier identifier (expression, _) =
+let rec is_testing_identifier identifier expression' =
+  let (expression, _) = expression' in
   match unwrap expression with
     ParenExpr e        -> is_testing_identifier identifier e
   | Unary (e, _)       -> expression_equal identifier e
@@ -382,4 +384,4 @@ let rec is_testing_identifier identifier (expression, _) =
                           expression_equal identifier e2
   | Assignment (_, op, e) when is_simple_assignment op ->
     expression_equal identifier e
-  | _ -> false
+  | _ -> expression_equal identifier expression'

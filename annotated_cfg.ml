@@ -56,35 +56,30 @@ let get_assignment_type_through_alias cfg i e =
 
 
 let is_after_node node =
-  let {parser_node = parser_node} = node in
-  match Control_flow_c.unwrap parser_node with
+  match Control_flow_c.unwrap node.parser_node with
     Control_flow_c.AfterNode _ -> true
   | _ -> false
 
 
 let is_selection node =
-  let {parser_node = parser_node} = node in
-  match Control_flow_c.unwrap parser_node with
+  match Control_flow_c.unwrap node.parser_node with
     Control_flow_c.IfHeader _ -> true
   | _ -> false
 
 
 let test_returned_expression predicate default node =
-  let {parser_node = parser_node} = node in
-  match Control_flow_c.unwrap parser_node with
+  match Control_flow_c.unwrap node.parser_node with
     Control_flow_c.ReturnExpr (_, (e, _)) -> predicate e
   | _ -> default
 
 
 let test_if_header predicate default node =
-  let {parser_node = parser_node} = node in
-  match Control_flow_c.unwrap parser_node with
+  match Control_flow_c.unwrap node.parser_node with
     Control_flow_c.IfHeader (_, (e, _)) -> predicate e
   | _ -> default
 
 
 let get_error_branch cfg (i, node) =
-  let {parser_node = parser_node} = node in
   let branch_side = ref Asto.Then in
   let visitor = {
     Visitor_c.default_visitor_c with
@@ -95,7 +90,7 @@ let get_error_branch cfg (i, node) =
            (fun x -> branch_side := x) e)
   }
   in
-  Visitor_c.vk_node visitor parser_node;
+  Visitor_c.vk_node visitor node.parser_node;
   !branch_side
 
 (* **
@@ -103,9 +98,8 @@ let get_error_branch cfg (i, node) =
  * and "head" one of the following node
  * *)
 let is_on_error_branch cfg (i, node) head =
-  let {parser_node = parser_node} = head in
   let error_branch_side = get_error_branch cfg (i,node) in
-  match (error_branch_side, Control_flow_c.unwrap parser_node) with
+  match (error_branch_side, Control_flow_c.unwrap head.parser_node) with
     (Asto.Then, Control_flow_c.TrueNode _)
   | (Asto.Else, Control_flow_c.FalseNode )
   | (Asto.Else, Control_flow_c.FallThroughNode ) -> true
@@ -223,11 +217,16 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                   None -> (Some i, acc)
                 | Some pred ->
                   let is_on_error_branch_result =
-                    let head = cfg#nodes#assoc pred in
-                    (not (test_if_header
-                            (Asto.is_testing_identifier
-                               identifier) false head) ||
-                     is_on_error_branch cfg (pred, head) node)
+                    let head    = cfg#nodes#assoc i    in
+                    let if_node = cfg#nodes#assoc pred in
+                    let is_correct_if =
+                      test_if_header
+                        (Asto.is_testing_identifier identifier) false if_node
+                    in
+                    let is_correct_branch =
+                      is_on_error_branch cfg (pred, if_node) head
+                    in
+                    is_correct_if && is_correct_branch
                   in
                   (Some i, acc || is_on_error_branch_result))
              (fun (_, acc) i res -> if acc then NodeiSet.add i res else res)
