@@ -50,16 +50,15 @@ type t = (node, edge) Ograph_extended.ograph_extended
 
 (**** Unwrapper and boolean function on Control_flow_c ****)
 
-(*TODO implement*)
-let get_assignment_type_through_alias cfg i e =
-  match Asto.get_assignment_type e with
-    Asto.Variable e -> Asto.NonError
-  | Asto.Value v    -> v
-
-
 let is_after_node node =
   match Control_flow_c.unwrap node.parser_node with
     Control_flow_c.AfterNode _ -> true
+  | _ -> false
+
+
+let is_top_node node =
+  match Control_flow_c.unwrap node.parser_node with
+    Control_flow_c.TopNode -> true
   | _ -> false
 
 
@@ -81,6 +80,84 @@ let test_if_header predicate default node =
   | _ -> default
 
 
+let base_visitor f = {
+  Visitor_c.default_visitor_c with
+  Visitor_c.kexpr =
+    (fun (k, visitor) e ->
+       Asto.apply_on_assignment
+         f
+         e;
+       k e);
+  Visitor_c.konedecl =
+    (fun (k, visitor) dl ->
+       Asto.apply_on_initialisation
+         f
+         dl;
+       k dl)
+}
+
+
+let apply_base_visitor f node =
+  let visitor = base_visitor f in
+  Visitor_c.vk_node visitor node.parser_node
+
+
+let is_killing_reach identifier node =
+  let acc = ref false in
+  apply_base_visitor
+    (fun r l -> acc := !acc || Asto.expression_equal identifier r)
+    node;
+  !acc
+
+
+let get_assignment_type_through_alias cfg =
+  let visited_node = ref NodeiSet.empty in
+  let rec aux n e =
+    visited_node := NodeiSet.add n.index !visited_node;
+    match Asto.get_assignment_type e with
+      Asto.Variable e ->
+      let assignements =
+        breadth_first_fold
+          (get_backward_config
+             (fun _ (n, _) -> not (is_killing_reach e n.node))
+             (fun _ _ _ -> ())
+             (fun _ (n, _) res ->
+                if is_top_node n.node
+                then
+                  (Asto.Error Asto.Ambiguous)::res
+                else
+                  let temp = ref None in
+                  apply_base_visitor
+                    (fun l r ->
+                       if Asto.expression_equal e l
+                       then
+                         match r with
+                           Some r ->
+                           temp :=
+                             if NodeiSet.mem n.index !visited_node
+                             then
+                               Some (Asto.Error Asto.Ambiguous)
+                             else
+                               Some (aux n r)
+                         | None   -> temp := Some (Asto.Error Asto.Ambiguous)
+                       else
+                         ())
+                    n.node;
+                  match !temp with
+                    None   -> res
+                  | Some v -> v::res)
+             () [])
+          cfg (complete_node_of cfg n.index)
+      in
+      if List.for_all ((=) (List.hd assignements)) assignements
+      then
+        List.hd assignements
+      else
+        Asto.Error Asto.Ambiguous
+    | Asto.Value v    -> v
+  in
+  aux
+
 let get_error_branch cfg n =
   let branch_side = ref Asto.Then in
   let visitor = {
@@ -88,7 +165,7 @@ let get_error_branch cfg n =
     Visitor_c.kexpr =
       (fun (k, visitor) e ->
          Asto.which_is_the_error_branch
-           (get_assignment_type_through_alias cfg n.index)
+           (get_assignment_type_through_alias cfg n)
            (fun x -> branch_side := x) e)
   }
   in
@@ -106,26 +183,6 @@ let is_on_error_branch cfg n head =
   | (Asto.Else, Control_flow_c.FalseNode )
   | (Asto.Else, Control_flow_c.FallThroughNode ) -> true
   | _ -> false
-
-let base_visitor f = {
-  Visitor_c.default_visitor_c with
-  Visitor_c.kexpr =
-    (fun (k, visitor) e ->
-       Asto.apply_on_assignment
-         f
-         e;
-       k e);
-  Visitor_c.konedecl =
-    (fun (k, visitor) dl ->
-       Asto.apply_on_initialisation
-         f
-         dl;
-       k dl)
-}
-
-let apply_base_visitor f node =
-  let visitor = base_visitor f in
-  Visitor_c.vk_node visitor node.parser_node
 (**********************************************************)
 
 let get_error_assignments cfg =
@@ -136,7 +193,11 @@ let get_error_assignments cfg =
          (fun l r ->
             match r with
               Some r ->
-              (match get_assignment_type_through_alias cfg i r with
+              let assignment_type =
+                get_assignment_type_through_alias
+                  cfg {index = i; node = node} r
+              in
+              (match assignment_type with
                  Asto.Error err -> Hashtbl.add t ((i, node), l) err
                | _    -> ())
             | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous)
@@ -189,13 +250,6 @@ let add_post_dominated cfg index acc =
       cfg (complete_node_of cfg index)
   in
   NodeiSet.union post_dominated acc
-
-let is_killing_reach identifier node =
-  let acc = ref false in
-  apply_base_visitor
-    (fun r l -> acc := !acc || Asto.expression_equal identifier r)
-    node;
-  !acc
 
 let get_nodes_leading_to_error_return cfg error_assignments =
   let get_reachable_nodes ((index, node), identifier) error_type acc =
@@ -271,12 +325,12 @@ let annotate_error_handling cfg =
     find_all
       (fun (i, node) ->
          let error_type =
-           test_returned_expression (get_assignment_type_through_alias cfg i)
-             Asto.NonError node
+           test_returned_expression Asto.get_assignment_type
+            (Asto.Value Asto.NonError) node
          in
          match error_type with
-           Asto.Error Asto.Clear -> true
-         | _                     -> false)
+          Asto.Value (Asto.Error Asto.Clear) -> true
+         | _ -> false)
       cfg
   in
   let error_return_post_dominated =
