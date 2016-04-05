@@ -86,7 +86,8 @@ let compute_is_error_handling_node node_indices = function
 
 let compare_with_size sets l =
   let sizes =
-    List.fold_left (fun acc s -> acc + (NodeiSet.cardinal s)) 0 sets in
+    List.fold_left (fun acc s -> acc + (NodeiSet.cardinal s)) 0 sets
+  in
   sizes = l
 
 let () =
@@ -94,20 +95,20 @@ let () =
     [
       mk_cfg_test
         "get_error_assignements" "./tests/no_error_assignements.c"
-        " should return the empty list for " concat_get_error_assignements [0]
+        " should return 0 node for " concat_get_error_assignements [0]
         (=);
       mk_cfg_test
         "get_error_assignements" "./tests/complex.c"
-        " should return a list of length 8 for " concat_get_error_assignements
+        " should return 8 nodes for " concat_get_error_assignements
         8 is_length;
       mk_cfg_test
         "get_error_assignements" "./tests/error_assignements.c"
-        " should return a list of length 3 for " concat_get_error_assignements
-        3 is_length;
+        " should return 4 nodes for " concat_get_error_assignements
+        4 is_length;
       mk_cfg_test
         "get_error_assignements" "./tests/more_complex.c"
-        " should return a list of length 5 for " concat_get_error_assignements
-        5 is_length;
+        " should return 5 nodes for " concat_get_error_assignements
+        7 is_length;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/no_reachable_returns.c"
         " should return the empty set for "
@@ -118,8 +119,8 @@ let () =
         concat_get_nodes_leading_to_error_return 2 compare_with_size;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/reachable_returns.c"
-        " should return a set of 21 elements for "
-        concat_get_nodes_leading_to_error_return 21 compare_with_size;
+        " should return a set of 6 elements for "
+        concat_get_nodes_leading_to_error_return 6 compare_with_size;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/more_complex.c"
         " should return a set of 33 elements for "
@@ -143,7 +144,7 @@ let () =
         (compute_is_on_error_branch
            [7; 10; 10; 10; 10; 10; 8]
            [8; 11; 11; 11; 11; 11; 9])
-        [true; true; false; true; true; false; false] (=);
+        [true; true; false; true; true; false; true] (=);
       mk_cfg_test
         "annotate_error_handling" "./tests/simple_reachable_returns.c"
         " should return true for node 9 of "

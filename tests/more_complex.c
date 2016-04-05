@@ -48,3 +48,12 @@ int f4() {
 good:
 	return 0;
 }
+
+int f5(int a, int b) {
+	for (;;) {
+		a = b;
+		b = a;
+	}
+
+	return a;
+}

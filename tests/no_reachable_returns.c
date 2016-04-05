@@ -20,7 +20,7 @@ void f2() {
 
 int f3() {
 	int a = -42;
-	int b = -35;
+	int b = 35;
 
 	if ( a = b )
 		return a;
