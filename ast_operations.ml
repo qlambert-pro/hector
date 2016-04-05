@@ -318,11 +318,10 @@ let is_error_right_value alias_f e =
 let expression_equal expression1 expression2 =
   Lib_parsing_c.real_al_expr expression1 = Lib_parsing_c.real_al_expr expression2
 
-let conditional_apply_on_error_assignment p f (expression, _) =
+let apply_on_assignment f (expression, _) =
   match unwrap expression with
     Assignment (e1, op, e2)
-    when is_simple_assignment op &&
-         p e2 ->
+    when is_simple_assignment op ->
     f e1 (Some e2)
   | FunCall (_, arguments') ->
     let arguments = expressions_of_arguments arguments' in
@@ -332,24 +331,12 @@ let conditional_apply_on_error_assignment p f (expression, _) =
      | _   -> ())
   | e -> ()
 
-let apply_on_error_assignment alias_f f e =
-  conditional_apply_on_error_assignment (is_error_right_value alias_f) f e
-
-let apply_on_assignment f e =
-  conditional_apply_on_error_assignment (fun e -> true) f e
-
-let conditional_apply_on_initialisation p f declaration =
+let apply_on_initialisation f declaration =
   match declaration.v_namei with
-    Some (n, ValInit (_, (InitExpr e, _))) when p e ->
+    Some (n, ValInit (_, (InitExpr e, _))) ->
     (*TODO create the correct type and infos*)
     f (mk_e (Ident n) []) (Some e)
   | _ -> ()
-
-let apply_on_error_initialisation alias_f f declaration =
-  conditional_apply_on_initialisation (is_error_right_value alias_f) f declaration
-
-let apply_on_initialisation f declaration =
-  conditional_apply_on_initialisation (fun e -> true) f declaration
 
 (*TODO None ..*)
 type branch_side =

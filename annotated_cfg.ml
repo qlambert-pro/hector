@@ -155,24 +155,6 @@ let base_visitor f = {
        k dl)
 }
 
-let base_error_visitor cfg i f = {
-  Visitor_c.default_visitor_c with
-  Visitor_c.kexpr =
-    (fun (k, visitor) e ->
-       Asto.apply_on_error_assignment
-         (get_assignment_type_through_alias cfg i)
-         f
-         e;
-       k e);
-  Visitor_c.konedecl =
-    (fun (k, visitor) dl ->
-       Asto.apply_on_error_initialisation
-         (get_assignment_type_through_alias cfg i)
-         f
-         dl;
-       k dl)
-}
-
 let is_killing_reach identifier node =
   let {parser_node = parser_node} = node in
   let error_assignment = ref false in
@@ -187,8 +169,7 @@ let is_killing_reach identifier node =
 let is_error_assignment cfg (i, node) =
   let {parser_node = parser_node} = node in
   let error_assignment = ref false in
-  let visitor = base_error_visitor
-      cfg i
+  let visitor = base_visitor
       (fun l r ->
          error_assignment :=
            match r with
@@ -204,8 +185,7 @@ let is_error_assignment cfg (i, node) =
 let assignement_type_of_error_assignement cfg identifier (i, node) =
   let {parser_node = parser_node} = node in
   let error_assignment = ref Asto.NonError in
-  let visitor = base_error_visitor
-      cfg i
+  let visitor = base_visitor
       (fun x r ->
          if Asto.expression_equal x identifier
          then
@@ -222,8 +202,7 @@ let assignement_type_of_error_assignement cfg identifier (i, node) =
 let identifiers_of_error_assignment cfg (i, node) =
   let {parser_node = parser_node} = node in
   let identifiers = ref [] in
-  let visitor = base_error_visitor
-      cfg i
+  let visitor = base_visitor
       (fun x r -> identifiers := x::!identifiers)
   in
   Visitor_c.vk_node visitor parser_node;

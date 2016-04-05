@@ -42,18 +42,8 @@ val get_assignment_type:
 val expression_equal : Ast_c.expression -> Ast_c.expression -> bool
 
 (* Side Effects *)
-val apply_on_error_assignment:
-  (Ast_c.expression -> value) ->
-  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
-  unit
-
 val apply_on_assignment:
   (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
-  unit
-
-val apply_on_error_initialisation:
-  (Ast_c.expression -> value) ->
-  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.onedecl ->
   unit
 
 val apply_on_initialisation:
