@@ -47,26 +47,12 @@ type edge = Direct
 type t = (node, edge) Ograph_extended.ograph_extended
 
 (**** Unwrapper and boolean function on Control_flow_c ****)
+
+(*TODO implement*)
 let get_assignment_type_through_alias cfg i e =
   match Asto.get_assignment_type e with
     Asto.Variable e -> Asto.NonError
   | Asto.Value v    -> v
-
-let is_loop node =
-  let {parser_node = ((_, info), _)} = node in
-  let {Control_flow_c.is_loop = is_loop} = info in
-  is_loop
-
-(*TODO actually use the graph rather than node type*)
-let is_killing_error_branch node =
-  let {parser_node = ((_, info), _) as parser_node} = node in
-  let {Control_flow_c.is_loop = is_loop} = info in
-  match Control_flow_c.unwrap parser_node with
-    Control_flow_c.FalseNode
-  | Control_flow_c.IfHeader _
-  | Control_flow_c.SwitchHeader _
-  | Control_flow_c.FallThroughNode -> true
-  | _ -> is_loop
 
 
 let is_after_node node =
@@ -80,20 +66,6 @@ let is_selection node =
   let {parser_node = parser_node} = node in
   match Control_flow_c.unwrap parser_node with
     Control_flow_c.IfHeader _ -> true
-  | _ -> false
-
-
-let is_fallthrough node =
-  let {parser_node = parser_node} = node in
-  match Control_flow_c.unwrap parser_node with
-    Control_flow_c.FallThroughNode -> true
-  | _ -> false
-
-
-let is_top node =
-  let {parser_node = parser_node} = node in
-  match Control_flow_c.unwrap parser_node with
-    Control_flow_c.TopNode -> true
   | _ -> false
 
 
@@ -155,34 +127,24 @@ let base_visitor f = {
        k dl)
 }
 
-let is_killing_reach identifier node =
-  let {parser_node = parser_node} = node in
-  let error_assignment = ref false in
-  let visitor = base_visitor
-      (fun r l -> error_assignment :=
-          !error_assignment ||
-          Asto.expression_equal identifier r)
-  in
-  Visitor_c.vk_node visitor parser_node;
-  !error_assignment
-
-let get_error_types cfg t (i, node) =
-  let {parser_node = parser_node} = node in
-  let visitor = base_visitor
-      (fun l r ->
-         match r with
-           Some r ->
-           (match get_assignment_type_through_alias cfg i r with
-              Asto.Error err -> Hashtbl.add t ((i, node), l) err
-            | _    -> ())
-         | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous)
-  in
-  Visitor_c.vk_node visitor parser_node
+let apply_base_visitor f node =
+  let visitor = base_visitor f in
+  Visitor_c.vk_node visitor node.parser_node
 (**********************************************************)
 
 let get_error_assignments cfg =
   let t = Hashtbl.create 101 in
-  fold_node (fun acc n -> get_error_types cfg t n) () cfg;
+  cfg#nodes#iter
+    (fun (i, node) ->
+       apply_base_visitor
+         (fun l r ->
+            match r with
+              Some r ->
+              (match get_assignment_type_through_alias cfg i r with
+                 Asto.Error err -> Hashtbl.add t ((i, node), l) err
+               | _    -> ())
+            | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous)
+         node);
   t
 
 
@@ -215,6 +177,13 @@ let add_post_dominated cfg index acc =
       cfg index
   in
   NodeiSet.union post_dominated acc
+
+let is_killing_reach identifier node =
+  let acc = ref false in
+  apply_base_visitor
+    (fun r l -> acc := !acc || Asto.expression_equal identifier r)
+    node;
+  !acc
 
 let get_nodes_leading_to_error_return cfg error_assignments =
   let get_reachable_nodes ((index, node), identifier) error_type acc =
@@ -325,13 +294,6 @@ let is_head cfg (index, node) =
        is_selection node &&
        not (is_error_handling))
 
-
-let filter_heads cfg nodes =
-  NodeiSet.filter
-    (fun index ->
-       let node = cfg#nodes#assoc index in
-       is_head cfg (index, node))
-    nodes
 
 (*TODO maybe optimise*)
 let get_error_handling_branch_head cfg =
