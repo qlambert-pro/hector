@@ -50,19 +50,8 @@ let mk_cfg_test title filename msg test res compare =
     f
 
 let concat_get_error_assignements cfgs =
-  List.concat (List.map get_error_assignments cfgs)
-
-let concat_identifiers_of_error_assignement cfgs =
-  let error_assignments = List.map get_error_assignments cfgs in
-  let identifiers =
-    List.map2
-      (fun cfg error_assignment' -> List.map
-          (fun n -> identifiers_of_error_assignment cfg n)
-          error_assignment')
-      cfgs
-      error_assignments
-  in
-  List.concat (List.concat identifiers)
+  let errors_table = List.map get_error_assignments cfgs in
+  List.map Hashtbl.length errors_table
 
 let concat_get_nodes_leading_to_error_return cfgs =
   let error_assignments = List.map get_error_assignments cfgs in
@@ -79,7 +68,7 @@ let compute_is_on_error_branch node_indices head_indices cfgs =
     cfgs (List.combine node_indices head_indices)
 
 let is_length xs l =
-  (List.length xs) = l
+  (List.fold_left (+) 0 xs) = l
 
 let is_error_handling_node cfg index =
   let {is_error_handling = is_error_handling} = cfg#nodes#assoc index in
@@ -105,7 +94,7 @@ let () =
     [
       mk_cfg_test
         "get_error_assignements" "./tests/no_error_assignements.c"
-        " should return the empty list for " concat_get_error_assignements []
+        " should return the empty list for " concat_get_error_assignements [0]
         (=);
       mk_cfg_test
         "get_error_assignements" "./tests/complex.c"
@@ -119,14 +108,6 @@ let () =
         "get_error_assignements" "./tests/more_complex.c"
         " should return a list of length 5 for " concat_get_error_assignements
         5 is_length;
-      mk_cfg_test
-        "identifiers_of_error_assignement" "./tests/no_error_assignements.c"
-        " should return the empty list for "
-        concat_identifiers_of_error_assignement [] (=);
-      mk_cfg_test
-        "identifiers_of_error_assignement" "./tests/error_assignements.c"
-        " should return a list of length 3 for "
-        concat_identifiers_of_error_assignement 3 is_length;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/no_reachable_returns.c"
         " should return the empty set for "

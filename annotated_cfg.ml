@@ -166,53 +166,24 @@ let is_killing_reach identifier node =
   Visitor_c.vk_node visitor parser_node;
   !error_assignment
 
-let is_error_assignment cfg (i, node) =
+let get_error_types cfg t (i, node) =
   let {parser_node = parser_node} = node in
-  let error_assignment = ref false in
   let visitor = base_visitor
       (fun l r ->
-         error_assignment :=
-           match r with
-             Some r ->
-             (match get_assignment_type_through_alias cfg i r with
-                Asto.Error _ -> true
-              | _    -> !error_assignment)
-           | None -> true)
+         match r with
+           Some r ->
+           (match get_assignment_type_through_alias cfg i r with
+              Asto.Error err -> Hashtbl.add t ((i, node), l) err
+            | _    -> ())
+         | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous)
   in
-  Visitor_c.vk_node visitor parser_node;
-  !error_assignment
-
-let assignement_type_of_error_assignement cfg identifier (i, node) =
-  let {parser_node = parser_node} = node in
-  let error_assignment = ref Asto.NonError in
-  let visitor = base_visitor
-      (fun x r ->
-         if Asto.expression_equal x identifier
-         then
-           error_assignment :=
-             match r with
-               Some r -> get_assignment_type_through_alias cfg i r
-             | None   -> Asto.NonError
-         else
-           ())
-  in
-  Visitor_c.vk_node visitor parser_node;
-  !error_assignment
-
-let identifiers_of_error_assignment cfg (i, node) =
-  let {parser_node = parser_node} = node in
-  let identifiers = ref [] in
-  let visitor = base_visitor
-      (fun x r -> identifiers := x::!identifiers)
-  in
-  Visitor_c.vk_node visitor parser_node;
-  !identifiers
+  Visitor_c.vk_node visitor parser_node
 (**********************************************************)
 
 let get_error_assignments cfg =
-  find_all
-    (fun n -> is_error_assignment cfg n)
-    cfg
+  let t = Hashtbl.create 101 in
+  fold_node (fun acc n -> get_error_types cfg t n) () cfg;
+  t
 
 
 let filter_returns cfg identifier nodes =
@@ -246,71 +217,63 @@ let add_post_dominated cfg index acc =
   NodeiSet.union post_dominated acc
 
 let get_nodes_leading_to_error_return cfg error_assignments =
-  let get_reachable_nodes acc (index, node) =
-    let identifiers = identifiers_of_error_assignment cfg (index, node) in
-    List.fold_left
-      (fun acc identifier ->
-         let assignement_type =
-           assignement_type_of_error_assignement cfg identifier (index, node)
-         in
-         match assignement_type with
-           Asto.Error Asto.Clear ->
-           let nodes =
-             breadth_first_fold
-               (get_basic_node_config
-                  (fun _ (idx, node) -> not (is_killing_reach identifier node)))
-               cfg index
-           in
-           let reachable_returns = filter_returns cfg identifier nodes in
-           if reachable_returns != NodeiSet.empty
-           then
-             let error_branch_nodes =
-               add_branch_nodes_leading_to_return
-                 cfg reachable_returns nodes acc
-             in
-             if NodeiSet.mem index error_branch_nodes
-             then
-               add_post_dominated cfg index error_branch_nodes
-             else
-               error_branch_nodes
-           else
-             acc
-         | Asto.Error Asto.Ambiguous ->
-           let nodes =
-             depth_first_fold
-               (get_forward_config
-                  (fun _ (idx, node) ->
-                     not (is_killing_reach identifier node))
-                  (*TODO is_testing_identifier is incorrect*)
-                  (* add complex if cases to prove it *)
-                  (*TODO use a finer memory of the error branch *)
-                  (fun _ i (pred, acc) ->
-                     match pred with
-                       None -> (Some i, acc)
-                     | Some pred ->
-                       let is_on_error_branch_result =
-                         let head = cfg#nodes#assoc pred in
-                         (not (test_if_header
-                                 (Asto.is_testing_identifier
-                                    identifier) false head) ||
-                          is_on_error_branch cfg (pred, head) node)
-                       in
-                       (Some i, acc || is_on_error_branch_result))
-                  (fun (_, acc) i res -> if acc then NodeiSet.add i res else res)
-                  (None, false)
-                  NodeiSet.empty)
-               cfg index
-           in
-           let reachable_returns = filter_returns cfg identifier nodes in
-           if reachable_returns != NodeiSet.empty
-           then
-             add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
-           else
-             acc
-         | _ -> acc)
-      acc identifiers
+  let get_reachable_nodes ((index, node), identifier) error_type acc =
+    match error_type with
+      Asto.Clear ->
+      let nodes =
+        breadth_first_fold
+          (get_basic_node_config
+             (fun _ (idx, node) -> not (is_killing_reach identifier node)))
+          cfg index
+      in
+      let reachable_returns = filter_returns cfg identifier nodes in
+      if reachable_returns != NodeiSet.empty
+      then
+        let error_branch_nodes =
+          add_branch_nodes_leading_to_return
+            cfg reachable_returns nodes acc
+        in
+        if NodeiSet.mem index error_branch_nodes
+        then
+          add_post_dominated cfg index error_branch_nodes
+        else
+          error_branch_nodes
+      else
+        acc
+    | Asto.Ambiguous ->
+      let nodes =
+        depth_first_fold
+          (get_forward_config
+             (fun _ (idx, node) ->
+                not (is_killing_reach identifier node))
+             (*TODO is_testing_identifier is incorrect*)
+             (* add complex if cases to prove it *)
+             (*TODO use a finer memory of the error branch *)
+             (fun _ i (pred, acc) ->
+                match pred with
+                  None -> (Some i, acc)
+                | Some pred ->
+                  let is_on_error_branch_result =
+                    let head = cfg#nodes#assoc pred in
+                    (not (test_if_header
+                            (Asto.is_testing_identifier
+                               identifier) false head) ||
+                     is_on_error_branch cfg (pred, head) node)
+                  in
+                  (Some i, acc || is_on_error_branch_result))
+             (fun (_, acc) i res -> if acc then NodeiSet.add i res else res)
+             (None, false)
+             NodeiSet.empty)
+          cfg index
+      in
+      let reachable_returns = filter_returns cfg identifier nodes in
+      if reachable_returns != NodeiSet.empty
+      then
+        add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
+      else
+        acc
   in
-  List.fold_left get_reachable_nodes NodeiSet.empty error_assignments
+  Hashtbl.fold get_reachable_nodes error_assignments NodeiSet.empty
 
 (*TODO optimise number of pass*)
 (*TODO replace as computed rather than store*)
