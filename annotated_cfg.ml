@@ -98,7 +98,7 @@ let get_error_branch cfg (i, node) =
  * and "head" one of the following node
  * *)
 let is_on_error_branch cfg (i, node) head =
-  let error_branch_side = get_error_branch cfg (i,node) in
+  let error_branch_side = get_error_branch cfg (i, node) in
   match (error_branch_side, Control_flow_c.unwrap head.parser_node) with
     (Asto.Then, Control_flow_c.TrueNode _)
   | (Asto.Else, Control_flow_c.FalseNode )
@@ -314,10 +314,10 @@ let of_ast_c ast =
       Some cfg -> Control_flow_c_build.annotate_loop_nodes cfg
     | None     -> raise NoCFG
   in
+  let added_nodes = Hashtbl.create 100 in
+  let process_node g (index, node) =
 
-  let process_node (g, added_nodes) (index, node) =
-
-    let add_node (g, added_nodes) (index, node) =
+    let add_node g (index, node) =
       if not (Hashtbl.mem added_nodes index)
       then
         (* **
@@ -326,20 +326,20 @@ let of_ast_c ast =
          * *)
         let (g, index') = g#add_nodei index (mk_node false NoResource node) in
         Hashtbl.add added_nodes index index';
-        (g, added_nodes)
+        g
       else
-        (g, added_nodes)
+        g
     in
 
-    let (g', added_nodes') = add_node (g, added_nodes) (index, node) in
+    let g' = add_node g (index, node) in
     let successors = cocci_cfg#successors index in
 
-    let add_node_and_arc (g, added_node) (index', _) =
+    let add_node_and_arc g (index', _) =
       let node' = (cocci_cfg#nodes)#assoc index' in
-      let (g', added_nodes') = add_node (g, added_nodes) (index', node') in
+      let g' = add_node g (index', node') in
 
-      let start_node = Hashtbl.find added_nodes' index  in
-      let end_node   = Hashtbl.find added_nodes' index' in
+      let start_node = Hashtbl.find added_nodes index  in
+      let end_node   = Hashtbl.find added_nodes index' in
       let g'' =
         (* **
          * Do not copy edges to after_node
@@ -348,15 +348,27 @@ let of_ast_c ast =
         then g'
         else g'#add_arc ((start_node, end_node), Direct)
       in
-      (g'', added_nodes')
+      g''
     in
 
-    List.fold_left add_node_and_arc (g', added_nodes') (successors#tolist)
+    List.fold_left add_node_and_arc g' (successors#tolist)
+  in
+  let initial_cfg' = new Ograph_extended.ograph_extended in
+  let top_node = Control_flow_c.first_node cocci_cfg in
+  let initial_cfg =
+    process_node initial_cfg' (top_node, (cocci_cfg#nodes)#assoc top_node)
   in
   let cfg' =
-    fst (fold_node process_node
-           (new Ograph_extended.ograph_extended, Hashtbl.create 100)
-           cocci_cfg)
+    breadth_first_fold
+      (get_forward_config
+         (fun _ _ -> true)
+         (fun _ _ _ -> ())
+         (fun _ i g ->
+            let node = (cocci_cfg#nodes)#assoc i in
+            process_node g (i, node))
+         ()
+         initial_cfg)
+      cocci_cfg top_node
   in
   let cfg = annotate_error_handling cfg' in
   annotate_resource_handling cfg
