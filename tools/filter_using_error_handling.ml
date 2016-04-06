@@ -20,6 +20,7 @@
  * *)
 
 let current_ast = ref ("", [])
+let cfgs = Hashtbl.create 117
 
 type line_data =
   {name: string;
@@ -143,19 +144,28 @@ let is_relevant_data path d =
       let (program, _) = Parse_c.parse_c_and_cpp false filename in
       let (functions', _) = Common.unzip program in
       let functions'' = List.tl (List.rev functions') in
+      Hashtbl.clear cfgs;
       current_ast :=
         (filename,
-        List.map fst
-          (Type_annoter_c.annotate_program !Type_annoter_c.initial_env
+         List.map fst
+           (Type_annoter_c.annotate_program !Type_annoter_c.initial_env
               functions''));
       snd !current_ast
   in
   try
-    (let f = List.find (is_function_name d.allocation.f_name) functions in
-     let cfg =
-       try Some (Annotated_cfg.of_ast_c f) with
-         Control_flow_c_build.Error _
-       | Annotated_cfg.NoCFG -> None
+    (let cfg =
+       if Hashtbl.mem cfgs d.allocation.f_name
+       then
+         Hashtbl.find cfgs d.allocation.f_name
+       else
+         let f = List.find (is_function_name d.allocation.f_name) functions in
+         let cfg' =
+           try Some (Annotated_cfg.of_ast_c f) with
+           Control_flow_c_build.Error _
+         | Annotated_cfg.NoCFG -> None
+         in
+         Hashtbl.add cfgs d.allocation.f_name cfg';
+         cfg'
      in
      match cfg with
        Some cfg ->
