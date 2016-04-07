@@ -37,6 +37,18 @@ let get_cfgs filename =
   in
   List.rev (List.fold_left aux [] functions)
 
+let get_identifiers cfg =
+  fold_node
+    (fun id_set (i, node) ->
+       let error_type =
+         test_returned_expression Asto.get_assignment_type
+           (Asto.Value Asto.NonError) node
+       in
+       match error_type with
+       | Asto.Variable e ->
+         e::id_set
+       | _ -> id_set)
+    [] cfg
 
 
 let mk_cfg_test title filename msg test res compare =
@@ -50,11 +62,18 @@ let mk_cfg_test title filename msg test res compare =
     f
 
 let concat_get_error_assignements cfgs =
-  let errors_table = List.map get_error_assignments cfgs in
+  let errors_table =
+    List.map
+      (fun cfg -> get_error_assignments cfg (get_identifiers cfg)) cfgs
+  in
   List.map Hashtbl.length errors_table
 
 let concat_get_nodes_leading_to_error_return cfgs =
-  let error_assignments = List.map get_error_assignments cfgs in
+  let error_assignments =
+    List.map
+      (fun cfg -> get_error_assignments cfg (get_identifiers cfg))
+      cfgs
+  in
   List.map2 get_nodes_leading_to_error_return cfgs error_assignments
 
 
@@ -100,15 +119,15 @@ let () =
       mk_cfg_test
         "get_error_assignements" "./tests/complex.c"
         " should return 8 nodes for " concat_get_error_assignements
-        8 is_length;
+        3 is_length;
       mk_cfg_test
         "get_error_assignements" "./tests/error_assignements.c"
         " should return 4 nodes for " concat_get_error_assignements
-        4 is_length;
+        0 is_length;
       mk_cfg_test
         "get_error_assignements" "./tests/more_complex.c"
         " should return 5 nodes for " concat_get_error_assignements
-        7 is_length;
+        5 is_length;
       mk_cfg_test
         "get_nodes_leading_to_error_return" "./tests/no_reachable_returns.c"
         " should return the empty set for "
