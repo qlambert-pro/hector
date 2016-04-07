@@ -185,22 +185,26 @@ let is_on_error_branch cfg n head =
   | _ -> false
 (**********************************************************)
 
-let get_error_assignments cfg =
+let get_error_assignments cfg identifiers =
   let t = Hashtbl.create 101 in
   cfg#nodes#iter
     (fun (i, node) ->
        apply_base_visitor
          (fun l r ->
-            match r with
-              Some r ->
-              let assignment_type =
-                get_assignment_type_through_alias
-                  cfg {index = i; node = node} r
-              in
-              (match assignment_type with
-                 Asto.Error err -> Hashtbl.add t ((i, node), l) err
-               | _    -> ())
-            | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous)
+            if List.exists (fun e -> Asto.expression_equal e l) identifiers
+            then
+              match r with
+                Some r ->
+                let assignment_type =
+                  get_assignment_type_through_alias
+                    cfg {index = i; node = node} r
+                in
+                (match assignment_type with
+                   Asto.Error err -> Hashtbl.add t ((i, node), l) err
+                 | _    -> ())
+              | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous
+            else
+              ())
          node);
   t
 
@@ -315,23 +319,28 @@ let get_nodes_leading_to_error_return cfg error_assignments =
   in
   Hashtbl.fold get_reachable_nodes error_assignments NodeiSet.empty
 
+
 (*TODO optimise number of pass*)
 (*TODO replace as computed rather than store*)
 let annotate_error_handling cfg =
-  let error_assignments = get_error_assignments cfg in
-  let error_branch_nodes = get_nodes_leading_to_error_return cfg
-      error_assignments in
-  let error_returns =
-    find_all
-      (fun (i, node) ->
+  let error_returns, identifiers =
+    fold_node
+      (fun (error_returns, id_set) (i, node) ->
          let error_type =
            test_returned_expression Asto.get_assignment_type
-            (Asto.Value Asto.NonError) node
+             (Asto.Value Asto.NonError) node
          in
          match error_type with
-          Asto.Value (Asto.Error Asto.Clear) -> true
-         | _ -> false)
-      cfg
+           Asto.Value (Asto.Error Asto.Clear) ->
+           ((i,node)::error_returns, id_set)
+         | Asto.Variable e ->
+           (error_returns, e::id_set)
+         | _ -> (error_returns, id_set))
+      ([], []) cfg
+  in
+  let error_assignments = get_error_assignments cfg identifiers in
+  let error_branch_nodes =
+    get_nodes_leading_to_error_return cfg error_assignments
   in
   let error_return_post_dominated =
     List.fold_left
