@@ -182,7 +182,9 @@ let data' = read_file Sys.argv.(1)
 (*second arg is the path to the linux repo ended with /*)
 let path = Sys.argv.(2)
 
-let () = Flag_parsing_c.verbose_type := false;
+let () =
+  Parse_c.init_defs_builtins "/usr/local/lib/coccinelle/standard.h";
+  Flag_parsing_c.verbose_type := false;
   Flag_parsing_c.verbose_lexing := false;
   Flag_parsing_c.show_parsing_error := false;
   Flag_parsing_c.verbose_parsing := false
