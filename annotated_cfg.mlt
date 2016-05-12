@@ -64,7 +64,7 @@ let concat_get_nodes_leading_to_error_return cfgs =
 let compute_is_on_error_branch node_indices head_indices cfgs =
   List.map2
     (fun x (a, b) ->
-       is_on_error_branch x (a, x#nodes#assoc a) (x#nodes#assoc b))
+       is_on_error_branch x (complete_node_of x a) (x#nodes#assoc b))
     cfgs (List.combine node_indices head_indices)
 
 let is_length xs l =

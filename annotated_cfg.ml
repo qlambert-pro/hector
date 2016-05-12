@@ -42,7 +42,9 @@ let mk_node is_error_handling resource_handling_type parser_node = {
   parser_node = parser_node
 }
 
-type edge = Direct
+type edge =
+    Direct
+  | Backedge
 
 type t = (node, edge) Ograph_extended.ograph_extended
 
@@ -79,26 +81,26 @@ let test_if_header predicate default node =
   | _ -> default
 
 
-let get_error_branch cfg (i, node) =
+let get_error_branch cfg n =
   let branch_side = ref Asto.Then in
   let visitor = {
     Visitor_c.default_visitor_c with
     Visitor_c.kexpr =
       (fun (k, visitor) e ->
          Asto.which_is_the_error_branch
-           (get_assignment_type_through_alias cfg i)
+           (get_assignment_type_through_alias cfg n.index)
            (fun x -> branch_side := x) e)
   }
   in
-  Visitor_c.vk_node visitor node.parser_node;
+  Visitor_c.vk_node visitor n.node.parser_node;
   !branch_side
 
 (* **
  * "node" is expected to be a IfHeader
  * and "head" one of the following node
  * *)
-let is_on_error_branch cfg (i, node) head =
-  let error_branch_side = get_error_branch cfg (i, node) in
+let is_on_error_branch cfg n head =
+  let error_branch_side = get_error_branch cfg n in
   match (error_branch_side, Control_flow_c.unwrap head.parser_node) with
     (Asto.Then, Control_flow_c.TrueNode _)
   | (Asto.Else, Control_flow_c.FalseNode )
@@ -157,9 +159,9 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
     (fun return acc ->
        let branch_nodes =
          conditional_get_post_dominated
-           (fun (index, node) -> NodeiSet.mem index nodes)
+           (fun (cn, _) -> NodeiSet.mem cn.index nodes)
            cfg
-           return
+           (complete_node_of cfg return)
        in
        NodeiSet.union branch_nodes acc)
     returns acc
@@ -167,8 +169,8 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
 let add_post_dominated cfg index acc =
   let post_dominated =
     conditional_get_post_dominated
-      (fun (_, node) -> true)
-      cfg index
+      (fun _ -> true)
+      cfg (complete_node_of cfg index)
   in
   NodeiSet.union post_dominated acc
 
@@ -186,15 +188,14 @@ let get_nodes_leading_to_error_return cfg error_assignments =
       let nodes =
         breadth_first_fold
           (get_basic_node_config
-             (fun _ (idx, node) -> not (is_killing_reach identifier node)))
-          cfg index
+             (fun _ (cn, _) -> not (is_killing_reach identifier cn.node)))
+          cfg (complete_node_of cfg index)
       in
       let reachable_returns = filter_returns cfg identifier nodes in
       if reachable_returns != NodeiSet.empty
       then
         let error_branch_nodes =
-          add_branch_nodes_leading_to_return
-            cfg reachable_returns nodes acc
+          add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
         in
         if NodeiSet.mem index error_branch_nodes
         then
@@ -207,32 +208,33 @@ let get_nodes_leading_to_error_return cfg error_assignments =
       let nodes =
         depth_first_fold
           (get_forward_config
-             (fun _ (idx, node) ->
-                not (is_killing_reach identifier node))
+             (fun _ (cn, _) -> not (is_killing_reach identifier cn.node))
              (*TODO is_testing_identifier is incorrect*)
              (* add complex if cases to prove it *)
              (*TODO use a finer memory of the error branch *)
-             (fun _ i (pred, acc) ->
+             (fun _ (cn, e) (pred, acc) ->
                 match pred with
-                  None -> (Some i, acc)
+                  None -> (Some cn, acc)
                 | Some pred ->
                   let is_on_error_branch_result =
-                    let head    = cfg#nodes#assoc i    in
-                    let if_node = cfg#nodes#assoc pred in
+                    let head    = cn.node in
                     let is_correct_if =
                       test_if_header
-                        (Asto.is_testing_identifier identifier) false if_node
+                        (Asto.is_testing_identifier identifier) false pred.node
                     in
                     let is_correct_branch =
-                      is_on_error_branch cfg (pred, if_node) head
+                      is_on_error_branch cfg pred head
                     in
                     is_correct_if && is_correct_branch
                   in
-                  (Some i, acc || is_on_error_branch_result))
-             (fun (_, acc) i res -> if acc then NodeiSet.add i res else res)
+                  (Some cn, acc || is_on_error_branch_result))
+             (fun (_, acc) (cn, _) res ->
+                if acc
+                then NodeiSet.add cn.index res
+                else res)
              (None, false)
              NodeiSet.empty)
-          cfg index
+          cfg (complete_node_of cfg index)
       in
       let reachable_returns = filter_returns cfg identifier nodes in
       if reachable_returns != NodeiSet.empty
@@ -265,7 +267,8 @@ let annotate_error_handling cfg =
     List.fold_left
       (fun acc (index, _) ->
          let nodes =
-           conditional_get_post_dominated (fun _ -> true) cfg index
+           conditional_get_post_dominated (fun _ -> true) cfg
+             (complete_node_of cfg index)
          in
          NodeiSet.union acc nodes)
       NodeiSet.empty error_returns
@@ -363,12 +366,10 @@ let of_ast_c ast =
       (get_forward_config
          (fun _ _ -> true)
          (fun _ _ _ -> ())
-         (fun _ i g ->
-            let node = (cocci_cfg#nodes)#assoc i in
-            process_node g (i, node))
-         ()
-         initial_cfg)
-      cocci_cfg top_node
+         (fun _ (cn, _) g ->
+            process_node g (cn.index, cn.node)) () initial_cfg)
+      cocci_cfg
+      (complete_node_of cocci_cfg top_node)
   in
   let cfg = annotate_error_handling cfg' in
   annotate_resource_handling cfg

@@ -29,20 +29,27 @@ type ('node, 'edge, 'g) readable_graph =
     ..
   > as 'g
 
-let tuple_of g index =
-  (index, g#nodes#assoc index)
+type 'node complete_node =
+  {index: nodei;
+   node:  'node;
+  }
+
+let complete_node_of g index =
+  {index = index;
+   node  = g#nodes#assoc index;
+  }
 
 let fold_node f acc g =
   (g#nodes: (nodei, 'node) Oassoc.oassoc)#fold f acc
 
 let fold_predecessors f acc g node =
   ((g#predecessors node): (nodei * 'edge) Oset.oset)#fold
-    (fun a (i, _) -> f a (tuple_of g i))
+    (fun a (i, e) -> f a (complete_node_of g i, e))
     acc
 
 let fold_successors f acc g node =
   ((g#successors node): (nodei * 'edge) Oset.oset)#fold
-    (fun a (i, _) -> f a (tuple_of g i))
+    (fun a (i, e) -> f a (complete_node_of g i, e))
     acc
 
 let find_all f g =
@@ -56,54 +63,36 @@ end
 
 module NodeiSet = Set.Make(OrderedNodei)
 
-let add_successors   cfg index acc =
-  fold_successors   (fun acc (s, _) -> NodeiSet.add s acc) acc cfg index
+let add_successors   cfg acc n =
+  fold_successors   (fun acc cn -> cn::acc) acc cfg n.index
 
-let add_predecessors cfg index acc =
-  fold_predecessors (fun acc (s, _) -> NodeiSet.add s acc) acc cfg index
+let add_predecessors cfg acc n =
+  fold_predecessors (fun acc cn -> cn::acc) acc cfg n.index
 
 type ('node, 'edge, 'g, 'acc, 'res) fold_configuration =
   {get_next_nodes:
-     ('node, 'edge, 'g) readable_graph -> nodei -> NodeiSet.t -> NodeiSet.t;
+     ('node, 'edge, 'g) readable_graph -> ('node complete_node * 'edge) list ->
+     'node complete_node -> ('node complete_node * 'edge) list;
 
-   predicate: NodeiSet.t -> nodei * 'node -> bool;
-   (* **
-    * The predicate is called with visited_nodes as first argument and
-    * the algorithm only fold on the node if predicate returns true
-    * *)
+   predicate: NodeiSet.t -> ('node complete_node * 'edge) -> bool;
 
-   compute_local_value: NodeiSet.t -> nodei -> 'acc -> 'acc;
-   (* **
-    * This function compute the new local value from visited_nodes,
-    * the current node and the current local value
-    * *)
+   compute_local_value:
+     NodeiSet.t -> ('node complete_node * 'edge) -> 'acc -> 'acc;
 
-   compute_result: 'acc -> nodei -> 'res -> 'res;
-   (* **
-    * This function compute the new result from visited_nodes,
-    * the current node and the current result value
-    * *)
+   compute_result: 'acc -> ('node complete_node * 'edge) -> 'res -> 'res;
 
    initial_local_value: 'acc;
    initial_result: 'res;
   }
 
-type ('a, 'b) breadth_first_fold_data =
+
+type ('a, 'b, 'node, 'edge) breadth_first_fold_data =
   {visited_nodes:    NodeiSet.t;
-   last_added_nodes: NodeiSet.t;
+   last_added_nodes: 'node complete_node list;
    local_value:      'b;
    result:           'a}
 
-let breadth_first_fold config g index =
-  let {get_next_nodes      = get_next_nodes;
-       predicate           = p;
-       compute_result      = compute_result;
-       compute_local_value = compute_local_value;
-       initial_result      = initial_result;
-       initial_local_value = initial_local_value;
-      } = config
-  in
-  let nodes = g#nodes in
+let breadth_first_fold config g cn =
   let rec breadth_first_fold_aux
       {visited_nodes    = visited_nodes;
        last_added_nodes = last_added_nodes;
@@ -111,30 +100,30 @@ let breadth_first_fold config g index =
 
     (*TODO maybe don't add nodes that are already visited*)
     let next_nodes =
-      NodeiSet.fold (get_next_nodes g) last_added_nodes NodeiSet.empty
+      List.fold_left (config.get_next_nodes g) [] last_added_nodes
     in
 
-    let add_to_visited_nodes s visited_nodes =
-      let node = nodes#assoc s in
-      if p visited_nodes (s, node)
-      then NodeiSet.add s visited_nodes
-      else visited_nodes
+    let add_to_visited_nodes (visited_nodes, added_nodes) (s, e) =
+      if config.predicate visited_nodes (s, e) &&
+         not (NodeiSet.mem s.index visited_nodes)
+      then
+        (NodeiSet.add s.index visited_nodes, s::added_nodes)
+      else
+        (visited_nodes, added_nodes)
     in
 
-    let new_visited_nodes =
-      NodeiSet.fold add_to_visited_nodes next_nodes visited_nodes
+    let new_visited_nodes, added_nodes =
+      List.fold_left add_to_visited_nodes (visited_nodes, []) next_nodes
     in
-
-    let added_nodes = NodeiSet.inter next_nodes new_visited_nodes in
 
     let (new_result, _) =
-      NodeiSet.fold
-        (fun index (result, local_value) ->
+      List.fold_left
+        (fun (result, local_value) cn ->
            let new_local_value =
-             compute_local_value new_visited_nodes index local_value
+             config.compute_local_value new_visited_nodes cn local_value
            in
-           (compute_result new_local_value index result, new_local_value))
-        next_nodes (result, initial_local_value)
+           (config.compute_result new_local_value cn result, new_local_value))
+        (result, config.initial_local_value) next_nodes
     in
 
     if new_visited_nodes = visited_nodes
@@ -142,73 +131,62 @@ let breadth_first_fold config g index =
     else breadth_first_fold_aux
         {visited_nodes    = new_visited_nodes;
          last_added_nodes = added_nodes;
-         local_value      = initial_local_value;
+         local_value      = config.initial_local_value;
          result           = new_result}
   in
-  let initial_set = NodeiSet.singleton index in
+  let initial_set = NodeiSet.singleton cn.index in
   breadth_first_fold_aux
     {visited_nodes    = initial_set;
-     last_added_nodes = initial_set;
-     local_value      = initial_local_value;
-     result           = initial_result}
+     last_added_nodes = [cn];
+     local_value      = config.initial_local_value;
+     result           = config.initial_result}
 
-type ('a, 'b) depth_first_fold_data =
+type ('a, 'b, 'node, 'edge) depth_first_fold_data =
   {visited_nodes: NodeiSet.t;
-   current_node:  nodei;
+   current_node:  ('node complete_node * 'edge);
    local_value:   'b;
    result:        'a;}
 
-let depth_first_fold config g index =
-  let {get_next_nodes      = get_next_nodes;
-       predicate           = p;
-       compute_result      = compute_result;
-       compute_local_value = compute_local_value;
-       initial_result      = initial_result;
-       initial_local_value = initial_local_value;
-      } = config
-  in
-  let nodes = g#nodes in
+let depth_first_fold config g cn =
   let rec depth_first_fold_aux
       {visited_nodes = visited_nodes;
-       current_node  = s;
+       current_node  = (s, e);
        local_value   = local_value;
        result        = result} =
-    let node = nodes#assoc s in
-
     let new_local_value =
-      compute_local_value visited_nodes s local_value
+      config.compute_local_value visited_nodes (s, e) local_value
     in
     let new_result =
-      compute_result new_local_value s result
+      config.compute_result new_local_value (s, e) result
     in
 
-    let new_visited_nodes = NodeiSet.add s visited_nodes in
-    if (p visited_nodes (s, node)) &&
+    let new_visited_nodes = NodeiSet.add s.index visited_nodes in
+    if (config.predicate visited_nodes (s, e)) &&
        new_visited_nodes <> visited_nodes
     then
-      let next_nodes = get_next_nodes g s NodeiSet.empty in
+      let next_nodes = config.get_next_nodes g [] s in
 
-      NodeiSet.fold
-        (fun index result ->
+      List.fold_left
+        (fun result cn ->
            depth_first_fold_aux
              {visited_nodes = new_visited_nodes;
-              current_node  = index;
+              current_node  = cn;
               local_value   = new_local_value;
               result        = result})
-        next_nodes new_result
+        new_result next_nodes
     else
       new_result
   in
-  let initial_set = NodeiSet.singleton index in
-  let next_nodes = get_next_nodes g index NodeiSet.empty in
-  NodeiSet.fold
-    (fun index result ->
+  let initial_set = NodeiSet.singleton cn.index in
+  let next_nodes = config.get_next_nodes g [] cn in
+  List.fold_left
+    (fun result cn ->
        depth_first_fold_aux
          {visited_nodes = initial_set;
-          current_node  = index;
-          local_value   = initial_local_value;
+          current_node  = cn;
+          local_value   = config.initial_local_value;
           result        = result})
-    next_nodes initial_result
+    config.initial_result next_nodes
 
 
 let get_forward_config predicate compute_local_value compute_result
@@ -239,10 +217,10 @@ let get_backward_basic_node_config predicate =
     NodeiSet.empty NodeiSet.empty
 
 let conditional_get_post_dominated p g =
-  let predicate set (index, node) =
-    p (index, node) &&
+  let predicate set (n, e) =
+    p (n, e) &&
     fold_successors
-      (fun acc (s, _) -> acc && (NodeiSet.mem s set)) true g index
+      (fun acc (cn, _) -> acc && (NodeiSet.mem cn.index set)) true g n.index
   in
   let config = get_backward_basic_node_config predicate in
   breadth_first_fold config g
