@@ -189,27 +189,26 @@ let depth_first_fold config g index =
       let next_nodes = get_next_nodes g s NodeiSet.empty in
 
       NodeiSet.fold
-        (fun index (visited_nodes, result) ->
+        (fun index result ->
            depth_first_fold_aux
-             {visited_nodes = visited_nodes;
+             {visited_nodes = new_visited_nodes;
               current_node  = index;
               local_value   = new_local_value;
               result        = result})
-        next_nodes (new_visited_nodes, new_result)
+        next_nodes new_result
     else
-      (visited_nodes, new_result)
+      new_result
   in
   let initial_set = NodeiSet.singleton index in
   let next_nodes = get_next_nodes g index NodeiSet.empty in
-  snd (
-      NodeiSet.fold
-        (fun index (visited_nodes, result) ->
-           depth_first_fold_aux
-             {visited_nodes = visited_nodes;
-              current_node  = index;
-              local_value   = initial_local_value;
-              result        = result})
-        next_nodes (initial_set, initial_result))
+  NodeiSet.fold
+    (fun index result ->
+       depth_first_fold_aux
+         {visited_nodes = initial_set;
+          current_node  = index;
+          local_value   = initial_local_value;
+          result        = result})
+    next_nodes initial_result
 
 
 let get_forward_config predicate compute_local_value compute_result
