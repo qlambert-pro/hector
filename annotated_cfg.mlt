@@ -124,6 +124,10 @@ let () =
         "get_nodes_leading_to_error_return" "./tests/more_complex.c"
         " should return a set of 33 elements for "
         concat_get_nodes_leading_to_error_return 33 compare_with_size;
+      mk_cfg_test
+        "get_nodes_leading_to_error_return" "./tests/loop.c"
+        " should return a set of 13 elements for "
+        concat_get_nodes_leading_to_error_return 13 compare_with_size;
       (*I am using "spatch --control-flow" to figure out the indices*)
       mk_cfg_test
         "is_on_error_branch" "./tests/simple_reachable_returns.c"

@@ -44,7 +44,7 @@ let mk_node is_error_handling resource_handling_type parser_node = {
 
 type edge =
     Direct
-  | Backedge
+  | PostBackedge
 
 type t = (node, edge) Ograph_extended.ograph_extended
 
@@ -155,14 +155,30 @@ let filter_returns cfg identifier nodes =
 
 
 let add_branch_nodes_leading_to_return cfg returns nodes acc =
+  let post_dominated index =
+    let is_backedge e =
+      match e with
+        Direct   -> false
+      | PostBackedge -> true
+    in
+    let predicate set (n, e) =
+      let is_post_dominated =
+        fold_successors
+          (fun acc (cn, e) ->
+             acc &&
+             (is_backedge e || NodeiSet.mem cn.index set))
+          true cfg n.index
+      in
+      NodeiSet.mem n.index nodes &&
+      is_post_dominated
+    in
+    let config = get_backward_basic_node_config predicate in
+    breadth_first_fold config cfg (complete_node_of cfg index)
+  in
+
   NodeiSet.fold
     (fun return acc ->
-       let branch_nodes =
-         conditional_get_post_dominated
-           (fun (cn, _) -> NodeiSet.mem cn.index nodes)
-           cfg
-           (complete_node_of cfg return)
-       in
+       let branch_nodes = post_dominated return in
        NodeiSet.union branch_nodes acc)
     returns acc
 
@@ -309,6 +325,28 @@ let get_error_handling_branch_head cfg =
 let annotate_resource_handling cfg =
   cfg
 
+let remove_after_nodes_mutable cfg =
+  let remove_pred_arcs i =
+    fold_predecessors
+      (fun _ (cn, e) -> cfg#del_arc ((cn.index, i), e))
+      () cfg i
+  in
+  let remove_succ_arcs i =
+    fold_successors
+      (fun _ (cn, e) -> cfg#del_arc ((i, cn.index), e))
+      () cfg i
+  in
+  let remove_after_node () (i, node) =
+    let n = (mk_node false NoResource node) in
+    if (is_after_node n)
+    then
+      (remove_pred_arcs i;
+       remove_succ_arcs i;
+       cfg#del_node i)
+    else
+      ()
+  in
+  fold_node remove_after_node () cfg
 
 (*TODO improve to only one pass*)
 let of_ast_c ast =
@@ -317,6 +355,8 @@ let of_ast_c ast =
       Some cfg -> Control_flow_c_build.annotate_loop_nodes cfg
     | None     -> raise NoCFG
   in
+
+  remove_after_nodes_mutable cocci_cfg;
   let added_nodes = Hashtbl.create 100 in
   let process_node g (index, node) =
 
@@ -334,26 +374,27 @@ let of_ast_c ast =
         g
     in
 
-    let g' = add_node g (index, node) in
-    let successors = cocci_cfg#successors index in
-
     let add_node_and_arc g (index', _) =
       let node' = (cocci_cfg#nodes)#assoc index' in
       let g' = add_node g (index', node') in
 
       let start_node = Hashtbl.find added_nodes index  in
       let end_node   = Hashtbl.find added_nodes index' in
-      let g'' =
-        (* **
-         * Do not copy edges to after_node
-         * *)
-        if is_after_node ((g'#nodes)#assoc end_node)
-        then g'
-        else g'#add_arc ((start_node, end_node), Direct)
+      let post_dominated =
+        conditional_get_post_dominated
+          (fun _ -> true)
+          cocci_cfg (complete_node_of cocci_cfg start_node)
       in
-      g''
+      let edge =
+        if NodeiSet.mem end_node post_dominated
+        then PostBackedge
+        else Direct
+      in
+      g'#add_arc ((start_node, end_node), edge)
     in
 
+    let g' = add_node g (index, node) in
+    let successors = cocci_cfg#successors index in
     List.fold_left add_node_and_arc g' (successors#tolist)
   in
   let initial_cfg' = new Ograph_extended.ograph_extended in

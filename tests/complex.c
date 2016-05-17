@@ -29,7 +29,7 @@ int f2()
 				release1();
 			}
 			release2();
-
+			break;
 		} else {
 			set_stuff();
 		}

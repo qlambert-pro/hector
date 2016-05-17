@@ -67,7 +67,7 @@ let () =
     [
       mk_cfg_test
         "find_errorhandling" "./tests/complex.c"
-        " should return a list of length 2 for " concat_find_errorhandling 2
+        " should return a list of length 3 for " concat_find_errorhandling 3
         is_length;
       mk_cfg_test
         "find_errorhandling" "./tests/more_complex.c"
