@@ -33,22 +33,26 @@ KAPUTT_LIBS=
 KAPUTT_INCLUDE=
 KAPUTT_DEP=
 
+TOOLS_INCLUDE=
+
 FILTER_TARGET=filter
+PRINT_GRAPH_TARGET=print_graph
 
 TARGET=hector
 
-SRC= var_dec.ml def.ml ast_operations.ml graph_operations.ml\
-    annotated_cfg.ml resource.ml block.ml report.ml c_function.ml org.ml\
-    analyzer.ml
+CORE_SRC= var_dec.ml def.ml ast_operations.ml graph_operations.ml\
+    annotated_cfg.ml
 
 FILTER_SRC=tools/filter_using_error_handling.ml
+PRINT_GRAPH_SRC=tools/cocci_addon.ml tools/print_graph.ml
 
 SRCI=var_dec.mli ast_operations.mli graph_operations.mli annotated_cfg.mli\
-		 resource.mli block.mli c_function.mli org.mli analyzer.mli
+     resource.mli block.mli c_function.mli org.mli analyzer.mli
 
 TEST=annotated_cfg.mlt c_function.mlt
 
-MAIN=main.ml
+HECTOR_SRC=resource.ml block.ml report.ml c_function.ml org.ml analyzer.ml
+MAIN=main.ml 
 
 SYSLIBS=str.cma unix.cma bigarray.cma nums.cma $(KAPUTT_LIBS)
 LIBS=coccinelle/commons/commons.cma coccinelle/globals/globals.cma\
@@ -58,7 +62,8 @@ LIBS=coccinelle/commons/commons.cma coccinelle/globals/globals.cma\
 #used for clean: and depend: and a little for rec & rec.opt
 MAKESUBDIRS=coccinelle/commons coccinelle/globals coccinelle/parsing_c
 INCLUDEDIRS=coccinelle/commons coccinelle/commons/ocamlextra\
-	    coccinelle/globals coccinelle/parsing_c $(KAPUTT_INCLUDE)
+	    coccinelle/globals coccinelle/parsing_c $(KAPUTT_INCLUDE)\
+	    $(TOOLS_INCLUDE)
 
 ##############################################################################
 # Generic variables
@@ -66,12 +71,15 @@ INCLUDEDIRS=coccinelle/commons coccinelle/commons/ocamlextra\
 
 INCLUDES=$(INCLUDEDIRS:%=-I %)
 
-OBJS=    $(SRC:.ml=.cmo)
-MAIN_OBJ=$(MAIN:.ml=.cmo)
-FILTER_OBJ=$(FILTER_SRC:.ml=.cmo)
+CORE_OBJS       = $(CORE_SRC:.ml=.cmo)
+HECTOR_OBJS     = $(HECTOR_SRC:.ml=.cmo)
+MAIN_OBJ        = $(MAIN:.ml=.cmo)
+FILTER_OBJ      = $(FILTER_SRC:%.ml=%.cmo)
+PRINT_GRAPH_OBJ = $(PRINT_GRAPH_SRC:%.ml=%.cmo)
 
-OPTOBJS= $(SRC:.ml=.cmx)
-MAIN_OPTOBJS= $(MAIN:.ml=.cmx)
+OPT_CORE_OBJS   = $(CORE_SRC:.ml=.cmx)
+OPT_HECTOR_OBJS = $(HECTOR_SRC:.ml=.cmx)
+MAIN_OPTOBJS = $(MAIN:.ml=.cmx)
 
 EXEC=$(TARGET)
 
@@ -119,9 +127,9 @@ test: KAPUTT_FLAGS= -pp '$(KAPUTT_PATH)/kaputt_pp.byte on camlp4o'
 test: KAPUTT_LIBS= $(KAPUTT_PATH)/kaputt.cma
 test: KAPUTT_INCLUDE= $(KAPUTT_PATH)
 test: KAPUTT_DEP= $(TEST)
-test: $(TEST) $(LIBS) $(OBJS)
+test: $(TEST) $(LIBS) $(CORE_OBJS) $(HECTOR_OBJS)
 	@echo "[L] test"
-	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $(LIBS) $(OBJS)
+	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $(LIBS) $(CORE_OBJS) $(HECTOR_OBJS)
 
 coccinelle/configure:
 	@echo "Coccinelle: ./autogen"
@@ -137,22 +145,30 @@ $(LIBS): coccinelle/configure coccinelle/Makefile.config
 $(LIBS:.cma=.cmxa): coccinelle/configure coccinelle/Makefile.config
 	@$(MAKE) -C coccinelle OCAMLCFLAGS="$(OCAMLCFLAGS)" $(@:coccinelle/%=%)
 
-$(OBJS):$(LIBS)
-$(OPTOBJS):$(LIBS:.cma=.cmxa)
+$(CORE_OBJS):$(LIBS)
+$(HECTOR_OBJS):$(LIBS)
+$(OPT_CORE_OBJS):$(LIBS:.cma=.cmxa)
+$(OPT_HECTOR_OBJS):$(LIBS:.cma=.cmxa)
 
-$(EXEC): $(LIBS) $(OBJS) $(MAIN_OBJ)
+$(EXEC): $(LIBS) $(CORE_OBJS) $(HECTOR_OBJS) $(MAIN_OBJ)
 	@echo "[L] hector"
 	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $^
 
-$(FILTER_TARGET): $(LIBS) $(OBJS) $(FILTER_OBJ)
+$(FILTER_TARGET): TOOLS_INCLUDE=tools
+$(FILTER_TARGET): $(LIBS) $(CORE_OBJS) $(FILTER_OBJ)
 	@echo "[L] filter"
 	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $^
 
+$(PRINT_GRAPH_TARGET): TOOLS_INCLUDE=tools
+$(PRINT_GRAPH_TARGET): $(LIBS) $(CORE_OBJS) $(PRINT_GRAPH_OBJ)
+	@echo "[L] print_graph"
+	@$(OCAMLC) $(BYTECODE_STATIC) -o $@ $(SYSLIBS) $^
 
-$(EXEC).opt: $(LIBS:.cma=.cmxa) $(OPTOBJS) $(MAIN_OPTOBJS)
+
+$(EXEC).opt: $(LIBS:.cma=.cmxa) $(OPT_CORE_OBJS) $(OPT_HECTOR_OBJS) $(MAIN_OPTOBJS)
 	@$(OCAMLOPT) $(STATIC) -o $@ $(SYSLIBS:.cma=.cmxa) $^
 
-$(EXEC).top: $(LIBS) $(OBJS) $(MAIN_OBJ)
+$(EXEC).top: $(LIBS) $(CORE_OBJS) $(HECTOR_OBJS) $(MAIN_OBJ)
 	@$(OCAMLMKTOP) -custom -o $@ $(SYSLIBS) $^
 
 ##############################################################################
@@ -178,16 +194,23 @@ $(EXEC).top: $(LIBS) $(OBJS) $(MAIN_OBJ)
 %.ml.d:: %.ml
 	@$(OCAMLDEP) $< > $@
 
+tools/%.ml.d:: tools/%.ml
+	@$(OCAMLDEP) $< > $@
+
 %.mli.d: %.mli
 	@$(OCAMLDEP) $< > $@
 
 clean:
 	@rm -f $(FILTER_TARGET) test $(TARGET) $(TARGET).opt $(TARGET).top
+	@rm -f $(PRINT_GRAPH_TARGET)
 	@rm -f *.d
+	@rm -f tools/*.d
 	@rm -f *.cm[iox] *.o *.annot
+	@rm -f tools/*.cm[iox] tools/*.o
 	@rm -f *~ *.exe
 
 realclean: clean
 	make -C coccinelle clean
 
--include $(MAIN:.ml=.ml.d) $(SRC:.ml=.ml.d) $(SRCI:.mli=.mli.d)
+-include $(MAIN:.ml=.ml.d) $(CORE_SRC:.ml=.ml.d) $(HECTOR_SRC:.ml=.ml.d)\
+	$(SRCI:.mli=.mli.d) $(FILTER_SRC:.ml=.ml.d)	$(PRINT_GRAPH_SRC:.ml=.ml.d)

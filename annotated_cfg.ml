@@ -407,14 +407,12 @@ let annotate_error_handling cfg =
 
 let is_head cfg (index, node) =
   let predecessors = cfg#predecessors index in
-  let {is_error_handling = is_error_handling} = node in
-  is_error_handling &&
+  node.is_error_handling &&
   predecessors#exists
     (fun (index, _) ->
        let node = cfg#nodes#assoc index in
-       let {is_error_handling = is_error_handling} = node in
        is_selection node &&
-       not (is_error_handling))
+       not (node.is_error_handling))
 
 
 (*TODO maybe optimise*)
@@ -620,12 +618,8 @@ let of_ast_c ast =
     let add_node cn =
       if not (Hashtbl.mem added_nodes cn.index)
       then
-        (* **
-         * It uses add_nodei so that coccinelle can be used to debug with
-         * --control-flow
-         * *)
-        (cfg#add_nodei cn.index (mk_node false Unannotated cn.node);
-         Hashtbl.add added_nodes cn.index cn.index)
+        let index' = cfg#add_node (mk_node false Unannotated cn.node) in
+        Hashtbl.add added_nodes cn.index index'
       else
         ()
     in
@@ -639,10 +633,11 @@ let of_ast_c ast =
       let post_dominated =
         conditional_get_post_dominated
           (fun _ -> true)
-          cocci_cfg (complete_node_of cocci_cfg start_node)
+          cocci_cfg (complete_node_of cocci_cfg cn.index)
       in
+
       let edge =
-        if NodeiSet.mem end_node post_dominated
+        if NodeiSet.mem index' post_dominated
         then PostBackedge
         else Direct
       in
