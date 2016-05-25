@@ -41,7 +41,7 @@ type node = {
 
 type edge
 
-type t = (node, edge) Ograph_extended.ograph_extended
+type t = (node, edge) Ograph_extended.ograph_mutable
 
 val of_ast_c: Ast_c.toplevel -> t
 

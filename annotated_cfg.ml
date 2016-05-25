@@ -59,7 +59,7 @@ type edge =
     Direct
   | PostBackedge
 
-type t = (node, edge) Ograph_extended.ograph_extended
+type t = (node, edge) Ograph_extended.ograph_mutable
 
 (**** Unwrapper and boolean function on Control_flow_c ****)
 
@@ -394,15 +394,15 @@ let annotate_error_handling cfg =
       NodeiSet.empty error_returns
   in
   fold_node
-    (fun cfg (index, node) ->
+    (fun () (index, node) ->
        if NodeiSet.mem index error_branch_nodes ||
           NodeiSet.mem index error_return_post_dominated
        then
          let {parser_node = parser_node} = node in
          cfg#replace_node (index, (mk_node true Unannotated parser_node))
        else
-         cfg)
-    cfg cfg
+         ())
+    () cfg
 
 
 let is_head cfg (index, node) =
@@ -438,7 +438,7 @@ let annotate_resource cfg cn resource =
   | (  Unannotated,             _) ->
     cfg#replace_node
       (cn.index, {cn.node with resource_handling_type = resource})
-  | _ -> cfg
+  | _ -> ()
 
 let is_last_reference cfg cn r =
   let downstream_nodes =
@@ -498,14 +498,15 @@ let annotate_if_release cfg cn =
   let arguments = get_arguments cn.node in
   let released_resource = get_released_resource cfg cn arguments in
   match released_resource with
-    None   -> (None, cfg)
+    None   -> None
   | Some r ->
     let resource =
       match r with
         Void _ -> None
       | Resource r -> Some r
     in
-    (resource , annotate_resource cfg cn (Release r))
+    annotate_resource cfg cn (Release r);
+    resource
 
 
 let get_resource allocated_resources relevant_resources cn =
@@ -542,23 +543,21 @@ let get_resource allocated_resources relevant_resources cn =
   | _ -> Unannotated
 
 let annotate_resource_handling cfg =
-  let (resources', g') =
+  let resources' =
     fold_node
-      (fun (acc, cfg) (i, n) ->
+      (fun acc (i, n) ->
          if n.is_error_handling
          then
-           let (resource, cfg') =
-             annotate_if_release cfg {index = i; node = n}
-           in
+           let resource = annotate_if_release cfg {index = i; node = n} in
            match resource with
-             None   -> (acc   , cfg')
-           | Some r -> (r::acc, cfg')
+             None   -> acc
+           | Some r -> r::acc
          else
-           (acc, cfg))
-      ([], cfg) cfg
+           acc)
+      [] cfg
   in
 
-  let top_node = get_top_node g' in
+  let top_node = get_top_node cfg in
   let config =
     get_forward_config
       (fun _ _ -> true)
@@ -573,13 +572,13 @@ let annotate_resource_handling cfg =
            (rs @ allocated_resources, Some resource)
          | _ ->
            (allocated_resources, None))
-      (fun (_, r) (cn, _) cfg ->
+      (fun (_, r) (cn, _) () ->
          match r with
            Some resource -> annotate_resource cfg cn resource
-         | None          -> cfg)
-      ([], None) g'
+         | None          -> ())
+      ([], None) ()
   in
-  depth_first_fold config g' top_node
+  depth_first_fold config cfg top_node
 
 
 let remove_after_nodes_mutable cfg =
@@ -614,29 +613,29 @@ let of_ast_c ast =
   in
 
   remove_after_nodes_mutable cocci_cfg;
+  let cfg = new Ograph_extended.ograph_mutable in
   let added_nodes = Hashtbl.create 100 in
-  let process_node g (index, node) =
 
-    let add_node g (index, node) =
-      if not (Hashtbl.mem added_nodes index)
+  let process_node cn =
+    let add_node cn =
+      if not (Hashtbl.mem added_nodes cn.index)
       then
         (* **
          * It uses add_nodei so that coccinelle can be used to debug with
          * --control-flow
          * *)
-        let (g, index') = g#add_nodei index (mk_node false Unannotated node) in
-        Hashtbl.add added_nodes index index';
-        g
+        (cfg#add_nodei cn.index (mk_node false Unannotated cn.node);
+         Hashtbl.add added_nodes cn.index cn.index)
       else
-        g
+        ()
     in
 
-    let add_node_and_arc g (index', _) =
+    let add_node_and_arc (index', _) =
       let node' = (cocci_cfg#nodes)#assoc index' in
-      let g' = add_node g (index', node') in
+      add_node {index = index'; node = node'};
 
-      let start_node = Hashtbl.find added_nodes index  in
-      let end_node   = Hashtbl.find added_nodes index' in
+      let start_node = Hashtbl.find added_nodes cn.index in
+      let end_node   = Hashtbl.find added_nodes index'   in
       let post_dominated =
         conditional_get_post_dominated
           (fun _ -> true)
@@ -647,27 +646,23 @@ let of_ast_c ast =
         then PostBackedge
         else Direct
       in
-      g'#add_arc ((start_node, end_node), edge)
+      cfg#add_arc ((start_node, end_node), edge)
     in
 
-    let g' = add_node g (index, node) in
-    let successors = cocci_cfg#successors index in
-    List.fold_left add_node_and_arc g' (successors#tolist)
+    add_node cn;
+    let successors = cocci_cfg#successors cn.index in
+    successors#iter add_node_and_arc
   in
-  let initial_cfg' = new Ograph_extended.ograph_extended in
   let top_node = Control_flow_c.first_node cocci_cfg in
-  let initial_cfg =
-    process_node initial_cfg' (top_node, (cocci_cfg#nodes)#assoc top_node)
-  in
-  let cfg' =
-    breadth_first_fold
-      (get_forward_config
-         (fun _ _ -> true)
-         (fun _ _ _ -> ())
-         (fun _ (cn, _) g ->
-            process_node g (cn.index, cn.node)) () initial_cfg)
-      cocci_cfg
-      (complete_node_of cocci_cfg top_node)
-  in
-  let cfg = annotate_error_handling cfg' in
-  annotate_resource_handling cfg
+  process_node {index = top_node; node = (cocci_cfg#nodes)#assoc top_node};
+  breadth_first_fold
+    (get_forward_config
+       (fun _ _ -> true)
+       (fun _ _ _ -> ())
+       (fun _ (cn, _) () -> process_node cn)
+       () ())
+    cocci_cfg
+    (complete_node_of cocci_cfg top_node);
+  annotate_error_handling cfg;
+  annotate_resource_handling cfg;
+  cfg
