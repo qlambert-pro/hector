@@ -259,10 +259,13 @@ let is_simple_assignment op =
     SimpleAssign -> true
   | _ -> false
 
-let rec is_pointer ((expression, info), _) =
+let rec is_pointer exp =
+  let ((expression, info), _) = exp in
   match expression with
-    Cast (_, e)
-  | ParenExpr e -> is_pointer e
+    ParenExpr e -> is_pointer e
+  | Unary (_, GetRef) -> true
+  | Cast ((_, (Pointer _, _)), _) ->
+    true
   | _ ->
     match !info with
       (Some ((_, (Pointer _, _)), _), _) -> true
@@ -288,21 +291,18 @@ type assignment =
     Value of value
   | Variable of Ast_c.expression
 
-let get_assignment_type =
-  let rec aux expression' =
-    let ((expression, _), _) = expression' in
-    match expression with
-      Cast (_, e)
-    | ParenExpr e -> aux e
-    | Unary (_, UnMinus)
-    | Unary ((((Constant (Int ("0", _))), _), _), Tilde) -> Value (Error Clear)
-    | Ident (RegularName(s, _)) when List.exists ((=) s) built_in_constants ->
-      Value (Error Clear)
-    | Ident _ -> Variable expression'
-    | FunCall _ -> Value (Error Ambiguous)
-    | _ -> Value NonError
-  in
-  aux
+let rec get_assignment_type expression' =
+  let ((expression, _), _) = expression' in
+  match expression with
+    Cast (_, e)
+  | ParenExpr e -> get_assignment_type e
+  | Unary (_, UnMinus)
+  | Unary ((((Constant (Int ("0", _))), _), _), Tilde) -> Value (Error Clear)
+  | Ident (RegularName(s, _)) when List.exists ((=) s) built_in_constants ->
+    Value (Error Clear)
+  | Ident _ -> Variable expression'
+  | FunCall _ -> Value (Error Ambiguous)
+  | _ -> Value NonError
 
 let is_error_return_code alias_f e =
   match alias_f e with
@@ -317,6 +317,25 @@ let is_error_right_value alias_f e =
 
 let expression_equal expression1 expression2 =
   Lib_parsing_c.real_al_expr expression1 = Lib_parsing_c.real_al_expr expression2
+
+let rec get_arguments expression =
+  match unwrap (unwrap expression) with
+    Cast (_, e)
+  | ParenExpr e -> get_arguments e
+  | Assignment (_, op, e) when is_simple_assignment op -> get_arguments e
+  | FunCall (_, arguments) -> Some (expressions_of_arguments arguments)
+  | _ -> None
+
+let resources_of_arguments = function
+    Some xs -> List.find_all is_pointer xs
+  | None    -> []
+
+let is_string e =
+  match unwrap (unwrap e) with
+    StringConstant _
+  | Constant (String _)
+  | Constant (MultiString _) -> true
+  | _ -> false
 
 let apply_on_assignment f (expression, _) =
   match unwrap expression with
@@ -334,8 +353,8 @@ let apply_on_assignment f (expression, _) =
 let apply_on_initialisation f declaration =
   match declaration.v_namei with
     Some (n, ValInit (_, (InitExpr e, _))) ->
-    (*TODO create the correct type and infos*)
-    f (mk_e (Ident n) []) (Some e)
+    f (mk_e_bis (Ident n)
+         (ref (Some (declaration.v_type, NotLocalVar), NotTest)) []) (Some e)
   | _ -> ()
 
 (*TODO None ..*)

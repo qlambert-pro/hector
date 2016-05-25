@@ -23,10 +23,15 @@ open Graph_operations
 
 exception NoCFG
 
+type resource =
+    Void     of Ast_c.expression option
+  | Resource of Ast_c.expression
+
 type resource_handling =
-    Allocation
-  | Release
-  | NoResource
+    Allocation  of resource
+  | Release     of resource
+  | Computation of Ast_c.expression list
+  | Unannotated
 
 type node = {
   is_error_handling: bool;
@@ -42,3 +47,5 @@ val of_ast_c: Ast_c.toplevel -> t
 
 val get_error_handling_branch_head:
   t -> NodeiSet.t
+
+val resource_equal: resource -> resource -> bool

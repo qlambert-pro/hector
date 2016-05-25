@@ -25,10 +25,23 @@ module Asto = Ast_operations
 
 exception NoCFG
 
+type resource =
+    Void     of Ast_c.expression option
+  | Resource of Ast_c.expression
+
+let resource_equal r1 r2 =
+  match (r1, r2) with
+    (Void (None), Void (None)) -> true
+  | (Void (Some e1), Void (Some e2))
+  | (   Resource e1,    Resource e2) ->
+    Asto.expression_equal e1 e2
+  | _ -> false
+
 type resource_handling =
-    Allocation
-  | Release
-  | NoResource
+    Allocation  of resource
+  | Release     of resource
+  | Computation of Ast_c.expression list
+  | Unannotated
 
 type node = {
   is_error_handling: bool;
@@ -157,6 +170,34 @@ let get_assignment_type_through_alias cfg =
     | Asto.Value v    -> v
   in
   aux
+
+let get_arguments n =
+  let arguments = ref None in
+  let visitor = {
+    Visitor_c.default_visitor_c with
+    Visitor_c.kexpr =
+      (fun (k, visitor) e -> arguments := Asto.get_arguments e)
+  }
+  in
+  Visitor_c.vk_node visitor n.parser_node;
+  !arguments
+
+
+let is_referencing_resource r n =
+  let has_referenced = ref true in
+  let visitor = {
+    Visitor_c.default_visitor_c with
+    Visitor_c.kexpr =
+      (fun (k, visitor) e ->
+         has_referenced :=
+           !has_referenced &&
+           Asto.expression_equal e r;
+         k e)
+  }
+  in
+  Visitor_c.vk_node visitor n.parser_node;
+  !has_referenced
+
 
 let get_error_branch cfg n =
   let branch_side = ref Asto.Then in
@@ -358,7 +399,7 @@ let annotate_error_handling cfg =
           NodeiSet.mem index error_return_post_dominated
        then
          let {parser_node = parser_node} = node in
-         cfg#replace_node (index, (mk_node true NoResource parser_node))
+         cfg#replace_node (index, (mk_node true Unannotated parser_node))
        else
          cfg)
     cfg cfg
@@ -384,9 +425,162 @@ let get_error_handling_branch_head cfg =
     nodes
 
 
+let get_top_node cfg =
+  let top_nodes = find_all (fun (_, n) -> is_top_node n) cfg in
+  match top_nodes with
+    [(i, n)] -> {index = i; node = n}
+  | _        -> failwith "malformed control flow graph"
+
+let annotate_resource cfg cn resource =
+  match (cn.node.resource_handling_type, resource) with
+    (            _,     Release _)
+  | (Allocation  _, Computation _)
+  | (  Unannotated,             _) ->
+    cfg#replace_node
+      (cn.index, {cn.node with resource_handling_type = resource})
+  | _ -> cfg
+
+let is_last_reference cfg cn r =
+  let downstream_nodes =
+    breadth_first_fold
+      (get_basic_node_config (fun _ _ -> true))
+      cfg cn
+  in
+  NodeiSet.fold
+    (fun i acc -> acc || is_referencing_resource r (cfg#nodes#assoc i))
+    downstream_nodes
+    false
+
+let is_return_value_tested cfg cn =
+  let assigned_variable = ref None in
+  apply_base_visitor
+    (fun l r -> assigned_variable := Some l)
+    cn.node;
+  match !assigned_variable with
+    None    -> false
+  | Some id ->
+    let downstream_nodes =
+      breadth_first_fold
+        (get_basic_node_config (fun _ _ -> true))
+        cfg cn
+    in
+    NodeiSet.for_all
+      (fun i ->
+         test_if_header
+           (fun e -> Asto.is_testing_identifier id e)
+           false (cfg#nodes#assoc i))
+      downstream_nodes
+
+
 (*TODO implement*)
+let is_interprocedural c = false
+
+
+let get_released_resource cfg cn arguments =
+  let resources = Asto.resources_of_arguments arguments in
+  let should_ignore r = List.exists Asto.is_string r in
+  match (resources, arguments) with
+    (  _, Some   []) -> Some (Void None)
+  | ( [], Some  [r]) when not (Asto.is_string   r) -> Some (Void (Some r))
+  | ([r], Some args) when not (should_ignore args) &&
+                          Asto.is_pointer r ->
+    if (is_last_reference cfg cn r &&
+        not (is_return_value_tested cfg cn)) ||
+       is_interprocedural cn
+    then
+      Some (Resource r)
+    else
+      None
+  | _           -> None
+
+
+let annotate_if_release cfg cn =
+  let arguments = get_arguments cn.node in
+  let released_resource = get_released_resource cfg cn arguments in
+  match released_resource with
+    None   -> (None, cfg)
+  | Some r ->
+    let resource =
+      match r with
+        Void _ -> None
+      | Resource r -> Some r
+    in
+    (resource , annotate_resource cfg cn (Release r))
+
+
+let get_resource allocated_resources relevant_resources cn =
+  let arguments = get_arguments cn.node in
+  let resources = Asto.resources_of_arguments arguments in
+  let should_ignore arguments = List.exists Asto.is_string arguments in
+  let assigned_variable = ref None in
+  apply_base_visitor
+    (fun l _ -> if Asto.is_pointer l then assigned_variable := Some l)
+    cn.node;
+  match (!assigned_variable, resources, arguments) with
+  | (  None,   _, Some   []) -> Allocation (Void None)
+  | (  None,  [], Some  [r]) when not (Asto.is_string   r) ->
+    Allocation (Void (Some r))
+  | (Some r,  [], Some args)
+    when not (should_ignore args) &&
+         List.exists (Asto.expression_equal r) relevant_resources ->
+    Allocation (Resource r)
+  | (     _, [r], Some args)
+    when not (should_ignore args) &&
+         List.exists (Asto.expression_equal r) relevant_resources &&
+         not (List.exists (Asto.expression_equal r) allocated_resources) ->
+    Allocation (Resource r)
+  | (     _,  rs, Some args) when
+      List.exists
+        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
+        rs ->
+    let current_resources =
+      List.filter
+        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
+        rs
+    in
+    Computation current_resources
+  | _ -> Unannotated
+
 let annotate_resource_handling cfg =
-  cfg
+  let (resources', g') =
+    fold_node
+      (fun (acc, cfg) (i, n) ->
+         if n.is_error_handling
+         then
+           let (resource, cfg') =
+             annotate_if_release cfg {index = i; node = n}
+           in
+           match resource with
+             None   -> (acc   , cfg')
+           | Some r -> (r::acc, cfg')
+         else
+           (acc, cfg))
+      ([], cfg) cfg
+  in
+
+  let top_node = get_top_node g' in
+  let config =
+    get_forward_config
+      (fun _ _ -> true)
+      (fun _ (cn, _) (allocated_resources, _) ->
+         let resource = get_resource allocated_resources resources' cn in
+         match (cn.node.is_error_handling, resource) with
+           (false, Allocation (Resource r)) ->
+           (  r::allocated_resources, Some resource)
+         | (false,  Allocation _) ->
+           (     allocated_resources, Some resource)
+         | (    _, Computation rs) ->
+           (rs @ allocated_resources, Some resource)
+         | _ ->
+           (allocated_resources, None))
+      (fun (_, r) (cn, _) cfg ->
+         match r with
+           Some resource -> annotate_resource cfg cn resource
+         | None          -> cfg)
+      ([], None) g'
+  in
+  depth_first_fold config g' top_node
+
 
 let remove_after_nodes_mutable cfg =
   let remove_pred_arcs i =
@@ -400,7 +594,7 @@ let remove_after_nodes_mutable cfg =
       () cfg i
   in
   let remove_after_node () (i, node) =
-    let n = (mk_node false NoResource node) in
+    let n = (mk_node false Unannotated node) in
     if (is_after_node n)
     then
       (remove_pred_arcs i;
@@ -430,7 +624,7 @@ let of_ast_c ast =
          * It uses add_nodei so that coccinelle can be used to debug with
          * --control-flow
          * *)
-        let (g, index') = g#add_nodei index (mk_node false NoResource node) in
+        let (g, index') = g#add_nodei index (mk_node false Unannotated node) in
         Hashtbl.add added_nodes index index';
         g
       else
