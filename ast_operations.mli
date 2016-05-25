@@ -39,7 +39,16 @@ type assignment =
 val get_assignment_type:
   Ast_c.expression -> assignment
 
-val expression_equal : Ast_c.expression -> Ast_c.expression -> bool
+val expression_equal: Ast_c.expression -> Ast_c.expression -> bool
+
+val get_arguments:
+  Ast_c.expression -> (Ast_c.expression list) option
+
+val resources_of_arguments:
+  (Ast_c.expression list) option -> Ast_c.expression list
+
+val is_string:  Ast_c.expression -> bool
+val is_pointer: Ast_c.expression -> bool
 
 (* Side Effects *)
 val apply_on_assignment:

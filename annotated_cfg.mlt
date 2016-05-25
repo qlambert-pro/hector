@@ -91,19 +91,29 @@ let is_length xs l =
   (List.fold_left (+) 0 xs) = l
 
 let is_error_handling_node cfg index =
-  let {is_error_handling = is_error_handling} = cfg#nodes#assoc index in
-  is_error_handling
+  (cfg#nodes#assoc index).is_error_handling
+
+let is_allocation_node cfg index =
+  match (cfg#nodes#assoc index).resource_handling_type with
+    Allocation _ -> true
+  | _            -> false
+
+let is_release_node cfg index =
+  match (cfg#nodes#assoc index).resource_handling_type with
+    Release _ -> true
+  | _         -> false
 
 let compute_is_error_handling_node node_indices = function
-    [cfg] ->
-    let pock =
-      List.map (is_error_handling_node cfg) node_indices in
-    (*
-    List.iter (Printf.eprintf "%B\n%!") pock;
-       *)
-    pock
-
+    [cfg] -> List.map (is_error_handling_node cfg) node_indices
   | cfgs  -> List.map2 is_error_handling_node cfgs node_indices
+
+let compute_is_allocation_node node_indices = function
+    [cfg] -> List.map (is_allocation_node cfg) node_indices
+  | cfgs  -> List.map2 is_allocation_node cfgs node_indices
+
+let compute_is_release_node node_indices = function
+    [cfg] -> List.map (is_release_node cfg) node_indices
+  | cfgs  -> List.map2 is_release_node cfgs node_indices
 
 let compare_with_size sets l =
   let sizes =
@@ -175,4 +185,27 @@ let () =
         " does not behave as expected on "
         (compute_is_error_handling_node [9; 12; 18; 19; 28; 29; 32])
         [false; true; true; true; false; false; false] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/loop.c"
+        " should return true for node 13 of "
+        (compute_is_release_node [13]) [true] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/error_handling.c"
+        " does not behave as expected on "
+        (compute_is_release_node [18; 22]) [true; false] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/simple_resource.c"
+        " does not behave as expected on "
+        (compute_is_release_node [30; 42; 43; 49])
+        [false; true; true; true] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/error_handling.c"
+        " does not behave as expected on "
+        (compute_is_allocation_node [8; 9; 22; 29])
+        [true; false; false; false] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/simple_resource.c"
+        " does not behave as expected on "
+        (compute_is_allocation_node [19; 20; 22; 11])
+        [true; false; false; true] (=);
     ]
