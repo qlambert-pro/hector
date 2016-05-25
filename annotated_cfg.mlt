@@ -26,6 +26,7 @@ let get_cfgs filename =
   let (functions', _) = Common.unzip program in
   let functions'' = List.tl (List.rev functions') in
   Flag_parsing_c.verbose_type := false;
+
   let functions =
     List.map fst
       (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
@@ -160,52 +161,52 @@ let () =
         "get_nodes_leading_to_error_return" "./tests/loop.c"
         " should return a set of 13 elements for "
         concat_get_nodes_leading_to_error_return 13 compare_with_size;
-      (*I am using "spatch --control-flow" to figure out the indices*)
+      (*I am using the print_graph tool to figure out the indices*)
       mk_cfg_test
         "is_on_error_branch" "./tests/simple_reachable_returns.c"
-        " should return true for node 8 and 9 of "
-        (compute_is_on_error_branch [8] [9]) [true] (=);
+        " should return true for node 6 and 7 of "
+        (compute_is_on_error_branch [6] [7]) [true] (=);
       mk_cfg_test
         "is_on_error_branch" "./tests/simple_reachable_returns.c"
-        " should return false for node 8 and 10 of "
-        (compute_is_on_error_branch [8] [10]) [false] (=);
+        " should return false for node 6 and 8 of "
+        (compute_is_on_error_branch [6] [8]) [false] (=);
       mk_cfg_test
         "is_on_error_branch" "./tests/error_branches.c"
         " does not behave as expected on "
         (compute_is_on_error_branch
-           [8; 10; 10; 10; 10; 10; 7]
-           [9; 11; 11; 11; 11; 11; 8])
+           [6; 8; 8; 8; 8; 8; 5]
+           [7; 9; 9; 9; 9; 9; 6])
         [true; false; true; true; false; true; true] (=);
       mk_cfg_test
         "annotate_error_handling" "./tests/simple_reachable_returns.c"
-        " should return true for node 9 of "
-        (compute_is_error_handling_node [9]) [true] (=);
+        " should return true for node 7 of "
+        (compute_is_error_handling_node [7]) [true] (=);
       mk_cfg_test
         "annotate_error_handling" "./tests/error_handling.c"
         " does not behave as expected on "
-        (compute_is_error_handling_node [9; 12; 18; 19; 28; 29; 32])
+        (compute_is_error_handling_node [9; 10; 15; 21; 16; 8; 19])
         [false; true; true; true; false; false; false] (=);
       mk_cfg_test
         "annotate_resource_handling" "./tests/loop.c"
-        " should return true for node 13 of "
-        (compute_is_release_node [13]) [true] (=);
+        " should return true for node 11 of "
+        (compute_is_release_node [11]) [true] (=);
       mk_cfg_test
         "annotate_resource_handling" "./tests/error_handling.c"
         " does not behave as expected on "
-        (compute_is_release_node [18; 22]) [true; false] (=);
+        (compute_is_release_node [18; 27]) [true; false] (=);
       mk_cfg_test
         "annotate_resource_handling" "./tests/simple_resource.c"
         " does not behave as expected on "
-        (compute_is_release_node [30; 42; 43; 49])
+        (compute_is_release_node [27; 36; 38; 43])
         [false; true; true; true] (=);
       mk_cfg_test
         "annotate_resource_handling" "./tests/error_handling.c"
         " does not behave as expected on "
-        (compute_is_allocation_node [8; 9; 22; 29])
+        (compute_is_allocation_node [6; 7; 27; 23])
         [true; false; false; false] (=);
       mk_cfg_test
         "annotate_resource_handling" "./tests/simple_resource.c"
         " does not behave as expected on "
-        (compute_is_allocation_node [19; 20; 22; 11])
+        (compute_is_allocation_node [14; 16; 19; 8])
         [true; false; false; true] (=);
     ]
