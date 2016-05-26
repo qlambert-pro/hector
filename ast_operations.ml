@@ -370,7 +370,8 @@ let rec which_is_the_error_branch alias_f f (expression, _) =
     f Then
   | FunCall _ -> f Then
   | Assignment (_, op, e)
-    when is_simple_assignment op && is_error_right_value alias_f e -> f Then
+    when is_simple_assignment op && is_error_right_value alias_f e ->
+    f Then
   | Ident _ -> f Then
   | _ -> f None
 
@@ -381,7 +382,9 @@ let rec is_testing_identifier identifier expression' =
     ParenExpr e        -> is_testing_identifier identifier e
   | Unary (e, _)       -> expression_equal identifier e
   | Binary (e1, _, e2) -> expression_equal identifier e1 ||
-                          expression_equal identifier e2
+                          expression_equal identifier e2 ||
+                          is_testing_identifier identifier e1 ||
+                          is_testing_identifier identifier e2
   | Assignment (_, op, e) when is_simple_assignment op ->
     expression_equal identifier e
   | _ -> expression_equal identifier expression'

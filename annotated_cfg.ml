@@ -291,7 +291,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                   None -> (Some cn, acc)
                 | Some pred ->
                   let is_on_error_branch_result =
-                    let head    = cn.node in
+                    let head = cn.node in
                     let is_correct_if =
                       test_if_header
                         (Asto.is_testing_identifier identifier) false pred.node
