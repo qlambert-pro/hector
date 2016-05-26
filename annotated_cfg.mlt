@@ -35,7 +35,7 @@ let get_cfgs filename =
       Control_flow_c_build.Error _
     | NoCFG -> acc
   in
-  List.rev (List.fold_left aux [] functions)
+  List.fold_left aux [] functions
 
 let get_identifiers cfg =
   fold_node
@@ -81,10 +81,11 @@ let concat_get_nodes_leading_to_error_return cfgs =
  * this function expects indices to be valid
  * *)
 let compute_is_on_error_branch node_indices head_indices cfgs =
-  List.map2
-    (fun x (a, b) ->
-       is_on_error_branch x (complete_node_of x a) (x#nodes#assoc b))
-    cfgs (List.combine node_indices head_indices)
+    List.map2
+      (fun x (a, b) ->
+         is_on_error_branch x (complete_node_of x a) (x#nodes#assoc b))
+      cfgs (List.combine node_indices head_indices)
+
 
 let is_length xs l =
   (List.fold_left (+) 0 xs) = l
@@ -95,7 +96,8 @@ let is_error_handling_node cfg index =
 
 let compute_is_error_handling_node node_indices = function
     [cfg] ->
-    let pock = List.map (is_error_handling_node cfg) node_indices in
+    let pock =
+      List.map (is_error_handling_node cfg) node_indices in
     (*
     List.iter (Printf.eprintf "%B\n%!") pock;
        *)
@@ -161,9 +163,9 @@ let () =
         "is_on_error_branch" "./tests/error_branches.c"
         " does not behave as expected on "
         (compute_is_on_error_branch
-           [7; 10; 10; 10; 10; 10; 8]
-           [8; 11; 11; 11; 11; 11; 9])
-        [true; true; false; true; true; false; true] (=);
+           [8; 10; 10; 10; 10; 10; 7]
+           [9; 11; 11; 11; 11; 11; 8])
+        [true; false; true; true; false; true; true] (=);
       mk_cfg_test
         "annotate_error_handling" "./tests/simple_reachable_returns.c"
         " should return true for node 9 of "
