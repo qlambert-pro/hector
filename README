@@ -1,0 +1,18 @@
+If you read this before cloning the repository, clone it using:
+$ git clone --recursive https://scm.gforge.inria.fr/anonscm/git/ehc/hector.git
+
+otherwise do
+
+$ cd coccinelle
+$ git submodule init
+$ git submodule update
+
+To compile hector just run:
+
+$ make
+
+---------
+
+To compile a tool to visualize the control flow graph used by hector run:
+
+$ make print_graph
