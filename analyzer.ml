@@ -69,9 +69,6 @@ let analyze_def toplevel full_file all_fn ((defbis, iifunc1::_) : Ast_c.definiti
   in
   let func_name = fst (Ast_c.get_s_and_ii_of_name name) in
 
-  Var_dec.func_name := func_name;
-  Var_dec.file_info := Ast_c.file_of_info iifunc1;
-
   let clean_ast = Def.remove_stmtElelist body in
 
   try
