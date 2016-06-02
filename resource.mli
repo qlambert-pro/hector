@@ -19,8 +19,20 @@
  * Hector under other licenses.
  * *)
 
-type release =
-    Release of (Ast_c.expression list * Ast_c.statement)
 
-type resource =
-    Resource of (Ast_c.statement * Ast_c.expression list * Ast_c.statement)
+module GO = Graph_operations
+module ACFG = Annotated_cfg
+
+type exemplar = {
+  alloc: ACFG.node GO.complete_node;
+  alloc_name: string;
+  computations: (ACFG.node GO.complete_node) list;
+  release: ACFG.node GO.complete_node;
+  release_name: string;
+  res: ACFG.resource;
+}
+
+type resource_usage = {
+  node: ACFG.node GO.complete_node;
+  resource: ACFG.resource;
+}

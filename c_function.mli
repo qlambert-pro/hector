@@ -19,33 +19,22 @@
  * Hector under other licenses.
  * *)
 
-type c_function
 
-val mk_c_function: Ast_c.toplevel -> Ast_c.statement list -> c_function
+module GO = Graph_operations
+module R = Resource
+module ACFG = Annotated_cfg
 
-val find_interproc_calls:
-  (Ast_c.name * 'a * Ast_c.statement list) list ->
-  Block.block ->
-  c_function ->
-  Resource.resource list ->
-  Resource.resource list
+type fault = {
+  exemplar: R.exemplar;
+  block_head: ACFG.node GO.complete_node;
+}
 
-(* Return a list of error handling blocks *)
 val find_errorhandling:
-  c_function -> Block.block list
+  ACFG.t -> (ACFG.node GO.complete_node) list
 
-val is_resource_allocated_properly:
-  Block.block -> Block.block list -> c_function -> Resource.resource -> bool
+val get_exemplars:
+  ACFG.t -> (ACFG.node GO.complete_node) list -> Resource.exemplar list
 
-val is_resource_released:
-  Block.block -> Block.block list -> c_function -> Resource.resource -> bool
-
-(* **
- * Return true if the allocation was the last time the released resource was
- * used.
- * *)
-val resource_of_release_temp:
-  Block.block -> Block.block list -> c_function -> Resource.resource -> bool
-
-val get_resources:
-  c_function -> Block.block list -> Resource.resource list
+val get_faults:
+  ACFG.t -> (ACFG.node GO.complete_node) list -> Resource.exemplar ->
+  fault list

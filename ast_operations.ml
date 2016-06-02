@@ -304,6 +304,20 @@ let rec get_assignment_type expression' =
   | FunCall _ -> Value (Error Ambiguous)
   | _ -> Value NonError
 
+
+let rec function_name_of_expression ((expression, _), _) =
+  match expression with
+    Cast (_, e)
+  | ParenExpr e -> function_name_of_expression e
+  | FunCall ((((Ast_c.Ident (Ast_c.RegularName (name, [_]))), _), _), _) ->
+    Some name
+  | _ -> None
+
+
+let function_name_of_statement = function
+    (ExprStatement (Some e), _) -> function_name_of_expression e
+  | _ -> None
+
 let is_error_return_code alias_f e =
   match alias_f e with
     Error Clear -> true
@@ -317,6 +331,10 @@ let is_error_right_value alias_f e =
 
 let expression_equal expression1 expression2 =
   Lib_parsing_c.real_al_expr expression1 = Lib_parsing_c.real_al_expr expression2
+
+let statement_equal st1 st2 =
+  Lib_parsing_c.real_al_statement st1 = Lib_parsing_c.real_al_statement st2
+
 
 let rec get_arguments expression =
   match unwrap (unwrap expression) with

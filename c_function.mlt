@@ -30,21 +30,12 @@ let get_c_functions filename =
     List.map fst
       (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
   in
-  let get_c_functions_aux acc toplevel =
-    match toplevel with
-      Ast_c.Definition (defbis, _) ->
-      let {Ast_c.f_body = body';
-           Ast_c.f_name = (Ast_c.RegularName (name, _))
-          } = defbis in
-      let body = Def.remove_stmtElelist body' in
-      (try (mk_c_function toplevel body)::acc with
-        Control_flow_c_build.Error _
-      | Annotated_cfg.NoCFG -> acc)
-    | _ -> failwith "the file should only define functions"
+  let aux acc toplevel =
+    try (Annotated_cfg.of_ast_c toplevel)::acc with
+      Control_flow_c_build.Error _
+    | Annotated_cfg.NoCFG -> acc
   in
-  List.fold_left get_c_functions_aux [] functions
-
-
+  List.fold_left aux [] functions
 
 let mk_cfg_test title filename msg test res compare =
   let c_functions = get_c_functions filename in

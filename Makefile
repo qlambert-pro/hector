@@ -40,8 +40,7 @@ PRINT_GRAPH_TARGET=print_graph
 
 TARGET=hector
 
-CORE_SRC=def.ml ast_operations.ml graph_operations.ml\
-    annotated_cfg.ml
+CORE_SRC=ast_operations.ml graph_operations.ml annotated_cfg.ml
 
 FILTER_SRC=tools/filter_using_error_handling.ml
 PRINT_GRAPH_SRC=tools/cocci_addon.ml tools/print_graph.ml
@@ -51,8 +50,8 @@ SRCI=ast_operations.mli graph_operations.mli annotated_cfg.mli\
 
 TEST=annotated_cfg.mlt c_function.mlt
 
-HECTOR_SRC=resource.ml block.ml report.ml c_function.ml org.ml analyzer.ml
-MAIN=main.ml 
+HECTOR_SRC=resource.ml block.ml c_function.ml report.ml org.ml analyzer.ml
+MAIN=main.ml
 
 SYSLIBS=str.cma unix.cma bigarray.cma nums.cma $(KAPUTT_LIBS)
 LIBS=coccinelle/commons/commons.cma coccinelle/globals/globals.cma\

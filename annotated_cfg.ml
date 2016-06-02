@@ -31,8 +31,7 @@ type resource =
 
 let resource_equal r1 r2 =
   match (r1, r2) with
-    (Void (None), Void (None)) -> true
-  | (Void (Some e1), Void (Some e2))
+    (Void _ , Void _) -> true
   | (   Resource e1,    Resource e2) ->
     Asto.expression_equal e1 e2
   | _ -> false
@@ -54,6 +53,40 @@ let mk_node is_error_handling resource_handling_type parser_node = {
   resource_handling_type = resource_handling_type;
   parser_node = parser_node
 }
+
+let is_similar_statement n1 n2 =
+  n1.index = n2.index ||
+  match (n1.node.parser_node, n2.node.parser_node) with
+    (((Control_flow_c.ExprStatement (st1, _), _), _),
+     ((Control_flow_c.ExprStatement (st2, _), _), _)) ->
+    Asto.statement_equal st1 st2
+  | _ -> false
+
+
+let get_function_call_name n =
+  match n.node.parser_node with
+    ((Control_flow_c.ExprStatement (st, _), _), _) ->
+    Asto.function_name_of_statement st
+  | _ -> None
+
+let statement_info_visitor f = {
+  Visitor_c.default_visitor_c with
+  Visitor_c.kexpr = (fun (k, visitor) (_, i)-> f i);
+}
+
+let line_number_of_node cn =
+  let line_number = ref 0 in
+  let v = statement_info_visitor
+      (fun i ->
+         if i <> []
+         then
+           let (_, _, (l,_), _) = Lib_parsing_c.lin_col_by_pos i in
+           line_number := l
+         else
+           ())
+  in
+  Visitor_c.vk_node v cn.node.parser_node;
+  !line_number
 
 type edge =
     Direct
@@ -419,8 +452,7 @@ let is_head cfg (index, node) =
 let get_error_handling_branch_head cfg =
   let nodes = find_all (is_head cfg) cfg in
   List.fold_left
-    (fun acc (index, _) -> NodeiSet.add index acc) NodeiSet.empty
-    nodes
+    (fun acc (i, n) -> {node = n; index = i}::acc) [] nodes
 
 
 let get_top_node cfg =
@@ -661,3 +693,9 @@ let of_ast_c ast =
   annotate_error_handling cfg;
   annotate_resource_handling cfg;
   cfg
+
+let is_returning_resource resource cn =
+  match resource with
+    Void _     -> false
+  | Resource r ->
+    test_returned_expression (Asto.expression_equal r) false cn.node

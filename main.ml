@@ -21,28 +21,6 @@
 
 open Common
 
-
-let collec_all_fn =
-  let extract_functions acc el =
-    match el with
-      Ast_c.Definition (defbis, _) ->
-      let { Ast_c.f_name = name;
-            Ast_c.f_type = (_, (paramst, _));
-            Ast_c.f_body = statxs;
-          }  = defbis
-      in
-      (name, paramst, (Def.remove_stmtElelist statxs))::acc
-    | Ast_c.Declaration _
-    | Ast_c.CppTop _
-    | Ast_c.EmptyDef _
-    | Ast_c.NotParsedCorrectly _
-    | Ast_c.FinalDef _
-    | Ast_c.IfdefTop _
-    | Ast_c.MacroTop _ -> acc
-    | Ast_c.Namespace _ -> failwith "namespaces not supported"
-  in
-  List.fold_left extract_functions []
-
 let test_type_c infile =
   let (program2, _stat) =
     Common.profile_code "parsing" (fun () -> Parse_c.parse_c_and_cpp false infile) in
@@ -59,12 +37,10 @@ let test_type_c infile =
   in
   let (program, infos) = Common.unzip program2' in
 
-  let all_fn = Common.profile_code "collec_all_fn" (fun () ->
-      collec_all_fn program) in
   let rec loop = function
       []-> []
     | h::t->
-      (Analyzer.analyze_toplevel program all_fn h)::(loop t)
+      (Analyzer.analyze_toplevel h)::(loop t)
 
   in Common.profile_code "analysis" (fun () -> loop program)
 
