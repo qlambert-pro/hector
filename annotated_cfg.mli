@@ -46,6 +46,13 @@ type t = (node, edge) Ograph_extended.ograph_mutable
 val of_ast_c: Ast_c.toplevel -> t
 
 val get_error_handling_branch_head:
-  t -> NodeiSet.t
+  t -> (node complete_node) list
 
 val resource_equal: resource -> resource -> bool
+val is_similar_statement: node complete_node -> node complete_node -> bool
+
+val get_function_call_name:
+  node complete_node -> string option
+
+val line_number_of_node:
+  node complete_node -> int
