@@ -46,11 +46,11 @@ FILTER_SRC=tools/filter_using_error_handling.ml
 PRINT_GRAPH_SRC=tools/cocci_addon.ml tools/print_graph.ml
 
 SRCI=ast_operations.mli graph_operations.mli annotated_cfg.mli\
-     resource.mli block.mli c_function.mli org.mli analyzer.mli
+      c_function.mli org.mli analyzer.mli
 
 TEST=annotated_cfg.mlt c_function.mlt
 
-HECTOR_SRC=resource.ml block.ml c_function.ml report.ml org.ml analyzer.ml
+HECTOR_SRC=c_function.ml report.ml org.ml analyzer.ml
 MAIN=main.ml
 
 SYSLIBS=str.cma unix.cma bigarray.cma nums.cma $(KAPUTT_LIBS)

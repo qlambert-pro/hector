@@ -22,15 +22,40 @@
 open Common
 
 module GO = Graph_operations
-module R = Resource
 module ACFG = Annotated_cfg
 
+type exemplar = {
+  alloc: ACFG.node GO.complete_node;
+  alloc_name: string;
+  computations: (ACFG.node GO.complete_node) list;
+  release: ACFG.node GO.complete_node;
+  release_name: string;
+  res: ACFG.resource;
+}
+
+type resource_usage = {
+  node: ACFG.node GO.complete_node;
+  resource: ACFG.resource;
+}
 type fault = {
-  exemplar: R.exemplar;
+  exemplar: exemplar;
   block_head: ACFG.node GO.complete_node;
 }
 
 let find_errorhandling cfg = Annotated_cfg.get_error_handling_branch_head cfg
+
+let get_resource_release cfg block_head acc =
+  GO.breadth_first_fold
+    (GO.get_forward_config
+       (fun _ _ -> true)
+       (fun _ _ _ -> ())
+       (fun _ (cn, _) res ->
+          match cn.GO.node.Annotated_cfg.resource_handling_type with
+            ACFG.Release r ->
+            ({node = cn; resource = r}, block_head)::res
+          | _         -> res)
+       () acc)
+    cfg block_head
 
 (*TODO study trough aliases*)
 let get_previous_statements cfg block_head release =
@@ -39,7 +64,7 @@ let get_previous_statements cfg block_head release =
        (fun _ (cn, _) ->
           match cn.GO.node.ACFG.resource_handling_type with
             ACFG.Allocation r
-            when ACFG.resource_equal r release.R.resource ->
+            when ACFG.resource_equal r release.resource ->
             false
           | ACFG.Allocation _
           | ACFG.Release _
@@ -52,7 +77,7 @@ let get_previous_statements cfg block_head release =
             when List.exists
                 (fun r ->
                    ACFG.resource_equal
-                     release.R.resource (ACFG.Resource r))
+                     release.resource (ACFG.Resource r))
                 rs ->
             cn::acc
           | ACFG.Allocation _
@@ -63,7 +88,7 @@ let get_previous_statements cfg block_head release =
        (fun acc (cn, _) res ->
           match cn.GO.node.ACFG.resource_handling_type with
             ACFG.Allocation r
-            when ACFG.resource_equal r release.R.resource ->
+            when ACFG.resource_equal r release.resource ->
             (cn, acc)::res
           | ACFG.Allocation _
           | ACFG.Release _
@@ -76,7 +101,7 @@ let get_previous_statements cfg block_head release =
 let get_exemplars cfg error_blocks =
 
   let get_resource_release acc block =
-    Block.get_resource_release cfg block acc
+    get_resource_release cfg block acc
   in
 
   let releases = List.fold_left get_resource_release [] error_blocks in
@@ -87,18 +112,18 @@ let get_exemplars cfg error_blocks =
 
     List.fold_left (fun acc (alloc, computations) ->
         let a = ACFG.get_function_call_name alloc in
-        let r = ACFG.get_function_call_name release.R.node in
+        let r = ACFG.get_function_call_name release.node in
         let (an, rn) =
           match (a, r) with
             (Some a, Some r) -> (a, r)
           | _ -> failwith "missing function call from alloc or release"
         in
-        {R.alloc        = alloc;
-         R.alloc_name   = an;
-         R.computations = computations;
-         R.release      = release.R.node;
-         R.release_name = rn;
-         R.res          = release.R.resource;
+        {alloc        = alloc;
+         alloc_name   = an;
+         computations = computations;
+         release      = release.node;
+         release_name = rn;
+         res          = release.resource;
         }::acc) acc allocs
   in
   List.fold_left exemplars_of_release [] releases
@@ -140,7 +165,7 @@ let get_faults cfg error_blocks exemplar =
             when List.exists
                 (fun r ->
                    ACFG.resource_equal
-                     exemplar.R.res (ACFG.Resource r))
+                     exemplar.res (ACFG.Resource r))
                 rs ->
             if ACFG.is_similar_statement cn e
             then (acc, t)
@@ -156,12 +181,12 @@ let get_faults cfg error_blocks exemplar =
               List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
             in
             if acc && computations = [] &&
-               not (is_releasing_resource cfg exemplar.R.res block) &&
-               not (is_returning_resource cfg exemplar.R.res block)
+               not (is_releasing_resource cfg exemplar.res block) &&
+               not (is_returning_resource cfg exemplar.res block)
             then
               {exemplar = exemplar; block_head = block}::res
             else
               res
           with Not_found -> res)
-       (true, exemplar.R.computations) [])
-    cfg exemplar.R.alloc
+       (true, exemplar.computations) [])
+    cfg exemplar.alloc

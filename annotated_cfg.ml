@@ -62,13 +62,6 @@ let is_similar_statement n1 n2 =
     Asto.statement_equal st1 st2
   | _ -> false
 
-
-let get_function_call_name n =
-  match n.node.parser_node with
-    ((Control_flow_c.ExprStatement (st, _), _), _) ->
-    Asto.function_name_of_statement st
-  | _ -> None
-
 let statement_info_visitor f = {
   Visitor_c.default_visitor_c with
   Visitor_c.kexpr = (fun (k, visitor) (_, i)-> f i);
@@ -214,6 +207,18 @@ let get_arguments n =
   in
   Visitor_c.vk_node visitor n.parser_node;
   !arguments
+
+let get_function_call_name n =
+  let name = ref None in
+  let visitor = {
+    Visitor_c.default_visitor_c with
+    Visitor_c.kexpr =
+      (fun (k, visitor) e -> name := Asto.function_name_of_expression e)
+  }
+  in
+  Visitor_c.vk_node visitor n.node.parser_node;
+  !name
+
 
 
 let is_referencing_resource r n =

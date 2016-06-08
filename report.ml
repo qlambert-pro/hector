@@ -21,16 +21,18 @@
 
 open Common
 
+module CF = C_function
+
 let generate_report_new func_name infos f =
-  let ao = f.C_function.exemplar.Resource.alloc_name in
-  let ro = f.C_function.exemplar.Resource.release_name in
+  let ao = f.CF.exemplar.CF.alloc_name in
+  let ro = f.CF.exemplar.CF.release_name in
   let filename = Ast_c.file_of_info infos in
 
   let st_lineno =
-    Annotated_cfg.line_number_of_node f.C_function.exemplar.Resource.release
+    Annotated_cfg.line_number_of_node f.CF.exemplar.CF.release
   in
   let line_no =
-    Annotated_cfg.line_number_of_node f.C_function.block_head
+    Annotated_cfg.line_number_of_node f.CF.block_head
   in
 
   Printf.printf

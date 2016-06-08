@@ -21,11 +21,18 @@
 
 
 module GO = Graph_operations
-module R = Resource
 module ACFG = Annotated_cfg
 
+type exemplar = {
+  alloc: ACFG.node GO.complete_node;
+  alloc_name: string;
+  computations: (ACFG.node GO.complete_node) list;
+  release: ACFG.node GO.complete_node;
+  release_name: string;
+  res: ACFG.resource;
+}
 type fault = {
-  exemplar: R.exemplar;
+  exemplar: exemplar;
   block_head: ACFG.node GO.complete_node;
 }
 
@@ -33,8 +40,7 @@ val find_errorhandling:
   ACFG.t -> (ACFG.node GO.complete_node) list
 
 val get_exemplars:
-  ACFG.t -> (ACFG.node GO.complete_node) list -> Resource.exemplar list
+  ACFG.t -> (ACFG.node GO.complete_node) list -> exemplar list
 
 val get_faults:
-  ACFG.t -> (ACFG.node GO.complete_node) list -> Resource.exemplar ->
-  fault list
+  ACFG.t -> (ACFG.node GO.complete_node) list -> exemplar -> fault list

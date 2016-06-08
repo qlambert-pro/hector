@@ -23,17 +23,15 @@
 open Common
 
 module ACFG = Annotated_cfg
-module R = Resource
+module CF   = C_function
+module GO   = Graph_operations
 
 
 let remove_doubles acc c =
   if List.exists
       (fun f ->
-         ACFG.resource_equal
-           f.C_function.exemplar.R.res
-           c.C_function.exemplar.R.res &&
-         f.C_function.block_head.Graph_operations.index =
-         c.C_function.block_head.Graph_operations.index)
+         ACFG.resource_equal f.CF.exemplar.CF.res c.CF.exemplar.CF.res &&
+         f.CF.block_head.GO.index = c.CF.block_head.GO.index)
       acc
   then
     acc

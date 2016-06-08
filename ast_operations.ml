@@ -305,18 +305,30 @@ let rec get_assignment_type expression' =
   | _ -> Value NonError
 
 
-let rec function_name_of_expression ((expression, _), _) =
+let rec identifier_name_of_expression exp =
+  let ((expression, _), _) = exp in
   match expression with
     Cast (_, e)
-  | ParenExpr e -> function_name_of_expression e
-  | FunCall ((((Ast_c.Ident (Ast_c.RegularName (name, [_]))), _), _), _) ->
+  | RecordAccess (e ,_)
+  | RecordPtAccess (e ,_)
+  | ParenExpr e -> identifier_name_of_expression e
+  | Ident (RegularName (name, [_])) ->
     Some name
   | _ -> None
 
-
-let function_name_of_statement = function
-    (ExprStatement (Some e), _) -> function_name_of_expression e
+let rec function_name_of_expression exp  =
+  let ((expression, _), _) = exp in
+  match expression with
+    Cast (_, e)
+  | RecordAccess (e ,_)
+  | RecordPtAccess (e ,_)
+  | ParenExpr e -> function_name_of_expression e
+  | Assignment (_, op, e) when is_simple_assignment op ->
+    function_name_of_expression e
+  | FunCall (name, _) ->
+    identifier_name_of_expression name
   | _ -> None
+
 
 let is_error_return_code alias_f e =
   match alias_f e with
