@@ -49,11 +49,11 @@ val get_error_handling_branch_head:
   t -> (node complete_node) list
 
 val resource_equal: resource -> resource -> bool
+val is_void_resource: resource -> bool
 val is_similar_statement: node complete_node -> node complete_node -> bool
 val is_returning_resource: resource -> node complete_node -> bool
+val is_referencing_resource: resource -> node -> bool
 
-val get_function_call_name:
-  node complete_node -> string option
+val get_function_call_name: node complete_node -> string option
 
-val line_number_of_node:
-  node complete_node -> int
+val line_number_of_node: node complete_node -> int

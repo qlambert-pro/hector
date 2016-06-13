@@ -221,20 +221,27 @@ let get_function_call_name n =
   !name
 
 
-let is_referencing_resource r n =
-  let has_referenced = ref true in
-  let visitor = {
-    Visitor_c.default_visitor_c with
-    Visitor_c.kexpr =
-      (fun (k, visitor) e ->
-         has_referenced :=
-           !has_referenced &&
-           Asto.expression_equal e r;
-         k e)
-  }
-  in
-  Visitor_c.vk_node visitor n.parser_node;
-  !has_referenced
+let is_void_resource = function
+    Void _ -> true
+  | _      -> false
+
+let is_referencing_resource resource n =
+  match resource with
+    Void _     -> false
+  | Resource r ->
+    let has_referenced = ref true in
+    let visitor = {
+      Visitor_c.default_visitor_c with
+      Visitor_c.kexpr =
+        (fun (k, visitor) e ->
+           has_referenced :=
+             !has_referenced &&
+             Asto.expression_equal e r;
+           k e)
+    }
+    in
+    Visitor_c.vk_node visitor n.parser_node;
+    !has_referenced
 
 
 let get_error_branch cfg n =
@@ -339,64 +346,64 @@ let get_nodes_leading_to_error_return cfg error_assignments =
     match error_type with
       Asto.Clear ->
       (Common.profile_code "clear" (fun () ->
-      let nodes =
-        breadth_first_fold
-          (get_basic_node_config
-             (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node)))
-          cfg (complete_node_of cfg index)
-      in
-      let reachable_returns = filter_returns cfg identifier nodes in
-      if reachable_returns != NodeiSet.empty
-      then
-        let error_branch_nodes =
-          add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
-        in
-        if NodeiSet.mem index error_branch_nodes
-        then
-          add_post_dominated cfg index error_branch_nodes
-        else
-          error_branch_nodes
-      else
-        acc))
+           let nodes =
+             breadth_first_fold
+               (get_basic_node_config
+                  (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node)))
+               cfg (complete_node_of cfg index)
+           in
+           let reachable_returns = filter_returns cfg identifier nodes in
+           if reachable_returns != NodeiSet.empty
+           then
+             let error_branch_nodes =
+               add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
+             in
+             if NodeiSet.mem index error_branch_nodes
+             then
+               add_post_dominated cfg index error_branch_nodes
+             else
+               error_branch_nodes
+           else
+             acc))
     | Asto.Ambiguous ->
       (Common.profile_code "ambiguous" (fun () ->
-      let nodes =
-        depth_first_fold
-          (get_forward_config
-             (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node))
-             (*TODO is_testing_identifier is incorrect*)
-             (* add complex if cases to prove it *)
-             (*TODO use a finer memory of the error branch *)
-             (fun _ (cn, e) (pred, acc) ->
-                match pred with
-                  None -> (Some cn, acc)
-                | Some pred ->
-                  let is_on_error_branch_result =
-                    let head = cn.node in
-                    let is_correct_if =
-                      test_if_header
-                        (Asto.is_testing_identifier identifier) false pred.node
-                    in
-                    let is_correct_branch =
-                      is_on_error_branch cfg pred head
-                    in
-                    is_correct_if && is_correct_branch
-                  in
-                  (Some cn, acc || is_on_error_branch_result))
-             (fun (_, acc) (cn, _) res ->
-                if acc
-                then NodeiSet.add cn.index res
-                else res)
-             (None, false)
-             NodeiSet.empty)
-          cfg (complete_node_of cfg index)
-      in
-      let reachable_returns = filter_returns cfg identifier nodes in
-      if reachable_returns != NodeiSet.empty
-      then
-        add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
-      else
-        acc
+           let nodes =
+             depth_first_fold
+               (get_forward_config
+                  (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node))
+                  (*TODO is_testing_identifier is incorrect*)
+                  (* add complex if cases to prove it *)
+                  (*TODO use a finer memory of the error branch *)
+                  (fun _ (cn, e) (pred, acc) ->
+                     match pred with
+                       None -> (Some cn, acc)
+                     | Some pred ->
+                       let is_on_error_branch_result =
+                         let head = cn.node in
+                         let is_correct_if =
+                           test_if_header
+                             (Asto.is_testing_identifier identifier) false pred.node
+                         in
+                         let is_correct_branch =
+                           is_on_error_branch cfg pred head
+                         in
+                         is_correct_if && is_correct_branch
+                       in
+                       (Some cn, acc || is_on_error_branch_result))
+                  (fun (_, acc) (cn, _) res ->
+                     if acc
+                     then NodeiSet.add cn.index res
+                     else res)
+                  (None, false)
+                  NodeiSet.empty)
+               cfg (complete_node_of cfg index)
+           in
+           let reachable_returns = filter_returns cfg identifier nodes in
+           if reachable_returns != NodeiSet.empty
+           then
+             add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
+           else
+             acc
          ))
   in
   Hashtbl.fold get_reachable_nodes error_assignments NodeiSet.empty
@@ -407,52 +414,52 @@ let get_nodes_leading_to_error_return cfg error_assignments =
 let annotate_error_handling cfg =
   let error_returns, identifiers =
 
-  (Common.profile_code "get_returns" (fun () ->
-    fold_node
-      (fun (error_returns, id_set) (i, node) ->
-         let error_type =
-           test_returned_expression Asto.get_assignment_type
-             (Asto.Value Asto.NonError) node
-         in
-         match error_type with
-           Asto.Value (Asto.Error Asto.Clear) ->
-           ((i,node)::error_returns, id_set)
-         | Asto.Variable e ->
-           (error_returns, e::id_set)
-         | _ -> (error_returns, id_set))
-      ([], []) cfg))
+    (Common.profile_code "get_returns" (fun () ->
+         fold_node
+           (fun (error_returns, id_set) (i, node) ->
+              let error_type =
+                test_returned_expression Asto.get_assignment_type
+                  (Asto.Value Asto.NonError) node
+              in
+              match error_type with
+                Asto.Value (Asto.Error Asto.Clear) ->
+                ((i,node)::error_returns, id_set)
+              | Asto.Variable e ->
+                (error_returns, e::id_set)
+              | _ -> (error_returns, id_set))
+           ([], []) cfg))
   in
   let error_assignments =
-  (Common.profile_code "get_assignement" (fun () ->
-    get_error_assignments cfg identifiers)) in
+    (Common.profile_code "get_assignement" (fun () ->
+         get_error_assignments cfg identifiers)) in
   let error_branch_nodes =
-  (Common.profile_code "get_nodes" (fun () ->
-    get_nodes_leading_to_error_return cfg error_assignments
+    (Common.profile_code "get_nodes" (fun () ->
+         get_nodes_leading_to_error_return cfg error_assignments
        ))
   in
   let error_return_post_dominated =
-  (Common.profile_code "get_postdominated" (fun () ->
-    List.fold_left
-      (fun acc (index, _) ->
-         let nodes =
-           conditional_get_post_dominated (fun _ -> true) cfg
-             (complete_node_of cfg index)
-         in
-         NodeiSet.union acc nodes)
-      NodeiSet.empty error_returns
+    (Common.profile_code "get_postdominated" (fun () ->
+         List.fold_left
+           (fun acc (index, _) ->
+              let nodes =
+                conditional_get_post_dominated (fun _ -> true) cfg
+                  (complete_node_of cfg index)
+              in
+              NodeiSet.union acc nodes)
+           NodeiSet.empty error_returns
        ))
   in
   (Common.profile_code "annotate_error_handling" (fun () ->
-  fold_node
-    (fun () (index, node) ->
-       if NodeiSet.mem index error_branch_nodes ||
-          NodeiSet.mem index error_return_post_dominated
-       then
-         let {parser_node = parser_node} = node in
-         cfg#replace_node (index, (mk_node true Unannotated parser_node))
-       else
-         ())
-    () cfg
+       fold_node
+         (fun () (index, node) ->
+            if NodeiSet.mem index error_branch_nodes ||
+               NodeiSet.mem index error_return_post_dominated
+            then
+              let {parser_node = parser_node} = node in
+              cfg#replace_node (index, (mk_node true Unannotated parser_node))
+            else
+              ())
+         () cfg
      ))
 
 
@@ -487,6 +494,8 @@ let annotate_resource cfg cn resource =
       (cn.index, {cn.node with resource_handling_type = resource})
   | _ -> ()
 
+
+(*TODO should also check for deref*)
 let configurable_is_reference config cfg cn r =
   let downstream_nodes = breadth_first_fold config cfg cn in
   NodeiSet.fold
@@ -536,7 +545,7 @@ let get_released_resource cfg cn =
   | ( [], Some  [r]) when not (Asto.is_string   r) -> Some (Void (Some r))
   | ([r], Some args) when not (should_ignore args) &&
                           Asto.is_pointer r ->
-    if (is_last_reference cfg cn r &&
+    if (is_last_reference cfg cn (Resource r) &&
         not (is_return_value_tested cfg cn)) ||
        is_interprocedural cn
     then
@@ -584,7 +593,7 @@ let get_resource cfg relevant_resources cn =
       List.filter
         (fun e ->
            List.exists (Asto.expression_equal e) relevant_resources &&
-           not (is_last_reference cfg cn e))
+           not (is_last_reference cfg cn (Resource e)))
         rs
     in
     Computation current_resources
@@ -611,7 +620,7 @@ let annotate_resource_handling cfg =
   fold_node
     (fun () (i, n) ->
        let cn = {index = i; node = n} in
-       annotate_resource cfg cn (get_resource cfg relevant_resources cn)) 
+       annotate_resource cfg cn (get_resource cfg relevant_resources cn))
     () cfg;
 
   let config =
@@ -620,7 +629,7 @@ let annotate_resource_handling cfg =
       (fun _ (cn, _) acc ->
          match cn.node.resource_handling_type with
            Computation [r] ->
-           if is_first_reference cfg cn r
+           if is_first_reference cfg cn (Resource r)
            then
              begin
                annotate_resource cfg cn (Allocation (Resource r));

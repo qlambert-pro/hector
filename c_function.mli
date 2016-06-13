@@ -26,7 +26,6 @@ module ACFG = Annotated_cfg
 type exemplar = {
   alloc: ACFG.node GO.complete_node;
   alloc_name: string;
-  computations: (ACFG.node GO.complete_node) list;
   release: ACFG.node GO.complete_node;
   release_name: string;
   res: ACFG.resource;

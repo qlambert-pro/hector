@@ -27,7 +27,6 @@ module ACFG = Annotated_cfg
 type exemplar = {
   alloc: ACFG.node GO.complete_node;
   alloc_name: string;
-  computations: (ACFG.node GO.complete_node) list;
   release: ACFG.node GO.complete_node;
   release_name: string;
   res: ACFG.resource;
@@ -59,7 +58,7 @@ let get_resource_release cfg block_head acc =
 
 (*TODO study trough aliases*)
 let get_previous_statements cfg block_head release =
-  GO.depth_first_fold
+  GO.breadth_first_fold
     (GO.get_backward_config
        (fun _ _ (cn, _) ->
           match cn.GO.node.ACFG.resource_handling_type with
@@ -71,35 +70,22 @@ let get_previous_statements cfg block_head release =
           | ACFG.Computation _
           | ACFG.Unannotated -> true)
 
-       (fun _ (cn, _) acc ->
-          match cn.GO.node.ACFG.resource_handling_type with
-            ACFG.Computation rs
-            when List.exists
-                (fun r ->
-                   ACFG.resource_equal
-                     release.resource (ACFG.Resource r))
-                rs ->
-            cn::acc
-          | ACFG.Allocation _
-          | ACFG.Release _
-          | ACFG.Computation _
-          | ACFG.Unannotated -> acc)
+       (fun _ _ _ -> ())
 
-       (fun acc (cn, _) res ->
+       (fun _ (cn, _) res ->
           match cn.GO.node.ACFG.resource_handling_type with
             ACFG.Allocation r
             when ACFG.resource_equal r release.resource ->
-            (cn, acc)::res
+            cn::res
           | ACFG.Allocation _
           | ACFG.Release _
           | ACFG.Computation _
           | ACFG.Unannotated -> res)
-       [] [])
+       () [])
     cfg block_head
 
 
 let get_exemplars cfg error_blocks =
-
   let get_resource_release acc block =
     get_resource_release cfg block acc
   in
@@ -110,7 +96,7 @@ let get_exemplars cfg error_blocks =
     (*TODO may not need model_block*)
     let allocs = get_previous_statements cfg model_block release in
 
-    List.fold_left (fun acc (alloc, computations) ->
+    List.fold_left (fun acc alloc ->
         let a = ACFG.get_function_call_name alloc in
         let r = ACFG.get_function_call_name release.node in
         let (an, rn) =
@@ -120,13 +106,13 @@ let get_exemplars cfg error_blocks =
         in
         {alloc        = alloc;
          alloc_name   = an;
-         computations = computations;
          release      = release.node;
          release_name = rn;
          res          = release.resource;
         }::acc) acc allocs
   in
   List.fold_left exemplars_of_release [] releases
+
 
 let exists_after_block cfg block predicate =
   GO.breadth_first_fold
@@ -136,6 +122,7 @@ let exists_after_block cfg block predicate =
        (fun _ (cn, _) res -> res || predicate cn)
        () false)
     cfg block
+
 
 let is_releasing_resource cfg resource b =
   exists_after_block cfg b
@@ -147,46 +134,57 @@ let is_releasing_resource cfg resource b =
        | ACFG.Allocation _
        | ACFG.Unannotated -> false)
 
+
 let is_returning_resource cfg resource b =
   exists_after_block cfg b (ACFG.is_returning_resource resource)
 
-(*TODO should be only release instead of computations*)
+
+(*TODO should treat last "release" not last reference essentially*)
 let get_faults cfg error_blocks exemplar =
-  GO.depth_first_fold
-    (GO.get_forward_config
-       (fun _ _ (cn, _) ->
-          List.exists
-            (fun n -> n.GO.index = cn.GO.index)
-            error_blocks)
+  let blocks' =
+    GO.breadth_first_fold
+      (GO.get_forward_config
+         (fun _ _ (cn, _) ->
+            not (List.exists
+                   (fun n -> n.GO.index = cn.GO.index)
+                   error_blocks))
+         (fun _ _ _ -> ())
+         (fun _ (cn, _) res ->
+            try
+              let block =
+                List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
+              in
+              if not (is_releasing_resource cfg exemplar.res block) &&
+                 not (is_returning_resource cfg exemplar.res block)
+              then
+                block::res
+              else
+                res
+            with Not_found -> res)
+         () [])
+      cfg exemplar.alloc
+  in
 
-       (fun _ (cn, _) (acc, computations) ->
-          match (cn.GO.node.ACFG.resource_handling_type, computations) with
-            (ACFG.Computation rs, e::t)
-            when List.exists
-                (fun r ->
-                   ACFG.resource_equal
-                     exemplar.res (ACFG.Resource r))
-                rs ->
-            if ACFG.is_similar_statement cn e
-            then (acc, t)
-            else (false, [])
-          | (ACFG.Allocation  _, _)
-          | (ACFG.Release     _, _)
-          | (ACFG.Computation _, _)
-          | (ACFG.Unannotated  , _) -> (acc, computations))
-
-       (fun (acc, computations) (cn, _) res ->
-          try
-            let block =
-              List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
-            in
-            if acc && computations = [] &&
-               not (is_releasing_resource cfg exemplar.res block) &&
-               not (is_returning_resource cfg exemplar.res block)
-            then
-              {exemplar = exemplar; block_head = block}::res
-            else
-              res
-          with Not_found -> res)
-       (true, exemplar.computations) [])
-    cfg exemplar.alloc
+  let blocks =
+    List.find_all
+      (fun b ->
+         ACFG.is_void_resource exemplar.res ||
+         GO.breadth_first_fold
+           (GO.get_backward_config
+              (fun _ _ (cn, _) ->
+                 not (ACFG.is_referencing_resource exemplar.res cn.GO.node))
+              (fun _ _ _ -> ())
+              (fun _ (cn, _) acc ->
+                 match cn.GO.node.ACFG.resource_handling_type with
+                   ACFG.Allocation _
+                 | ACFG.Release _
+                 | ACFG.Unannotated ->
+                   acc &&
+                   not (ACFG.is_referencing_resource exemplar.res cn.GO.node)
+                 | ACFG.Computation _ -> acc
+              )
+              () true)
+           cfg b)
+      blocks'
+  in
+  List.map (fun b -> {exemplar = exemplar; block_head = b}) blocks
