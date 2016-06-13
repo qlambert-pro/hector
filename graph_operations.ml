@@ -74,7 +74,7 @@ type ('node, 'edge, 'g, 'acc, 'res) fold_configuration =
      ('node, 'edge, 'g) readable_graph -> ('node complete_node * 'edge) list ->
      'node complete_node -> ('node complete_node * 'edge) list;
 
-   predicate: NodeiSet.t -> ('node complete_node * 'edge) -> bool;
+   predicate: 'acc -> NodeiSet.t -> ('node complete_node * 'edge) -> bool;
 
    compute_local_value:
      NodeiSet.t -> ('node complete_node * 'edge) -> 'acc -> 'acc;
@@ -104,7 +104,7 @@ let breadth_first_fold config g cn =
     in
 
     let add_to_visited_nodes (visited_nodes, added_nodes) (s, e) =
-      if config.predicate visited_nodes (s, e) &&
+      if config.predicate config.initial_local_value visited_nodes (s, e) &&
          not (NodeiSet.mem s.index visited_nodes)
       then
         (NodeiSet.add s.index visited_nodes, s::added_nodes)
@@ -161,7 +161,7 @@ let depth_first_fold config g cn =
     in
 
     let new_visited_nodes = NodeiSet.add s.index visited_nodes in
-    if (config.predicate visited_nodes (s, e)) &&
+    if (config.predicate new_local_value visited_nodes (s, e)) &&
        new_visited_nodes <> visited_nodes
     then
       let next_nodes = config.get_next_nodes g [] s in
@@ -217,7 +217,7 @@ let get_backward_basic_node_config predicate =
     NodeiSet.empty NodeiSet.empty
 
 let conditional_get_post_dominated p g =
-  let predicate set (n, e) =
+  let predicate _ set (n, e) =
     p (n, e) &&
     fold_successors
       (fun acc (cn, _) -> acc && (NodeiSet.mem cn.index set)) true g n.index

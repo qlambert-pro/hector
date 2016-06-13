@@ -158,7 +158,7 @@ let get_assignment_type_through_alias cfg =
       let assignements =
         breadth_first_fold
           (get_backward_config
-             (fun _ (n, _) -> not (is_killing_reach e n.node))
+             (fun _ _ (n, _) -> not (is_killing_reach e n.node))
              (fun _ _ _ -> ())
              (fun _ (n, _) res ->
                 if is_top_node n.node
@@ -208,6 +208,7 @@ let get_arguments n =
   Visitor_c.vk_node visitor n.parser_node;
   !arguments
 
+
 let get_function_call_name n =
   let name = ref None in
   let visitor = {
@@ -218,7 +219,6 @@ let get_function_call_name n =
   in
   Visitor_c.vk_node visitor n.node.parser_node;
   !name
-
 
 
 let is_referencing_resource r n =
@@ -305,7 +305,7 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
         Direct   -> false
       | PostBackedge -> true
     in
-    let predicate set (n, e) =
+    let predicate _ set (n, e) =
       let is_post_dominated =
         fold_successors
           (fun acc (cn, e) ->
@@ -338,10 +338,11 @@ let get_nodes_leading_to_error_return cfg error_assignments =
   let get_reachable_nodes ((index, node), identifier) error_type acc =
     match error_type with
       Asto.Clear ->
+      (Common.profile_code "clear" (fun () ->
       let nodes =
         breadth_first_fold
           (get_basic_node_config
-             (fun _ (cn, _) -> not (is_killing_reach identifier cn.node)))
+             (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node)))
           cfg (complete_node_of cfg index)
       in
       let reachable_returns = filter_returns cfg identifier nodes in
@@ -356,12 +357,13 @@ let get_nodes_leading_to_error_return cfg error_assignments =
         else
           error_branch_nodes
       else
-        acc
+        acc))
     | Asto.Ambiguous ->
+      (Common.profile_code "ambiguous" (fun () ->
       let nodes =
         depth_first_fold
           (get_forward_config
-             (fun _ (cn, _) -> not (is_killing_reach identifier cn.node))
+             (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node))
              (*TODO is_testing_identifier is incorrect*)
              (* add complex if cases to prove it *)
              (*TODO use a finer memory of the error branch *)
@@ -395,6 +397,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
         add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
       else
         acc
+         ))
   in
   Hashtbl.fold get_reachable_nodes error_assignments NodeiSet.empty
 
@@ -403,6 +406,8 @@ let get_nodes_leading_to_error_return cfg error_assignments =
 (*TODO replace as computed rather than store*)
 let annotate_error_handling cfg =
   let error_returns, identifiers =
+
+  (Common.profile_code "get_returns" (fun () ->
     fold_node
       (fun (error_returns, id_set) (i, node) ->
          let error_type =
@@ -415,13 +420,18 @@ let annotate_error_handling cfg =
          | Asto.Variable e ->
            (error_returns, e::id_set)
          | _ -> (error_returns, id_set))
-      ([], []) cfg
+      ([], []) cfg))
   in
-  let error_assignments = get_error_assignments cfg identifiers in
+  let error_assignments =
+  (Common.profile_code "get_assignement" (fun () ->
+    get_error_assignments cfg identifiers)) in
   let error_branch_nodes =
+  (Common.profile_code "get_nodes" (fun () ->
     get_nodes_leading_to_error_return cfg error_assignments
+       ))
   in
   let error_return_post_dominated =
+  (Common.profile_code "get_postdominated" (fun () ->
     List.fold_left
       (fun acc (index, _) ->
          let nodes =
@@ -430,7 +440,9 @@ let annotate_error_handling cfg =
          in
          NodeiSet.union acc nodes)
       NodeiSet.empty error_returns
+       ))
   in
+  (Common.profile_code "annotate_error_handling" (fun () ->
   fold_node
     (fun () (index, node) ->
        if NodeiSet.mem index error_branch_nodes ||
@@ -441,6 +453,7 @@ let annotate_error_handling cfg =
        else
          ())
     () cfg
+     ))
 
 
 let is_head cfg (index, node) =
@@ -459,7 +472,6 @@ let get_error_handling_branch_head cfg =
   List.fold_left
     (fun acc (i, n) -> {node = n; index = i}::acc) [] nodes
 
-
 let get_top_node cfg =
   let top_nodes = find_all (fun (_, n) -> is_top_node n) cfg in
   match top_nodes with
@@ -475,16 +487,20 @@ let annotate_resource cfg cn resource =
       (cn.index, {cn.node with resource_handling_type = resource})
   | _ -> ()
 
-let is_last_reference cfg cn r =
-  let downstream_nodes =
-    breadth_first_fold
-      (get_basic_node_config (fun _ _ -> true))
-      cfg cn
-  in
+let configurable_is_reference config cfg cn r =
+  let downstream_nodes = breadth_first_fold config cfg cn in
   NodeiSet.fold
     (fun i acc -> acc || is_referencing_resource r (cfg#nodes#assoc i))
     downstream_nodes
     false
+
+let is_last_reference =
+  configurable_is_reference (get_basic_node_config (fun _ _ _ -> true))
+
+
+let is_first_reference =
+  configurable_is_reference (get_backward_basic_node_config (fun _ _ _ -> true))
+
 
 let is_return_value_tested cfg cn =
   let assigned_variable = ref None in
@@ -496,7 +512,7 @@ let is_return_value_tested cfg cn =
   | Some id ->
     let downstream_nodes =
       breadth_first_fold
-        (get_basic_node_config (fun _ _ -> true))
+        (get_basic_node_config (fun _ _ _ -> true))
         cfg cn
     in
     NodeiSet.for_all
@@ -511,7 +527,8 @@ let is_return_value_tested cfg cn =
 let is_interprocedural c = false
 
 
-let get_released_resource cfg cn arguments =
+let get_released_resource cfg cn =
+  let arguments = get_arguments cn.node in
   let resources = Asto.resources_of_arguments arguments in
   let should_ignore r = List.exists Asto.is_string r in
   match (resources, arguments) with
@@ -530,8 +547,7 @@ let get_released_resource cfg cn arguments =
 
 
 let annotate_if_release cfg cn =
-  let arguments = get_arguments cn.node in
-  let released_resource = get_released_resource cfg cn arguments in
+  let released_resource = get_released_resource cfg cn in
   match released_resource with
     None   -> None
   | Some r ->
@@ -544,7 +560,7 @@ let annotate_if_release cfg cn =
     resource
 
 
-let get_resource allocated_resources relevant_resources cn =
+let get_resource cfg relevant_resources cn =
   let arguments = get_arguments cn.node in
   let resources = Asto.resources_of_arguments arguments in
   let should_ignore arguments = List.exists Asto.is_string arguments in
@@ -560,60 +576,69 @@ let get_resource allocated_resources relevant_resources cn =
     when not (should_ignore args) &&
          List.exists (Asto.expression_equal r) relevant_resources ->
     Allocation (Resource r)
-  | (     _, [r], Some args)
-    when not (should_ignore args) &&
-         List.exists (Asto.expression_equal r) relevant_resources &&
-         not (List.exists (Asto.expression_equal r) allocated_resources) ->
-    Allocation (Resource r)
   | (     _,  rs, Some args) when
       List.exists
         (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
         rs ->
     let current_resources =
       List.filter
-        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
+        (fun e ->
+           List.exists (Asto.expression_equal e) relevant_resources &&
+           not (is_last_reference cfg cn e))
         rs
     in
     Computation current_resources
   | _ -> Unannotated
 
+
 let annotate_resource_handling cfg =
-  let resources' =
-    fold_node
-      (fun acc (i, n) ->
-         if n.is_error_handling
-         then
-           let resource = annotate_if_release cfg {index = i; node = n} in
-           match resource with
-             None   -> acc
-           | Some r -> r::acc
-         else
-           acc)
-      [] cfg
+  let relevant_resources =
+    (Common.profile_code "find_resource" (fun () ->
+         fold_node
+           (fun acc (i, n) ->
+              if n.is_error_handling
+              then
+                let resource = annotate_if_release cfg {index = i; node = n} in
+                match resource with
+                  None   -> acc
+                | Some r -> r::acc
+              else
+                acc)
+           [] cfg
+       ))
   in
 
-  let top_node = get_top_node cfg in
+  fold_node
+    (fun () (i, n) ->
+       let cn = {index = i; node = n} in
+       annotate_resource cfg cn (get_resource cfg relevant_resources cn)) 
+    () cfg;
+
   let config =
     get_forward_config
-      (fun _ _ -> true)
-      (fun _ (cn, _) (allocated_resources, _) ->
-         let resource = get_resource allocated_resources resources' cn in
-         match (cn.node.is_error_handling, resource) with
-           (false, Allocation (Resource r)) ->
-           (  r::allocated_resources, Some resource)
-         | (false,  Allocation _) ->
-           (     allocated_resources, Some resource)
-         | (    _, Computation rs) ->
-           (rs @ allocated_resources, Some resource)
-         | _ ->
-           (allocated_resources, None))
-      (fun (_, r) (cn, _) () ->
-         match r with
-           Some resource -> annotate_resource cfg cn resource
-         | None          -> ())
-      ([], None) ()
+      (fun acc _ _ -> match acc with [] -> false | _ -> true)
+      (fun _ (cn, _) acc ->
+         match cn.node.resource_handling_type with
+           Computation [r] ->
+           if is_first_reference cfg cn r
+           then
+             begin
+               annotate_resource cfg cn (Allocation (Resource r));
+               List.find_all (fun x -> not (Asto.expression_equal x r)) acc
+             end
+           else
+             acc
+         | Computation rs ->
+           List.find_all
+             (fun x -> not (List.mem x rs))
+             acc
+         | Allocation _
+         | Release _
+         | Unannotated -> acc)
+      (fun _ _ _ -> ())
+      relevant_resources ()
   in
-  depth_first_fold config cfg top_node
+  depth_first_fold config cfg (get_top_node cfg)
 
 
 let remove_after_nodes_mutable cfg =
@@ -687,16 +712,19 @@ let of_ast_c ast =
   in
   let top_node = Control_flow_c.first_node cocci_cfg in
   process_node {index = top_node; node = (cocci_cfg#nodes)#assoc top_node};
-  breadth_first_fold
-    (get_forward_config
-       (fun _ _ -> true)
-       (fun _ _ _ -> ())
-       (fun _ (cn, _) () -> process_node cn)
-       () ())
-    cocci_cfg
-    (complete_node_of cocci_cfg top_node);
-  annotate_error_handling cfg;
-  annotate_resource_handling cfg;
+  (Common.profile_code "create_cfg" (fun () ->
+       breadth_first_fold
+         (get_forward_config
+            (fun _ _ _ -> true)
+            (fun _ _ _ -> ())
+            (fun _ (cn, _) () -> process_node cn)
+            () ())
+         cocci_cfg
+         (complete_node_of cocci_cfg top_node)));
+  (Common.profile_code "error_handling" (fun () ->
+       annotate_error_handling cfg));
+  (Common.profile_code "resource_handling" (fun () ->
+       annotate_resource_handling cfg));
   cfg
 
 let is_returning_resource resource cn =

@@ -47,7 +47,7 @@ let find_errorhandling cfg = Annotated_cfg.get_error_handling_branch_head cfg
 let get_resource_release cfg block_head acc =
   GO.breadth_first_fold
     (GO.get_forward_config
-       (fun _ _ -> true)
+       (fun _ _ _ -> true)
        (fun _ _ _ -> ())
        (fun _ (cn, _) res ->
           match cn.GO.node.Annotated_cfg.resource_handling_type with
@@ -61,7 +61,7 @@ let get_resource_release cfg block_head acc =
 let get_previous_statements cfg block_head release =
   GO.depth_first_fold
     (GO.get_backward_config
-       (fun _ (cn, _) ->
+       (fun _ _ (cn, _) ->
           match cn.GO.node.ACFG.resource_handling_type with
             ACFG.Allocation r
             when ACFG.resource_equal r release.resource ->
@@ -131,7 +131,7 @@ let get_exemplars cfg error_blocks =
 let exists_after_block cfg block predicate =
   GO.breadth_first_fold
     (GO.get_forward_config
-       (fun _ _ -> true)
+       (fun _ _ _ -> true)
        (fun _ _ _ -> ())
        (fun _ (cn, _) res -> res || predicate cn)
        () false)
@@ -154,7 +154,7 @@ let is_returning_resource cfg resource b =
 let get_faults cfg error_blocks exemplar =
   GO.depth_first_fold
     (GO.get_forward_config
-       (fun _ (cn, _) ->
+       (fun _ _ (cn, _) ->
           List.exists
             (fun n -> n.GO.index = cn.GO.index)
             error_blocks)

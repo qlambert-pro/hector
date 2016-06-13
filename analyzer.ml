@@ -43,14 +43,20 @@ let analyze_def toplevel definition infos =
   Printf.eprintf "%s\n%!" func_name;
 
   try
-    let cfg = Annotated_cfg.of_ast_c toplevel in
+    let cfg =
+      (Common.profile_code "cfg"
+         (fun () -> Annotated_cfg.of_ast_c toplevel))
+    in
 
     let error_blocks =
       Common.profile_code "find_errorhandling"
         (fun () -> C_function.find_errorhandling cfg)
     in
 
-    let exemplars = C_function.get_exemplars cfg error_blocks in
+    let exemplars =
+      Common.profile_code "get_exemplars"
+        (fun () -> C_function.get_exemplars cfg error_blocks)
+    in
 
     (*TODO get allocations and use them instead of exemplars*)
     let candidates =

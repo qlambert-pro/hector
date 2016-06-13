@@ -344,6 +344,11 @@ let is_error_right_value alias_f e =
 let expression_equal expression1 expression2 =
   Lib_parsing_c.real_al_expr expression1 = Lib_parsing_c.real_al_expr expression2
 
+let expression_compare expression1 expression2 =
+  String.compare
+    (Pretty_print_c.string_of_expression expression1)
+    (Pretty_print_c.string_of_expression expression2)
+
 let statement_equal st1 st2 =
   Lib_parsing_c.real_al_statement st1 = Lib_parsing_c.real_al_statement st2
 
