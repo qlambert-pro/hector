@@ -82,8 +82,8 @@ let line_number_of_node cn =
   !line_number
 
 type edge =
-    Direct
-  | PostBackedge
+    Direct of node complete_node * node complete_node
+  | PostBackedge of node complete_node * node complete_node
 
 type t = (node, edge) Ograph_extended.ograph_mutable
 
@@ -229,13 +229,13 @@ let is_referencing_resource resource n =
   match resource with
     Void _     -> false
   | Resource r ->
-    let has_referenced = ref true in
+    let has_referenced = ref false in
     let visitor = {
       Visitor_c.default_visitor_c with
       Visitor_c.kexpr =
         (fun (k, visitor) e ->
            has_referenced :=
-             !has_referenced &&
+             !has_referenced ||
              Asto.expression_equal e r;
            k e)
     }
@@ -309,8 +309,8 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
   let post_dominated index =
     let is_backedge e =
       match e with
-        Direct   -> false
-      | PostBackedge -> true
+        Direct       _ -> false
+      | PostBackedge _ -> true
     in
     let predicate _ set (n, e) =
       let is_post_dominated =
@@ -367,36 +367,38 @@ let get_nodes_leading_to_error_return cfg error_assignments =
              acc))
     | Asto.Ambiguous ->
       (Common.profile_code "ambiguous" (fun () ->
-           let nodes =
-             depth_first_fold
+           let heads =
+             breadth_first_fold
                (get_forward_config
-                  (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node))
+                  (fun _ _ (cn, _) ->
+                     not (is_killing_reach identifier cn.node))
                   (*TODO is_testing_identifier is incorrect*)
                   (* add complex if cases to prove it *)
-                  (*TODO use a finer memory of the error branch *)
-                  (fun _ (cn, e) (pred, acc) ->
-                     match pred with
-                       None -> (Some cn, acc)
-                     | Some pred ->
-                       let is_on_error_branch_result =
-                         let head = cn.node in
-                         let is_correct_if =
-                           test_if_header
-                             (Asto.is_testing_identifier identifier) false pred.node
-                         in
-                         let is_correct_branch =
-                           is_on_error_branch cfg pred head
-                         in
-                         is_correct_if && is_correct_branch
+                  (fun _ _ _ -> ())
+                  (fun _ (cn, e) res ->
+                     match e with
+                       PostBackedge (pred, _)
+                     | Direct (pred, _) ->
+                       let head = cn.node in
+                       let is_correct_branch =
+                         is_on_error_branch cfg pred head
                        in
-                       (Some cn, acc || is_on_error_branch_result))
-                  (fun (_, acc) (cn, _) res ->
-                     if acc
-                     then NodeiSet.add cn.index res
-                     else res)
-                  (None, false)
-                  NodeiSet.empty)
+                       if is_correct_branch
+                       then NodeiSet.add cn.index res
+                       else res)
+                   () NodeiSet.empty)
                cfg (complete_node_of cfg index)
+           in
+           let nodes =
+             NodeiSet.fold
+               (fun index s ->
+                  NodeiSet.union s
+                    (breadth_first_fold
+                       (get_basic_node_config
+                          (fun _ _ (cn, _) ->
+                             not (is_killing_reach identifier cn.node)))
+                       cfg (complete_node_of cfg index)))
+             heads NodeiSet.empty
            in
            let reachable_returns = filter_returns cfg identifier nodes in
            if reachable_returns != NodeiSet.empty
@@ -487,9 +489,9 @@ let get_top_node cfg =
 
 let annotate_resource cfg cn resource =
   match (cn.node.resource_handling_type, resource) with
-    (            _,     Release _)
-  | (Allocation  _, Computation _)
-  | (  Unannotated,             _) ->
+    (            _,    Release _)
+  | (Computation _, Allocation _)
+  | (Unannotated  ,            _) ->
     cfg#replace_node
       (cn.index, {cn.node with resource_handling_type = resource})
   | _ -> ()
@@ -497,11 +499,12 @@ let annotate_resource cfg cn resource =
 
 (*TODO should also check for deref*)
 let configurable_is_reference config cfg cn r =
-  let downstream_nodes = breadth_first_fold config cfg cn in
+  let nodes' = breadth_first_fold config cfg cn in
+  let nodes  = NodeiSet.remove cn.index nodes' in
   NodeiSet.fold
-    (fun i acc -> acc || is_referencing_resource r (cfg#nodes#assoc i))
-    downstream_nodes
-    false
+    (fun i acc -> acc && not (is_referencing_resource r (cfg#nodes#assoc i)))
+    nodes
+    true
 
 let is_last_reference =
   configurable_is_reference (get_basic_node_config (fun _ _ _ -> true))
@@ -587,7 +590,9 @@ let get_resource cfg relevant_resources cn =
     Allocation (Resource r)
   | (     _,  rs, Some args) when
       List.exists
-        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
+        (fun e ->
+           List.exists (Asto.expression_equal e) relevant_resources &&
+           not (is_last_reference cfg cn (Resource e)))
         rs ->
     let current_resources =
       List.filter
@@ -710,7 +715,11 @@ let of_ast_c ast =
       let edge =
         if NodeiSet.mem index' post_dominated
         then PostBackedge
+            ({index = start_node; node = cfg#nodes#assoc start_node},
+             {index = end_node  ; node = cfg#nodes#assoc end_node  })
         else Direct
+            ({index = start_node; node = cfg#nodes#assoc start_node},
+             {index = end_node  ; node = cfg#nodes#assoc end_node  })
       in
       cfg#add_arc ((start_node, end_node), edge)
     in
