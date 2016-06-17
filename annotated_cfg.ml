@@ -497,7 +497,6 @@ let annotate_resource cfg cn resource =
   | _ -> ()
 
 
-(*TODO should also check for deref*)
 let configurable_is_reference config cfg cn r =
   let nodes' = breadth_first_fold config cfg cn in
   let nodes  = NodeiSet.remove cn.index nodes' in
@@ -628,31 +627,27 @@ let annotate_resource_handling cfg =
        annotate_resource cfg cn (get_resource cfg relevant_resources cn))
     () cfg;
 
-  let config =
+  let config r =
     get_forward_config
-      (fun acc _ _ -> match acc with [] -> false | _ -> true)
-      (fun _ (cn, _) acc ->
+      (fun _ _ (cn, _) -> not (is_referencing_resource (Resource r) cn.node))
+      (fun _ _ _ -> ())
+      (fun _ (cn, _) res ->
          match cn.node.resource_handling_type with
-           Computation [r] ->
-           if is_first_reference cfg cn (Resource r)
+           Computation [cr] when Asto.expression_equal r cr ->
+           if is_first_reference cfg cn (Resource cr)
            then
-             begin
-               annotate_resource cfg cn (Allocation (Resource r));
-               List.find_all (fun x -> not (Asto.expression_equal x r)) acc
-             end
+             annotate_resource cfg cn (Allocation (Resource cr))
            else
-             acc
-         | Computation rs ->
-           List.find_all
-             (fun x -> not (List.mem x rs))
-             acc
+             ()
+         | Computation _
          | Allocation _
          | Release _
-         | Unannotated -> acc)
-      (fun _ _ _ -> ())
-      relevant_resources ()
+         | Unannotated -> ())
+      () ()
   in
-  depth_first_fold config cfg (get_top_node cfg)
+  List.iter
+    (fun r -> breadth_first_fold (config r) cfg (get_top_node cfg))
+    relevant_resources
 
 
 let remove_after_nodes_mutable cfg =
