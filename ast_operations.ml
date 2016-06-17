@@ -252,7 +252,8 @@ let built_in_constants = [
   "PGRES_POLLING_FAILED";
   "InvalidOid";
   "ERR_PTR";
-  "PTR_ERR"]
+  "PTR_ERR";
+  "STATUS_FAIL"]
 
 let is_simple_assignment op =
   match unwrap op with
