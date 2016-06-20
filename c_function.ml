@@ -181,8 +181,7 @@ let get_faults cfg error_blocks exemplar =
                  | ACFG.Unannotated ->
                    acc &&
                    not (ACFG.is_referencing_resource exemplar.res cn.GO.node)
-                 | ACFG.Computation _ -> acc
-              )
+                 | ACFG.Computation _ -> acc)
               () true)
            cfg b)
       blocks'

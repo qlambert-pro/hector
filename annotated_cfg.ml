@@ -62,25 +62,6 @@ let is_similar_statement n1 n2 =
     Asto.statement_equal st1 st2
   | _ -> false
 
-let statement_info_visitor f = {
-  Visitor_c.default_visitor_c with
-  Visitor_c.kexpr = (fun (k, visitor) (_, i)-> f i);
-}
-
-let line_number_of_node cn =
-  let line_number = ref 0 in
-  let v = statement_info_visitor
-      (fun i ->
-         if i <> []
-         then
-           let (_, _, (l,_), _) = Lib_parsing_c.lin_col_by_pos i in
-           line_number := l
-         else
-           ())
-  in
-  Visitor_c.vk_node v cn.node.parser_node;
-  !line_number
-
 type edge =
     Direct of node complete_node * node complete_node
   | PostBackedge of node complete_node * node complete_node
@@ -118,6 +99,23 @@ let test_if_header predicate default node =
     Control_flow_c.IfHeader (_, (e, _)) -> predicate e
   | _ -> default
 
+
+let line_number_of_node cfg cn =
+  let rec aux cn =
+    let st = Control_flow_c.extract_fullstatement cn.node.parser_node in
+    let succ = (cfg#successors cn.index)#tolist in
+    match (st, succ) with
+      (  None, [(i, _)]) -> aux (complete_node_of cfg i)
+    | (Some s,        _) ->
+      let (_, _, (l, _), _) =
+        Lib_parsing_c.lin_col_by_pos (Lib_parsing_c.ii_of_stmt s)
+      in
+      l
+    | (  None,       xs) ->
+      failwith
+        "the block head does not reach a node with line infos before branching."
+  in
+  aux cn
 
 let base_visitor f = {
   Visitor_c.default_visitor_c with
@@ -386,7 +384,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                        if is_correct_branch
                        then NodeiSet.add cn.index res
                        else res)
-                   () NodeiSet.empty)
+                  () NodeiSet.empty)
                cfg (complete_node_of cfg index)
            in
            let nodes =
@@ -398,7 +396,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                           (fun _ _ (cn, _) ->
                              not (is_killing_reach identifier cn.node)))
                        cfg (complete_node_of cfg index)))
-             heads NodeiSet.empty
+               heads NodeiSet.empty
            in
            let reachable_returns = filter_returns cfg identifier nodes in
            if reachable_returns != NodeiSet.empty

@@ -56,4 +56,4 @@ val is_referencing_resource: resource -> node -> bool
 
 val get_function_call_name: node complete_node -> string option
 
-val line_number_of_node: node complete_node -> int
+val line_number_of_node: t -> node complete_node -> int

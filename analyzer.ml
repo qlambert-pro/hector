@@ -22,9 +22,9 @@
 
 open Common
 
+module GO = Graph_operations
 module ACFG = Annotated_cfg
 module CF   = C_function
-module GO   = Graph_operations
 
 
 let remove_doubles acc c =
@@ -40,8 +40,6 @@ let remove_doubles acc c =
 
 let analyze_def toplevel definition infos =
   let func_name = fst (Ast_c.get_s_and_ii_of_name definition.Ast_c.f_name) in
-  Printf.eprintf "%s\n%!" func_name;
-
   try
     let cfg =
       (Common.profile_code "cfg"
@@ -70,12 +68,11 @@ let analyze_def toplevel definition infos =
 
     let faults = List.fold_left remove_doubles [] candidates in
 
-    List.iter (fun c -> Report.generate_report_new func_name infos c) faults
+    List.iter (fun c -> Report.generate_report_new cfg func_name infos c) faults
 
   with
     Control_flow_c_build.Error _
-  | Annotated_cfg.NoCFG ->
-    ()
+  | Annotated_cfg.NoCFG -> ()
 
 let analyze_toplevel x =
   match x with
