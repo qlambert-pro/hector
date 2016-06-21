@@ -66,9 +66,10 @@ let get_previous_statements cfg block_head release =
             ACFG.Allocation r
             when ACFG.resource_equal r release.resource ->
             false
+          | ACFG.Computation _
           | ACFG.Allocation _
           | ACFG.Release _
-          | ACFG.Computation _
+          | ACFG.Test _
           | ACFG.Unannotated -> true)
 
        (fun _ _ _ -> ())
@@ -78,9 +79,10 @@ let get_previous_statements cfg block_head release =
             ACFG.Allocation r
             when ACFG.resource_equal r release.resource ->
             cn::res
+          | ACFG.Computation _
           | ACFG.Allocation _
           | ACFG.Release _
-          | ACFG.Computation _
+          | ACFG.Test _
           | ACFG.Unannotated -> res)
        () [])
     cfg block_head
@@ -130,9 +132,10 @@ let is_releasing_resource cfg resource b =
     (fun b ->
        match b.GO.node.ACFG.resource_handling_type with
          ACFG.Release r when ACFG.resource_equal r resource -> true
-       | ACFG.Release _
        | ACFG.Computation _
        | ACFG.Allocation _
+       | ACFG.Release _
+       | ACFG.Test _
        | ACFG.Unannotated -> false)
 
 
@@ -140,56 +143,77 @@ let is_returning_resource cfg resource b =
   exists_after_block cfg b (ACFG.is_returning_resource resource)
 
 
-let get_faults cfg error_blocks exemplar =
-  let blocks' =
-    GO.breadth_first_fold
-      (GO.get_forward_config
-         (fun _ _ (cn, _) ->
-            not (List.exists
-                   (fun n -> n.GO.index = cn.GO.index)
-                   error_blocks))
-         (fun _ _ _ -> ())
-         (fun _ (cn, _) res ->
-            try
-              let block =
-                List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
-              in
-              if not (is_releasing_resource cfg exemplar.res block) &&
-                 not (is_returning_resource cfg exemplar.res block)
-              then
-                block::res
-              else
-                res
-            with Not_found -> res)
-         () [])
-      cfg exemplar.alloc
-  in
+let get_candidate_blocks cfg error_blocks exemplar =
+  GO.breadth_first_fold
+    (GO.get_forward_config
+       (fun _ _ (cn, _) ->
+          not (List.exists
+                 (fun n -> n.GO.index = cn.GO.index)
+                 error_blocks))
+       (fun _ _ _ -> ())
+       (fun _ (cn, _) res ->
+          try
+            let block =
+              List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
+            in
+            if not (is_releasing_resource cfg exemplar.res block) &&
+               not (is_returning_resource cfg exemplar.res block)
+            then
+              block::res
+            else
+              res
+          with Not_found -> res)
+       () [])
+    cfg exemplar.alloc
 
-  let blocks =
-    List.find_all
-      (fun b ->
-         ACFG.is_void_resource exemplar.res ||
-         GO.breadth_first_fold
-           (GO.get_backward_config
-              (fun _ _ (cn, _) ->
-                 not (ACFG.is_referencing_resource exemplar.res cn.GO.node))
-              (fun _ _ _ -> ())
-              (fun _ (cn, _) acc ->
-                 match cn.GO.node.ACFG.resource_handling_type with
-                   ACFG.Allocation r
-                 | ACFG.Release r ->
-                   acc && not (ACFG.resource_equal exemplar.res r)
-                 | ACFG.Computation rs when
-                     List.exists
-                       (fun e ->
-                          ACFG.resource_equal
-                            exemplar.res (ACFG.Resource e))
-                       rs ->
-                   acc && not (ACFG.is_similar_statement exemplar.release cn)
-                 | ACFG.Unannotated
-                 | ACFG.Computation _ -> acc)
-              () true)
-           cfg b)
-      blocks'
-  in
+
+let filter_faults cfg exemplar blocks =
+  List.find_all
+    (fun b ->
+       GO.breadth_first_fold
+         (GO.get_backward_config
+            (fun _ _ (cn, _) ->
+               not (List.exists
+                      (fun e ->
+                         ACFG.resource_equal exemplar.res (ACFG.Resource e))
+                      cn.GO.node.ACFG.referenced_resources))
+            (fun _ _ _ -> ())
+            (fun _ (cn, edge) acc ->
+               match cn.GO.node.ACFG.resource_handling_type with
+                 ACFG.Allocation r ->
+                 acc && not (ACFG.is_similar_statement cn exemplar.alloc)
+               | ACFG.Release r ->
+                 acc && not (ACFG.resource_equal exemplar.res r)
+               | ACFG.Test rs when
+                   List.exists
+                     (fun e ->
+                        ACFG.resource_equal
+                          exemplar.res (ACFG.Resource e))
+                     rs ->
+                 let end_node =
+                   match edge with
+                     ACFG.Direct       (s, e)
+                   | ACFG.PostBackedge (s, e) -> e
+                 in
+                 acc &&
+                 not (ACFG.is_on_error_branch cfg cn end_node.GO.node)
+               | ACFG.Computation rs when
+                   List.exists
+                     (fun e ->
+                        ACFG.resource_equal
+                          exemplar.res (ACFG.Resource e))
+                     rs ->
+                 acc && not (ACFG.is_similar_statement exemplar.release cn)
+               | ACFG.Test _
+               | ACFG.Unannotated
+               | ACFG.Computation _ -> acc)
+            () true)
+         cfg b)
+    blocks
+
+
+let get_faults cfg error_blocks exemplar =
+  let blocks' = get_candidate_blocks cfg error_blocks exemplar in
+  let blocks = filter_faults cfg exemplar blocks' in
+
   List.map (fun b -> {exemplar = exemplar; block_head = b}) blocks

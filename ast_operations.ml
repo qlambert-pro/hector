@@ -399,7 +399,8 @@ type branch_side =
   | Else
   | None
 
-let rec which_is_the_error_branch alias_f f (expression, _) =
+let rec which_is_the_error_branch alias_f f e =
+  let (expression, _) = e in
   let not_f = function
       Then -> f Else
     | Else -> f Then
@@ -408,7 +409,8 @@ let rec which_is_the_error_branch alias_f f (expression, _) =
   match unwrap expression with
     ParenExpr e
   | Cast (_, e) -> which_is_the_error_branch alias_f f e
-  | Unary (e, Not) -> which_is_the_error_branch alias_f not_f e
+  | Unary (e, Not) ->
+    which_is_the_error_branch alias_f not_f e
   | Binary (e1, (Logical OrLog, _), e2) -> which_is_the_error_branch alias_f f e1
   | Binary (e1, (Logical Eq   , _), e2)
     when is_error_return_code alias_f e1 || is_error_return_code alias_f e2 ->
@@ -427,15 +429,20 @@ let rec which_is_the_error_branch alias_f f (expression, _) =
   | Assignment (_, op, e)
     when is_simple_assignment op && is_error_right_value alias_f e ->
     f Then
-  | Ident _ -> f Then
+  | Ident _ ->
+    if is_pointer e
+    then
+      f Else
+    else
+      f Then
   | _ -> f None
 
-(*TODO does not handle complex if case with || or &&*)
 let rec is_testing_identifier identifier expression' =
   let (expression, _) = expression' in
   match unwrap expression with
     ParenExpr e        -> is_testing_identifier identifier e
-  | Unary (e, _)       -> expression_equal identifier e
+  | Unary (e, _)       -> expression_equal identifier e ||
+                          is_testing_identifier identifier e
   | Binary (e1, _, e2) -> expression_equal identifier e1 ||
                           expression_equal identifier e2 ||
                           is_testing_identifier identifier e1 ||

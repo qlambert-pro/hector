@@ -31,15 +31,21 @@ type resource_handling =
     Allocation  of resource
   | Release     of resource
   | Computation of Ast_c.expression list
+  | Test        of Ast_c.expression list
   | Unannotated
 
 type node = {
   is_error_handling: bool;
   resource_handling_type: resource_handling;
+  referenced_resources: Ast_c.expression list;
   parser_node: Control_flow_c.node
 }
 
-type edge
+type edge =
+    Direct of node complete_node * node complete_node
+  | PostBackedge of node complete_node * node complete_node
+
+
 
 type t = (node, edge) Ograph_extended.ograph_mutable
 
@@ -53,6 +59,8 @@ val is_void_resource: resource -> bool
 val is_similar_statement: node complete_node -> node complete_node -> bool
 val is_returning_resource: resource -> node complete_node -> bool
 val is_referencing_resource: resource -> node -> bool
+
+val is_on_error_branch: t -> node complete_node -> node -> bool
 
 val get_function_call_name: node complete_node -> string option
 

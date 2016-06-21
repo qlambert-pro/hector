@@ -47,6 +47,7 @@ let border_color_of node =
     (   _, ACFG.Allocation  _) -> Some("forestgreen")
   | (   _, ACFG.Release     _) -> Some("red3")
   | (   _, ACFG.Computation _) -> Some("yellow")
+  | (   _, ACFG.Test        _) -> Some("purple")
   | (true,                  _) -> Some("blue")
   | _                         -> None
 
@@ -55,6 +56,7 @@ let color_of node =
     (   _, ACFG.Allocation  _) -> Some("darkolivegreen1")
   | (   _, ACFG.Release     _) -> Some("lightpink")
   | (   _, ACFG.Computation _) -> Some("lightyellow")
+  | (   _, ACFG.Test        _) -> Some("violet")
   | (true,                  _) -> Some("lightblue")
   | _                         -> None
 

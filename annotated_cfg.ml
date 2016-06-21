@@ -31,7 +31,8 @@ type resource =
 
 let resource_equal r1 r2 =
   match (r1, r2) with
-    (Void _ , Void _) -> true
+    (Void     None, Void     None)
+  | (Void (Some _), Void (Some _)) -> true
   | (   Resource e1,    Resource e2) ->
     Asto.expression_equal e1 e2
   | _ -> false
@@ -40,17 +41,20 @@ type resource_handling =
     Allocation  of resource
   | Release     of resource
   | Computation of Ast_c.expression list
+  | Test        of Ast_c.expression list
   | Unannotated
 
 type node = {
   is_error_handling: bool;
   resource_handling_type: resource_handling;
+  referenced_resources: Ast_c.expression list;
   parser_node: Control_flow_c.node
 }
 
-let mk_node is_error_handling resource_handling_type parser_node = {
+let mk_node is_error_handling parser_node = {
   is_error_handling = is_error_handling;
-  resource_handling_type = resource_handling_type;
+  resource_handling_type = Unannotated;
+  referenced_resources = [];
   parser_node = parser_node
 }
 
@@ -456,7 +460,7 @@ let annotate_error_handling cfg =
                NodeiSet.mem index error_return_post_dominated
             then
               let {parser_node = parser_node} = node in
-              cfg#replace_node (index, (mk_node true Unannotated parser_node))
+              cfg#replace_node (index, (mk_node true parser_node))
             else
               ())
          () cfg
@@ -487,13 +491,13 @@ let get_top_node cfg =
 
 let annotate_resource cfg cn resource =
   match (cn.node.resource_handling_type, resource) with
-    (            _,    Release _)
+    (            _,       Test _)
+  | (            _,    Release _)
   | (Computation _, Allocation _)
   | (Unannotated  ,            _) ->
     cfg#replace_node
       (cn.index, {cn.node with resource_handling_type = resource})
   | _ -> ()
-
 
 let configurable_is_reference config cfg cn r =
   let nodes' = breadth_first_fold config cfg cn in
@@ -575,15 +579,20 @@ let get_resource cfg relevant_resources cn =
   let should_ignore arguments = List.exists Asto.is_string arguments in
   let assigned_variable = ref None in
   apply_base_visitor
-    (fun l _ -> if Asto.is_pointer l then assigned_variable := Some l)
+    (fun l _ ->
+       if Asto.is_pointer l
+       then assigned_variable := Some l
+       else ())
     cn.node;
+
   match (!assigned_variable, resources, arguments) with
-  | (  None,   _, Some   []) -> Allocation (Void None)
-  | (  None,  [], Some  [r]) when not (Asto.is_string   r) ->
+  | (  None,   _, Some   []) ->
+    Allocation (Void None)
+  | (  None,  [], Some  [r]) when not (Asto.is_string r) ->
     Allocation (Void (Some r))
-  | (Some r,  [], Some args)
-    when not (should_ignore args) &&
-         List.exists (Asto.expression_equal r) relevant_resources ->
+  | (Some r,  [], Some args) when
+      List.exists (Asto.expression_equal r) relevant_resources &&
+      not (should_ignore args) ->
     Allocation (Resource r)
   | (     _, [r], Some args) when
       List.exists (Asto.expression_equal r) relevant_resources &&
@@ -591,15 +600,26 @@ let get_resource cfg relevant_resources cn =
     Release (Resource r)
   | (     _,  rs, Some args) when
       List.exists
-        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
+        (fun e -> List.exists (Asto.expression_equal e)
+            relevant_resources)
         rs ->
     let current_resources =
       List.filter
-        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
+        (fun e -> List.exists (Asto.expression_equal e)
+            relevant_resources)
         rs
     in
     Computation current_resources
-  | _ -> Unannotated
+  | _ ->
+    let test = test_if_header
+        (fun e ->
+           List.find_all
+             (fun id -> Asto.is_testing_identifier id e) relevant_resources)
+        [] cn.node
+    in
+    if test <> []
+    then Test test
+    else Unannotated
 
 
 let annotate_resource_handling cfg =
@@ -622,7 +642,15 @@ let annotate_resource_handling cfg =
   fold_node
     (fun () (i, n) ->
        let cn = {index = i; node = n} in
-       annotate_resource cfg cn (get_resource cfg relevant_resources cn))
+       let rs =
+         List.find_all
+           (fun e -> is_referencing_resource (Resource e) cn.node)
+           relevant_resources
+       in
+       let nnode = {cn.node with referenced_resources = rs} in
+       cfg#replace_node (cn.index, nnode);
+       annotate_resource cfg {cn with node = nnode}
+         (get_resource cfg relevant_resources cn))
     () cfg;
 
   let config r =
@@ -638,6 +666,7 @@ let annotate_resource_handling cfg =
            else
              ()
          | Computation _
+         | Test _
          | Allocation _
          | Release _
          | Unannotated -> ())
@@ -660,7 +689,7 @@ let remove_after_nodes_mutable cfg =
       () cfg i
   in
   let remove_after_node () (i, node) =
-    let n = (mk_node false Unannotated node) in
+    let n = (mk_node false node) in
     if (is_after_node n)
     then
       (remove_pred_arcs i;
@@ -687,7 +716,7 @@ let of_ast_c ast =
     let add_node cn =
       if not (Hashtbl.mem added_nodes cn.index)
       then
-        let index' = cfg#add_node (mk_node false Unannotated cn.node) in
+        let index' = cfg#add_node (mk_node false cn.node) in
         Hashtbl.add added_nodes cn.index index'
       else
         ()
