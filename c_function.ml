@@ -23,6 +23,7 @@ open Common
 
 module GO = Graph_operations
 module ACFG = Annotated_cfg
+module Asto = Ast_operations
 
 type exemplar = {
   alloc: ACFG.node GO.complete_node;
@@ -139,7 +140,6 @@ let is_returning_resource cfg resource b =
   exists_after_block cfg b (ACFG.is_returning_resource resource)
 
 
-(*TODO should treat last "release" not last reference essentially*)
 let get_faults cfg error_blocks exemplar =
   let blocks' =
     GO.breadth_first_fold
@@ -176,11 +176,17 @@ let get_faults cfg error_blocks exemplar =
               (fun _ _ _ -> ())
               (fun _ (cn, _) acc ->
                  match cn.GO.node.ACFG.resource_handling_type with
-                   ACFG.Allocation _
-                 | ACFG.Release _
-                 | ACFG.Unannotated ->
-                   acc &&
-                   not (ACFG.is_referencing_resource exemplar.res cn.GO.node)
+                   ACFG.Allocation r
+                 | ACFG.Release r ->
+                   acc && not (ACFG.resource_equal exemplar.res r)
+                 | ACFG.Computation rs when
+                     List.exists
+                       (fun e ->
+                          ACFG.resource_equal
+                            exemplar.res (ACFG.Resource e))
+                       rs ->
+                   acc && not (ACFG.is_similar_statement exemplar.release cn)
+                 | ACFG.Unannotated
                  | ACFG.Computation _ -> acc)
               () true)
            cfg b)

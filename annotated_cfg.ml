@@ -585,17 +585,17 @@ let get_resource cfg relevant_resources cn =
     when not (should_ignore args) &&
          List.exists (Asto.expression_equal r) relevant_resources ->
     Allocation (Resource r)
+  | (     _, [r], Some args) when
+      List.exists (Asto.expression_equal r) relevant_resources &&
+      is_last_reference cfg cn (Resource r) ->
+    Release (Resource r)
   | (     _,  rs, Some args) when
       List.exists
-        (fun e ->
-           List.exists (Asto.expression_equal e) relevant_resources &&
-           not (is_last_reference cfg cn (Resource e)))
+        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
         rs ->
     let current_resources =
       List.filter
-        (fun e ->
-           List.exists (Asto.expression_equal e) relevant_resources &&
-           not (is_last_reference cfg cn (Resource e)))
+        (fun e -> List.exists (Asto.expression_equal e) relevant_resources)
         rs
     in
     Computation current_resources
