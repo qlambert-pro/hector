@@ -385,7 +385,12 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                        let is_correct_branch =
                          is_on_error_branch cfg pred head
                        in
-                       if is_correct_branch
+                       let is_testing_identifier =
+                         test_if_header
+                           (Asto.is_testing_identifier identifier)
+                           false pred.node
+                       in
+                       if is_correct_branch && is_testing_identifier
                        then NodeiSet.add cn.index res
                        else res)
                   () NodeiSet.empty)
