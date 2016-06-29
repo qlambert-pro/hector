@@ -141,53 +141,6 @@ let breadth_first_fold config g cn =
      local_value      = config.initial_local_value;
      result           = config.initial_result}
 
-type ('a, 'b, 'node, 'edge) depth_first_fold_data =
-  {visited_nodes: NodeiSet.t;
-   current_node:  ('node complete_node * 'edge);
-   local_value:   'b;
-   result:        'a;}
-
-let depth_first_fold config g cn =
-  let rec depth_first_fold_aux
-      {visited_nodes = visited_nodes;
-       current_node  = (s, e);
-       local_value   = local_value;
-       result        = result} =
-    let new_local_value =
-      config.compute_local_value visited_nodes (s, e) local_value
-    in
-    let new_result =
-      config.compute_result new_local_value (s, e) result
-    in
-
-    let new_visited_nodes = NodeiSet.add s.index visited_nodes in
-    if (config.predicate new_local_value visited_nodes (s, e)) &&
-       new_visited_nodes <> visited_nodes
-    then
-      let next_nodes = config.get_next_nodes g [] s in
-
-      List.fold_left
-        (fun result cn ->
-           depth_first_fold_aux
-             {visited_nodes = new_visited_nodes;
-              current_node  = cn;
-              local_value   = new_local_value;
-              result        = result})
-        new_result next_nodes
-    else
-      new_result
-  in
-  let initial_set = NodeiSet.singleton cn.index in
-  let next_nodes = config.get_next_nodes g [] cn in
-  List.fold_left
-    (fun result cn ->
-       depth_first_fold_aux
-         {visited_nodes = initial_set;
-          current_node  = cn;
-          local_value   = config.initial_local_value;
-          result        = result})
-    config.initial_result next_nodes
-
 
 let get_forward_config predicate compute_local_value compute_result
     initial_local_value initial_result =

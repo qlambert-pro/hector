@@ -90,11 +90,6 @@ val breadth_first_fold:
   ('node, 'edge, 'g) readable_graph ->
   'node complete_node -> 'res
 
-val depth_first_fold:
-  ('node, 'edge, 'g, 'acc, 'res) fold_configuration ->
-  ('node, 'edge, 'g) readable_graph ->
-  'node complete_node -> 'res
-
 val get_forward_config:
   ('acc -> NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
   (NodeiSet.t -> ('node complete_node * 'edge) -> 'acc -> 'acc) ->
