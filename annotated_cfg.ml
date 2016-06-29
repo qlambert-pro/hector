@@ -160,8 +160,7 @@ let get_assignment_type_through_alias cfg =
       let assignements =
         breadth_first_fold
           (get_backward_config
-             (fun _ _ (n, _) -> not (is_killing_reach e n.node))
-             (fun _ _ _ -> ())
+             (fun _ (n, _) -> not (is_killing_reach e n.node))
              (fun _ (n, _) res ->
                 if is_top_node n.node
                 then
@@ -187,7 +186,7 @@ let get_assignment_type_through_alias cfg =
                   match !temp with
                     None   -> res
                   | Some v -> v::res)
-             () [])
+             [])
           cfg (complete_node_of cfg n.index)
       in
       if List.for_all ((=) (List.hd assignements)) assignements
@@ -314,7 +313,7 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
         Direct       _ -> false
       | PostBackedge _ -> true
     in
-    let predicate _ set (n, e) =
+    let predicate set (n, e) =
       let is_post_dominated =
         fold_successors
           (fun acc (cn, e) ->
@@ -351,7 +350,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
            let nodes =
              breadth_first_fold
                (get_basic_node_config
-                  (fun _ _ (cn, _) -> not (is_killing_reach identifier cn.node)))
+                  (fun _ (cn, _) -> not (is_killing_reach identifier cn.node)))
                cfg (complete_node_of cfg index)
            in
            let reachable_returns = filter_returns cfg identifier nodes in
@@ -372,11 +371,10 @@ let get_nodes_leading_to_error_return cfg error_assignments =
            let heads =
              breadth_first_fold
                (get_forward_config
-                  (fun _ _ (cn, _) ->
+                  (fun _ (cn, _) ->
                      not (is_killing_reach identifier cn.node))
                   (*TODO is_testing_identifier is incorrect*)
                   (* add complex if cases to prove it *)
-                  (fun _ _ _ -> ())
                   (fun _ (cn, e) res ->
                      match e with
                        PostBackedge (pred, _)
@@ -393,7 +391,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                        if is_correct_branch && is_testing_identifier
                        then NodeiSet.add cn.index res
                        else res)
-                  () NodeiSet.empty)
+                  NodeiSet.empty)
                cfg (complete_node_of cfg index)
            in
            let nodes =
@@ -402,7 +400,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                   NodeiSet.union s
                     (breadth_first_fold
                        (get_basic_node_config
-                          (fun _ _ (cn, _) ->
+                          (fun _ (cn, _) ->
                              not (is_killing_reach identifier cn.node)))
                        cfg (complete_node_of cfg index)))
                heads NodeiSet.empty
@@ -513,11 +511,11 @@ let configurable_is_reference config cfg cn r =
     true
 
 let is_last_reference =
-  configurable_is_reference (get_basic_node_config (fun _ _ _ -> true))
+  configurable_is_reference (get_basic_node_config (fun _ _ -> true))
 
 
 let is_first_reference =
-  configurable_is_reference (get_backward_basic_node_config (fun _ _ _ -> true))
+  configurable_is_reference (get_backward_basic_node_config (fun _ _ -> true))
 
 
 let is_return_value_tested cfg cn =
@@ -530,7 +528,7 @@ let is_return_value_tested cfg cn =
   | Some id ->
     let downstream_nodes =
       breadth_first_fold
-        (get_basic_node_config (fun _ _ _ -> true))
+        (get_basic_node_config (fun _ _ -> true))
         cfg cn
     in
     NodeiSet.for_all
@@ -660,8 +658,7 @@ let annotate_resource_handling cfg =
 
   let config r =
     get_forward_config
-      (fun _ _ (cn, _) -> not (is_referencing_resource (Resource r) cn.node))
-      (fun _ _ _ -> ())
+      (fun _ (cn, _) -> not (is_referencing_resource (Resource r) cn.node))
       (fun _ (cn, _) res ->
          match cn.node.resource_handling_type with
            Computation [cr] when Asto.expression_equal r cr ->
@@ -675,7 +672,7 @@ let annotate_resource_handling cfg =
          | Allocation _
          | Release _
          | Unannotated -> ())
-      () ()
+      ()
   in
   List.iter
     (fun r -> breadth_first_fold (config r) cfg (get_top_node cfg))
@@ -760,10 +757,9 @@ let of_ast_c ast =
   (Common.profile_code "create_cfg" (fun () ->
        breadth_first_fold
          (get_forward_config
-            (fun _ _ _ -> true)
-            (fun _ _ _ -> ())
+            (fun _ _ -> true)
             (fun _ (cn, _) () -> process_node cn)
-            () ())
+            ())
          cocci_cfg
          (complete_node_of cocci_cfg top_node)));
   (Common.profile_code "error_handling" (fun () ->

@@ -56,60 +56,50 @@ val find_all:
   (nodei * 'node -> bool) -> ('node, 'edge, 'g) readable_graph ->
   (nodei * 'node) list
 
-type ('node, 'edge, 'g, 'acc, 'res) fold_configuration =
+type ('node, 'edge, 'g, 'res) fold_configuration =
   {get_next_nodes:
      ('node, 'edge, 'g) readable_graph -> ('node complete_node * 'edge) list ->
      'node complete_node -> ('node complete_node * 'edge) list;
 
-   predicate:
-     'acc -> NodeiSet.t -> ('node complete_node * 'edge) -> bool;
+   predicate: NodeiSet.t -> ('node complete_node * 'edge) -> bool;
    (* **
     * The predicate is called with visited_nodes as first argument and
     * the algorithm only fold on the node if predicate returns true
     * *)
 
-   compute_local_value:
-     NodeiSet.t -> ('node complete_node * 'edge) -> 'acc -> 'acc;
-   (* **
-    * This function compute the new local value from visited_nodes,
-    * the current node and the current local value
-    * *)
-
-   compute_result: 'acc -> ('node complete_node * 'edge) -> 'res -> 'res;
+   compute_result: NodeiSet.t -> ('node complete_node * 'edge) -> 'res -> 'res;
    (* **
     * This function compute the new result from visited_nodes,
     * the current node and the current result value
     * *)
 
-   initial_local_value: 'acc;
    initial_result: 'res;
   }
 
 val breadth_first_fold:
-  ('node, 'edge, 'g, 'acc, 'res) fold_configuration ->
+  ('node, 'edge, 'g, 'res) fold_configuration ->
   ('node, 'edge, 'g) readable_graph ->
   'node complete_node -> 'res
 
 val get_forward_config:
-  ('acc -> NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  (NodeiSet.t -> ('node complete_node * 'edge) -> 'acc -> 'acc) ->
-  ('acc -> ('node complete_node * 'edge) -> 'res -> 'res) ->
-  'acc -> 'res -> ('node, 'edge, 'g, 'acc, 'res) fold_configuration
+  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
+  (NodeiSet.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
+  'res -> ('node, 'edge, 'g, 'res) fold_configuration
 
 val get_backward_config:
-  ('acc -> NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  (NodeiSet.t -> ('node complete_node * 'edge) -> 'acc -> 'acc) ->
-  ('acc -> ('node complete_node * 'edge) -> 'res -> 'res) ->
-  'acc -> 'res -> ('node, 'edge, 'g, 'acc, 'res) fold_configuration
+  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
+  (NodeiSet.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
+  'res -> ('node, 'edge, 'g, 'res) fold_configuration
 
 val get_basic_node_config:
-  (NodeiSet.t -> NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  ('node, 'edge, 'g, NodeiSet.t, NodeiSet.t) fold_configuration
+  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
+  ('node, 'edge, 'g, NodeiSet.t) fold_configuration
 
 val get_backward_basic_node_config:
-  (NodeiSet.t -> NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  ('node, 'edge, 'g, NodeiSet.t, NodeiSet.t) fold_configuration
+  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
+  ('node, 'edge, 'g, NodeiSet.t) fold_configuration
 
 val conditional_get_post_dominated:
-  (('node complete_node * 'edge) -> bool) -> ('node, 'edge, 'g) readable_graph ->
+  (('node complete_node * 'edge) -> bool) ->
+  ('node, 'edge, 'g) readable_graph ->
   'node complete_node -> NodeiSet.t

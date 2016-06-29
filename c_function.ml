@@ -47,21 +47,20 @@ let find_errorhandling cfg = Annotated_cfg.get_error_handling_branch_head cfg
 let get_resource_release cfg block_head acc =
   GO.breadth_first_fold
     (GO.get_forward_config
-       (fun _ _ _ -> true)
-       (fun _ _ _ -> ())
+       (fun _ _ -> true)
        (fun _ (cn, _) res ->
           match cn.GO.node.Annotated_cfg.resource_handling_type with
             ACFG.Release r ->
             ({node = cn; resource = r}, block_head)::res
           | _         -> res)
-       () acc)
+       acc)
     cfg block_head
 
 (*TODO study trough aliases*)
 let get_previous_statements cfg block_head release =
   GO.breadth_first_fold
     (GO.get_backward_config
-       (fun _ _ (cn, _) ->
+       (fun _ (cn, _) ->
           match cn.GO.node.ACFG.resource_handling_type with
             ACFG.Allocation r
             when ACFG.resource_equal r release.resource ->
@@ -71,8 +70,6 @@ let get_previous_statements cfg block_head release =
           | ACFG.Release _
           | ACFG.Test _
           | ACFG.Unannotated -> true)
-
-       (fun _ _ _ -> ())
 
        (fun _ (cn, _) res ->
           match cn.GO.node.ACFG.resource_handling_type with
@@ -84,7 +81,7 @@ let get_previous_statements cfg block_head release =
           | ACFG.Release _
           | ACFG.Test _
           | ACFG.Unannotated -> res)
-       () [])
+       [])
     cfg block_head
 
 
@@ -120,10 +117,9 @@ let get_exemplars cfg error_blocks =
 let exists_after_block cfg block predicate =
   GO.breadth_first_fold
     (GO.get_forward_config
-       (fun _ _ _ -> true)
-       (fun _ _ _ -> ())
+       (fun _ _ -> true)
        (fun _ (cn, _) res -> res || predicate cn)
-       () false)
+       false)
     cfg block
 
 
@@ -146,11 +142,10 @@ let is_returning_resource cfg resource b =
 let get_candidate_blocks cfg error_blocks exemplar =
   GO.breadth_first_fold
     (GO.get_forward_config
-       (fun _ _ (cn, _) ->
+       (fun _ (cn, _) ->
           not (List.exists
                  (fun n -> n.GO.index = cn.GO.index)
                  error_blocks))
-       (fun _ _ _ -> ())
        (fun _ (cn, _) res ->
           try
             let block =
@@ -163,7 +158,7 @@ let get_candidate_blocks cfg error_blocks exemplar =
             else
               res
           with Not_found -> res)
-       () [])
+       [])
     cfg exemplar.alloc
 
 
@@ -172,12 +167,11 @@ let filter_faults cfg exemplar blocks =
     (fun b ->
        GO.breadth_first_fold
          (GO.get_backward_config
-            (fun _ _ (cn, _) ->
+            (fun _ (cn, _) ->
                not (List.exists
                       (fun e ->
                          ACFG.resource_equal exemplar.res (ACFG.Resource e))
                       cn.GO.node.ACFG.referenced_resources))
-            (fun _ _ _ -> ())
             (fun _ (cn, edge) acc ->
                match cn.GO.node.ACFG.resource_handling_type with
                  ACFG.Allocation r ->
@@ -207,7 +201,7 @@ let filter_faults cfg exemplar blocks =
                | ACFG.Test _
                | ACFG.Unannotated
                | ACFG.Computation _ -> acc)
-            () true)
+            true)
          cfg b)
     blocks
 
