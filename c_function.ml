@@ -24,6 +24,7 @@ open Common
 module GO = Graph_operations
 module ACFG = Annotated_cfg
 module Asto = Ast_operations
+module HC = Hector_core
 
 type exemplar = {
   alloc: ACFG.node GO.complete_node;
@@ -42,7 +43,7 @@ type fault = {
   block_head: ACFG.node GO.complete_node;
 }
 
-let find_errorhandling cfg = Annotated_cfg.get_error_handling_branch_head cfg
+let find_errorhandling cfg = HC.get_error_handling_branch_head cfg
 
 let get_resource_release cfg block_head acc =
   GO.breadth_first_fold
@@ -190,7 +191,9 @@ let filter_faults cfg exemplar blocks =
                    | ACFG.PostBackedge (s, e) -> e
                  in
                  acc &&
-                 not (ACFG.is_on_error_branch cfg cn end_node.GO.node)
+                 not (ACFG.is_on_error_branch
+                        HC.get_assignment_type_through_alias
+                        cfg cn end_node.GO.node)
                | ACFG.Computation rs when
                    List.exists
                      (fun e ->

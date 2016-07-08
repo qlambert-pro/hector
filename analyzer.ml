@@ -25,6 +25,7 @@ open Common
 module GO = Graph_operations
 module ACFG = Annotated_cfg
 module CF   = C_function
+module HC   = Hector_core
 
 
 let remove_doubles acc c =
@@ -45,6 +46,9 @@ let analyze_def toplevel definition infos =
       (Common.profile_code "cfg"
          (fun () -> Annotated_cfg.of_ast_c toplevel))
     in
+
+    HC.annotate_error_handling cfg;
+    HC.annotate_resource_handling cfg;
 
     let error_blocks =
       Common.profile_code "find_errorhandling"

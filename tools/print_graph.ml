@@ -34,7 +34,12 @@ let get_cfgs filename =
   in
   let cfgs =
     List.map (fun f ->
-        try Some (Annotated_cfg.of_ast_c f) with
+        try
+          let cfg = Annotated_cfg.of_ast_c f in
+          Hector_core.annotate_error_handling cfg;
+          Hector_core.annotate_resource_handling cfg;
+          Some cfg
+        with
           Control_flow_c_build.Error _
         | ACFG.NoCFG -> None)
       functions

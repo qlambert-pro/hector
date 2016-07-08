@@ -32,17 +32,20 @@ let get_cfgs filename =
       (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
   in
   let aux acc toplevel =
-    try (of_ast_c toplevel)::acc with
+    try (ACFG.of_ast_c toplevel)::acc with
       Control_flow_c_build.Error _
-    | NoCFG -> acc
+    | ACFG.NoCFG -> acc
   in
-  List.fold_left aux [] functions
+  let cfgs = List.fold_left aux [] functions in
+  List.iter annotate_error_handling cfgs;
+  List.iter annotate_resource_handling cfgs;
+  cfgs
 
 let get_identifiers cfg =
-  fold_node
+  GO.fold_node
     (fun id_set (i, node) ->
        let error_type =
-         test_returned_expression Asto.get_assignment_type
+         ACFG.test_returned_expression Asto.get_assignment_type
            (Asto.Value Asto.NonError) node
        in
        match error_type with
@@ -82,27 +85,29 @@ let concat_get_nodes_leading_to_error_return cfgs =
  * this function expects indices to be valid
  * *)
 let compute_is_on_error_branch node_indices head_indices cfgs =
-    List.map2
-      (fun x (a, b) ->
-         is_on_error_branch x (complete_node_of x a) (x#nodes#assoc b))
-      cfgs (List.combine node_indices head_indices)
+  List.map2
+    (fun x (a, b) ->
+       ACFG.is_on_error_branch
+         get_assignment_type_through_alias
+         x (GO.complete_node_of x a) (x#nodes#assoc b))
+    cfgs (List.combine node_indices head_indices)
 
 
 let is_length xs l =
   (List.fold_left (+) 0 xs) = l
 
 let is_error_handling_node cfg index =
-  (cfg#nodes#assoc index).is_error_handling
+  (cfg#nodes#assoc index).ACFG.is_error_handling
 
 let is_allocation_node cfg index =
-  match (cfg#nodes#assoc index).resource_handling_type with
-    Allocation _ -> true
-  | _            -> false
+  match (cfg#nodes#assoc index).ACFG.resource_handling_type with
+    ACFG.Allocation _ -> true
+  | _                 -> false
 
 let is_release_node cfg index =
-  match (cfg#nodes#assoc index).resource_handling_type with
-    Release _ -> true
-  | _         -> false
+  match (cfg#nodes#assoc index).ACFG.resource_handling_type with
+    ACFG.Release _ -> true
+  | _              -> false
 
 let compute_is_error_handling_node node_indices = function
     [cfg] -> List.map (is_error_handling_node cfg) node_indices
@@ -118,7 +123,7 @@ let compute_is_release_node node_indices = function
 
 let compare_with_size sets l =
   let sizes =
-    List.fold_left (fun acc s -> acc + (NodeiSet.cardinal s)) 0 sets
+    List.fold_left (fun acc s -> acc + (GO.NodeiSet.cardinal s)) 0 sets
   in
   sizes = l
 

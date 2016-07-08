@@ -160,7 +160,12 @@ let is_relevant_data path d =
        else
          let f = List.find (is_function_name d.allocation.f_name) functions in
          let cfg' =
-           try Some (Annotated_cfg.of_ast_c f) with
+           try
+             let cfg = Annotated_cfg.of_ast_c f in
+             Hector_core.annotate_error_handling cfg;
+             Hector_core.annotate_resource_handling cfg;
+             Some cfg
+           with
            Control_flow_c_build.Error _
          | Annotated_cfg.NoCFG -> None
          in

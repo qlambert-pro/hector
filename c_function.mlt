@@ -35,7 +35,12 @@ let get_cfgs filename =
       Control_flow_c_build.Error _
     | ACFG.NoCFG -> acc
   in
-  List.fold_left aux [] functions
+  let cfgs = List.fold_left aux [] functions in
+  List.iter HC.annotate_error_handling cfgs;
+  List.iter HC.annotate_resource_handling cfgs;
+  cfgs
+
+
 
 let mk_cfg_test title filename msg test res compare =
   let cfgs = get_cfgs filename in
