@@ -171,3 +171,109 @@ exit_retry:
 	spin_unlock_irqrestore(&ch->ch_lock, flags);
 	return 0;
 }
+
+struct crypto_priv {
+	void __iomem *reg;
+	void __iomem *sram;
+	int irq;
+	struct task_struct *queue_th;
+
+	/* the lock protects queue and eng_st */
+	spinlock_t lock;
+	struct crypto_queue queue;
+	enum engine_status eng_st;
+	struct ablkcipher_request *cur_req;
+	struct req_progress p;
+	int max_req_size;
+	int sram_size;
+};
+
+static int mv_probe(struct platform_device *pdev)
+{
+	struct crypto_priv *cp;
+	struct resource *res;
+	int irq;
+	int ret;
+
+	if (cpg) {
+		printk(KERN_ERR "Second crypto dev?\n");
+		return -EEXIST;
+	}
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "regs");
+	if (!res)
+		return -ENXIO;
+
+	cp = kzalloc(sizeof(*cp), GFP_KERNEL);
+	if (!cp)
+		return -ENOMEM;
+
+	spin_lock_init(&cp->lock);
+	crypto_init_queue(&cp->queue, 50);
+	cp->reg = ioremap(res->start, res->end - res->start + 1);
+	if (!cp->reg) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "sram");
+	if (!res) {
+		ret = -ENXIO;
+		goto err_unmap_reg;
+	}
+	cp->sram_size = res->end - res->start + 1;
+	cp->max_req_size = cp->sram_size - SRAM_CFG_SPACE;
+	cp->sram = ioremap(res->start, cp->sram_size);
+	if (!cp->sram) {
+		ret = -ENOMEM;
+		goto err_unmap_reg;
+	}
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0 || irq == NO_IRQ) {
+		ret = irq;
+		goto err_unmap_sram;
+	}
+	cp->irq = irq;
+
+	platform_set_drvdata(pdev, cp);
+	cpg = cp;
+
+	cp->queue_th = kthread_run(queue_manag, cp, "mv_crypto");
+	if (IS_ERR(cp->queue_th)) {
+		ret = PTR_ERR(cp->queue_th);
+		goto err_thread;
+	}
+
+	ret = request_irq(irq, crypto_int, IRQF_DISABLED, dev_name(&pdev->dev),
+			cp);
+	if (ret)
+		goto err_unmap_sram;
+
+	writel(SEC_INT_ACCEL0_DONE, cpg->reg + SEC_ACCEL_INT_MASK);
+	writel(SEC_CFG_STOP_DIG_ERR, cpg->reg + SEC_ACCEL_CFG);
+
+	ret = crypto_register_alg(&mv_aes_alg_ecb);
+	if (ret)
+		goto err_reg;
+
+	ret = crypto_register_alg(&mv_aes_alg_cbc);
+	if (ret)
+		goto err_unreg_ecb;
+	return 0;
+err_unreg_ecb:
+	crypto_unregister_alg(&mv_aes_alg_ecb);
+err_thread:
+	free_irq(irq, cp);
+err_reg:
+	kthread_stop(cp->queue_th);
+err_unmap_sram:
+	iounmap(cp->sram);
+err_unmap_reg:
+	iounmap(cp->reg);
+err:
+	kfree(cp);
+	cpg = NULL;
+	platform_set_drvdata(pdev, NULL);
+	return ret;
+}

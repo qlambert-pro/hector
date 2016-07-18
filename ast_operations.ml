@@ -310,9 +310,11 @@ let rec identifier_name_of_expression exp =
   let ((expression, _), _) = exp in
   match expression with
     Cast (_, e)
-  | RecordAccess (e ,_)
-  | RecordPtAccess (e ,_)
+  | ArrayAccess (e, _)
+  | Unary (e, DeRef)
   | ParenExpr e -> identifier_name_of_expression e
+  | RecordAccess (_, RegularName (name, [_]))
+  | RecordPtAccess (_, RegularName (name, [_]))
   | Ident (RegularName (name, [_])) ->
     Some name
   | _ -> None
@@ -323,6 +325,7 @@ let rec function_name_of_expression exp  =
     Cast (_, e)
   | RecordAccess (e ,_)
   | RecordPtAccess (e ,_)
+  | ArrayAccess (e, _)
   | ParenExpr e -> function_name_of_expression e
   | Assignment (_, op, e) when is_simple_assignment op ->
     function_name_of_expression e
@@ -406,6 +409,11 @@ let rec which_is_the_error_branch alias_f f e =
     | Else -> f Then
     | x    -> f x
   in
+  let which_branch e =
+    if is_pointer e
+    then f Else
+    else f Then
+  in
   match unwrap expression with
     ParenExpr e
   | Cast (_, e) -> which_is_the_error_branch alias_f f e
@@ -429,12 +437,12 @@ let rec which_is_the_error_branch alias_f f e =
   | Assignment (_, op, e)
     when is_simple_assignment op && is_error_right_value alias_f e ->
     f Then
+  | RecordAccess _
+  | RecordPtAccess _
+  | ArrayAccess _
+  | Unary (_, DeRef)
   | Ident _ ->
-    if is_pointer e
-    then
-      f Else
-    else
-      f Then
+    which_branch e
   | _ -> f None
 
 let rec is_testing_identifier identifier expression' =
