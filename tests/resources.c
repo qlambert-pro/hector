@@ -277,3 +277,180 @@ err:
 	platform_set_drvdata(pdev, NULL);
 	return ret;
 }
+
+struct sh_rtc {
+	void __iomem		*regbase;
+	unsigned long		regsize;
+	struct resource		*res;
+	int			alarm_irq;
+	int			periodic_irq;
+	int			carry_irq;
+	struct clk		*clk;
+	struct rtc_device	*rtc_dev;
+	spinlock_t		lock;
+	unsigned long		capabilities;	/* See asm/rtc.h for cap bits */
+	unsigned short		periodic_freq;
+};
+
+
+static int __init sh_rtc_probe(struct platform_device *pdev)
+{
+	struct sh_rtc *rtc;
+	struct resource *res;
+	struct rtc_time r;
+	char clk_name[6];
+	int clk_id, ret;
+
+	rtc = kzalloc(sizeof(struct sh_rtc), GFP_KERNEL);
+	if (unlikely(!rtc))
+		return -ENOMEM;
+
+	spin_lock_init(&rtc->lock);
+
+	/* get periodic/carry/alarm irqs */
+	ret = platform_get_irq(pdev, 0);
+	if (unlikely(ret <= 0)) {
+		ret = -ENOENT;
+		dev_err(&pdev->dev, "No IRQ resource\n");
+		goto err_badres;
+	}
+
+	rtc->periodic_irq = ret;
+	rtc->carry_irq = platform_get_irq(pdev, 1);
+	rtc->alarm_irq = platform_get_irq(pdev, 2);
+
+	res = platform_get_resource(pdev, IORESOURCE_IO, 0);
+	if (unlikely(res == NULL)) {
+		ret = -ENOENT;
+		dev_err(&pdev->dev, "No IO resource\n");
+		goto err_badres;
+	}
+
+	rtc->regsize = resource_size(res);
+
+	rtc->res = request_mem_region(res->start, rtc->regsize, pdev->name);
+	if (unlikely(!rtc->res)) {
+		ret = -EBUSY;
+		goto err_badres;
+	}
+
+	rtc->regbase = ioremap_nocache(rtc->res->start, rtc->regsize);
+	if (unlikely(!rtc->regbase)) {
+		ret = -EINVAL;
+		goto err_badmap;
+	}
+
+	clk_id = pdev->id;
+	/* With a single device, the clock id is still "rtc0" */
+	if (clk_id < 0)
+		clk_id = 0;
+
+	snprintf(clk_name, sizeof(clk_name), "rtc%d", clk_id);
+
+	rtc->clk = clk_get(&pdev->dev, clk_name);
+	if (IS_ERR(rtc->clk)) {
+		/*
+		 * No error handling for rtc->clk intentionally, not all
+		 * platforms will have a unique clock for the RTC, and
+		 * the clk API can handle the struct clk pointer being
+		 * NULL.
+		 */
+		rtc->clk = NULL;
+	}
+
+	clk_enable(rtc->clk);
+
+	rtc->capabilities = RTC_DEF_CAPABILITIES;
+	if (pdev->dev.platform_data) {
+		struct sh_rtc_platform_info *pinfo = pdev->dev.platform_data;
+
+		/*
+		 * Some CPUs have special capabilities in addition to the
+		 * default set. Add those in here.
+		 */
+		rtc->capabilities |= pinfo->capabilities;
+	}
+
+	if (rtc->carry_irq <= 0) {
+		/* register shared periodic/carry/alarm irq */
+		ret = request_irq(rtc->periodic_irq, sh_rtc_shared,
+				  IRQF_DISABLED, "sh-rtc", rtc);
+		if (unlikely(ret)) {
+			dev_err(&pdev->dev,
+				"request IRQ failed with %d, IRQ %d\n", ret,
+				rtc->periodic_irq);
+			goto err_unmap;
+		}
+	} else {
+		/* register periodic/carry/alarm irqs */
+		ret = request_irq(rtc->periodic_irq, sh_rtc_periodic,
+				  IRQF_DISABLED, "sh-rtc period", rtc);
+		if (unlikely(ret)) {
+			dev_err(&pdev->dev,
+				"request period IRQ failed with %d, IRQ %d\n",
+				ret, rtc->periodic_irq);
+			goto err_unmap;
+		}
+
+		ret = request_irq(rtc->carry_irq, sh_rtc_interrupt,
+				  IRQF_DISABLED, "sh-rtc carry", rtc);
+		if (unlikely(ret)) {
+			dev_err(&pdev->dev,
+				"request carry IRQ failed with %d, IRQ %d\n",
+				ret, rtc->carry_irq);
+			free_irq(rtc->periodic_irq, rtc);
+			goto err_unmap;
+		}
+
+		ret = request_irq(rtc->alarm_irq, sh_rtc_alarm,
+				  IRQF_DISABLED, "sh-rtc alarm", rtc);
+		if (unlikely(ret)) {
+			dev_err(&pdev->dev,
+				"request alarm IRQ failed with %d, IRQ %d\n",
+				ret, rtc->alarm_irq);
+			free_irq(rtc->carry_irq, rtc);
+			free_irq(rtc->periodic_irq, rtc);
+			goto err_unmap;
+		}
+	}
+
+	platform_set_drvdata(pdev, rtc);
+
+	/* everything disabled by default */
+	sh_rtc_irq_set_freq(&pdev->dev, 0);
+	sh_rtc_irq_set_state(&pdev->dev, 0);
+	sh_rtc_setaie(&pdev->dev, 0);
+	sh_rtc_setcie(&pdev->dev, 0);
+
+	rtc->rtc_dev = rtc_device_register("sh", &pdev->dev,
+					   &sh_rtc_ops, THIS_MODULE);
+	if (IS_ERR(rtc->rtc_dev)) {
+		ret = PTR_ERR(rtc->rtc_dev);
+		free_irq(rtc->periodic_irq, rtc);
+		free_irq(rtc->carry_irq, rtc);
+		free_irq(rtc->alarm_irq, rtc);
+		goto err_unmap;
+	}
+
+	rtc->rtc_dev->max_user_freq = 256;
+
+	/* reset rtc to epoch 0 if time is invalid */
+	if (rtc_read_time(rtc->rtc_dev, &r) < 0) {
+		rtc_time_to_tm(0, &r);
+		rtc_set_time(rtc->rtc_dev, &r);
+	}
+
+	device_init_wakeup(&pdev->dev, 1);
+	return 0;
+
+err_unmap:
+	clk_disable(rtc->clk);
+	clk_put(rtc->clk);
+	iounmap(rtc->regbase);
+err_badmap:
+	release_resource(rtc->res);
+err_badres:
+	kfree(rtc);
+
+	return ret;
+}

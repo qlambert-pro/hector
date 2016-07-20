@@ -255,6 +255,11 @@ let built_in_constants = [
   "PTR_ERR";
   "STATUS_FAIL"]
 
+let testing_functions = [
+  "likely";
+  "unlikely";
+  "IS_ERR"]
+
 let is_simple_assignment op =
   match unwrap op with
     SimpleAssign -> true
@@ -362,7 +367,11 @@ let rec get_arguments expression =
     Cast (_, e)
   | ParenExpr e -> get_arguments e
   | Assignment (_, op, e) when is_simple_assignment op -> get_arguments e
-  | FunCall (_, arguments) -> Some (expressions_of_arguments arguments)
+  | FunCall (e, arguments)
+    when not (List.exists
+                (fun x -> (=) (identifier_name_of_expression e) (Some x))
+                testing_functions) ->
+    Some (expressions_of_arguments arguments)
   | _ -> None
 
 let resources_of_arguments = function
@@ -457,4 +466,9 @@ let rec is_testing_identifier identifier expression' =
                           is_testing_identifier identifier e2
   | Assignment (_, op, e) when is_simple_assignment op ->
     expression_equal identifier e
+  | FunCall (e, args) ->
+    let arguments = expressions_of_arguments args in
+    let n = identifier_name_of_expression e in
+       List.exists (fun e -> (=) n (Some e)) testing_functions &&
+       List.exists (is_testing_identifier identifier) arguments
   | _ -> expression_equal identifier expression'
