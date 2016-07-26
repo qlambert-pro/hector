@@ -50,6 +50,7 @@ let get_cfgs filename =
 let border_color_of node =
   match (node.ACFG.is_error_handling, node.ACFG.resource_handling_type) with
     (   _, ACFG.Allocation  _) -> Some("forestgreen")
+  | (   _, ACFG.Assignment  _) -> Some("orange")
   | (   _, ACFG.Release     _) -> Some("red3")
   | (   _, ACFG.Computation _) -> Some("yellow")
   | (   _, ACFG.Test        _) -> Some("purple")
@@ -59,6 +60,7 @@ let border_color_of node =
 let color_of node =
   match (node.ACFG.is_error_handling, node.ACFG.resource_handling_type) with
     (   _, ACFG.Allocation  _) -> Some("darkolivegreen1")
+  | (   _, ACFG.Assignment  _) -> Some("peachpuff")
   | (   _, ACFG.Release     _) -> Some("lightpink")
   | (   _, ACFG.Computation _) -> Some("lightyellow")
   | (   _, ACFG.Test        _) -> Some("violet")

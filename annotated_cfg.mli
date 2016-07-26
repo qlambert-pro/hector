@@ -24,12 +24,18 @@ module Asto = Ast_operations
 
 exception NoCFG
 
+type assignment = {
+  left_value: Ast_c.expression;
+  right_value: Asto.assignment;
+}
+
 type resource =
     Void     of Ast_c.expression option
   | Resource of Ast_c.expression
 
 type resource_handling =
     Allocation  of resource
+  | Assignment  of assignment
   | Release     of resource
   | Computation of Ast_c.expression list
   | Test        of Ast_c.expression list
@@ -67,7 +73,10 @@ val get_arguments: node ->  (Ast_c.expression list) option
 
 val line_number_of_node: t -> node complete_node -> int
 
-val apply_base_visitor:
+val apply_side_effect_visitor:
+  ((Ast_c.expression -> Ast_c.expression option -> unit)) -> node -> unit
+
+val apply_assignment_visitor:
   ((Ast_c.expression -> Ast_c.expression option -> unit)) -> node -> unit
 
 val is_killing_reach:
@@ -81,10 +90,15 @@ val filter_returns: t -> Ast_c.expression -> NodeiSet.t -> NodeiSet.t
 val test_if_header: (Ast_c.expression -> 'a) -> 'a -> node -> 'a
 val test_returned_expression: (Ast_c.expression -> 'a) -> 'a -> node -> 'a
 
+val is_assigning_variable: node complete_node -> bool
 val is_selection: node -> bool
 val is_last_reference: t -> node complete_node -> resource -> bool
+val is_last_reference_before_killed_reached:
+  Ast_c.expression ->
+  t -> node complete_node -> resource -> bool
 val is_first_reference: t -> node complete_node -> resource -> bool
 
 val is_return_value_tested: t -> node complete_node -> bool
 
 val annotate_resource: t -> node complete_node -> resource_handling -> unit
+val get_assignment: node -> assignment option

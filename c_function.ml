@@ -57,7 +57,7 @@ let get_resource_release cfg block_head acc =
        acc)
     cfg block_head
 
-(*TODO study trough aliases*)
+(*TODO study trough aliases by following through assignements*)
 let get_previous_statements cfg block_head release =
   GO.breadth_first_fold
     (GO.get_backward_config
@@ -68,6 +68,7 @@ let get_previous_statements cfg block_head release =
             false
           | ACFG.Computation _
           | ACFG.Allocation _
+          | ACFG.Assignment _
           | ACFG.Release _
           | ACFG.Test _
           | ACFG.Unannotated -> true)
@@ -79,6 +80,7 @@ let get_previous_statements cfg block_head release =
             cn::res
           | ACFG.Computation _
           | ACFG.Allocation _
+          | ACFG.Assignment _
           | ACFG.Release _
           | ACFG.Test _
           | ACFG.Unannotated -> res)
@@ -132,6 +134,7 @@ let is_releasing_resource cfg resource b =
        | ACFG.Computation _
        | ACFG.Allocation _
        | ACFG.Release _
+       | ACFG.Assignment _
        | ACFG.Test _
        | ACFG.Unannotated -> false)
 
@@ -140,6 +143,8 @@ let is_returning_resource cfg resource b =
   exists_after_block cfg b (ACFG.is_returning_resource resource)
 
 
+(*TODO study trough aliases by remmebering aliases and calling itself
+ * recursively on assignments to new alias*)
 let get_candidate_blocks cfg error_blocks exemplar =
   GO.breadth_first_fold
     (GO.get_forward_config
@@ -201,6 +206,7 @@ let filter_faults cfg exemplar blocks =
                           exemplar.res (ACFG.Resource e))
                      rs ->
                  acc && not (ACFG.is_similar_statement exemplar.release cn)
+               | ACFG.Assignment _
                | ACFG.Test _
                | ACFG.Unannotated
                | ACFG.Computation _ -> acc)

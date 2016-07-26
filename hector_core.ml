@@ -39,7 +39,7 @@ let get_assignment_type_through_alias cfg =
                   (Asto.Error Asto.Ambiguous)::res
                 else
                   let temp = ref None in
-                  ACFG.apply_base_visitor
+                  ACFG.apply_side_effect_visitor
                     (fun l r ->
                        if Asto.expression_equal e l
                        then
@@ -75,7 +75,7 @@ let get_error_assignments cfg identifiers =
   let t = Hashtbl.create 101 in
   cfg#nodes#iter
     (fun (i, node) ->
-       ACFG.apply_base_visitor
+       ACFG.apply_side_effect_visitor
          (fun l r ->
             if List.exists (fun e -> Asto.expression_equal e l) identifiers
             then
@@ -286,9 +286,10 @@ let get_released_resource cfg cn =
   match (resources, arguments) with
     (  _, Some   []) -> Some (ACFG.Void None)
   | ( [], Some  [r]) when not (Asto.is_string   r) -> Some (ACFG.Void (Some r))
-  | ([r], Some args) when not (should_ignore args) &&
-                          Asto.is_pointer r ->
-    if (ACFG.is_last_reference cfg cn (ACFG.Resource r) &&
+  | ([r], Some args) when not (should_ignore args) ->
+
+    if (ACFG.is_last_reference_before_killed_reached r
+          cfg cn (ACFG.Resource r) &&
         not (ACFG.is_return_value_tested cfg cn)) ||
        is_interprocedural cn
     then
@@ -317,7 +318,7 @@ let get_resource cfg relevant_resources cn =
   let resources = Asto.resources_of_arguments arguments in
   let should_ignore arguments = List.exists Asto.is_string arguments in
   let assigned_variable = ref None in
-  ACFG.apply_base_visitor
+  ACFG.apply_assignment_visitor
     (fun l _ ->
        if Asto.is_pointer l
        then assigned_variable := Some l
@@ -329,7 +330,7 @@ let get_resource cfg relevant_resources cn =
     ACFG.Allocation (ACFG.Void None)
   | (  None,  [], Some  [r]) when not (Asto.is_string r) ->
     ACFG.Allocation (ACFG.Void (Some r))
-  | (Some r,  [], Some args) when
+  | (Some r,  _, Some args) when
       List.exists (Asto.expression_equal r) relevant_resources &&
       not (should_ignore args) ->
     ACFG.Allocation (ACFG.Resource r)
@@ -358,13 +359,22 @@ let get_resource cfg relevant_resources cn =
     in
     if test <> []
     then ACFG.Test test
-    else ACFG.Unannotated
+    else
+      begin
+      match ACFG.get_assignment cn.GO.node with
+        Some a when
+          List.exists
+            (Asto.expression_equal a.ACFG.left_value)
+            relevant_resources ->
+        ACFG.Assignment a
+      | _ -> ACFG.Unannotated
+      end
 
 
 let annotate_resource_handling cfg =
   let relevant_resources =
     (Common.profile_code "find_resource" (fun () ->
-        GO.fold_node
+         GO.fold_node
            (fun acc (i, n) ->
               if n.ACFG.is_error_handling
               then
@@ -394,18 +404,24 @@ let annotate_resource_handling cfg =
          (get_resource cfg relevant_resources cn))
     () cfg;
 
+  let annotate_if_allocation r cfg cn =
+    if ACFG.is_first_reference cfg cn (ACFG.Resource r) &&
+      not (ACFG.is_assigning_variable cn)
+    then
+      ACFG.annotate_resource cfg cn (ACFG.Allocation (ACFG.Resource r))
+    else
+      ()
+  in
+
   let config r =
     GO.get_forward_config
       (fun _ (cn, _) ->
          not (ACFG.is_referencing_resource (ACFG.Resource r) cn.GO.node))
       (fun _ (cn, _) res ->
          match cn.GO.node.ACFG.resource_handling_type with
-           ACFG.Computation [cr] when Asto.expression_equal r cr ->
-           if ACFG.is_first_reference cfg cn (ACFG.Resource cr)
-           then
-             ACFG.annotate_resource cfg cn (ACFG.Allocation (ACFG.Resource cr))
-           else
-             ()
+         | ACFG.Computation [cr] when Asto.expression_equal r cr ->
+           annotate_if_allocation cr cfg cn
+         | ACFG.Assignment _
          | ACFG.Computation _
          | ACFG.Test _
          | ACFG.Allocation _

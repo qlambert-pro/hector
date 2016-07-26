@@ -107,4 +107,8 @@ let () =
         "get_faults" "./tests/resources.c"
         " should return the empty list for " concat_get_faults 0
         is_length;
+      mk_cfg_test
+        "get_faults" "./tests/complex_resources.c"
+        " should return the empty list for " concat_get_faults 0
+        is_length;
     ]

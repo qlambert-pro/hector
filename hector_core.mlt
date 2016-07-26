@@ -104,6 +104,11 @@ let is_allocation_node cfg index =
     ACFG.Allocation _ -> true
   | _                 -> false
 
+let is_assignment_node cfg index =
+  match (cfg#nodes#assoc index).ACFG.resource_handling_type with
+    ACFG.Assignment _ -> true
+  | _                 -> false
+
 let is_release_node cfg index =
   match (cfg#nodes#assoc index).ACFG.resource_handling_type with
     ACFG.Release _ -> true
@@ -116,6 +121,10 @@ let compute_is_error_handling_node node_indices = function
 let compute_is_allocation_node node_indices = function
     [cfg] -> List.map (is_allocation_node cfg) node_indices
   | cfgs  -> List.map2 is_allocation_node cfgs node_indices
+
+let compute_is_assignment_node node_indices = function
+    [cfg] -> List.map (is_assignment_node cfg) node_indices
+  | cfgs  -> List.map2 is_assignment_node cfgs node_indices
 
 let compute_is_release_node node_indices = function
     [cfg] -> List.map (is_release_node cfg) node_indices
@@ -214,4 +223,14 @@ let () =
         " does not behave as expected on "
         (compute_is_allocation_node [14; 16; 19; 8])
         [true; false; false; true] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/complex_resources.c"
+        " does not behave as expected on "
+        (compute_is_assignment_node [126])
+        [true] (=);
+      mk_cfg_test
+        "annotate_resource_handling" "./tests/complex_resources.c"
+        " does not behave as expected on "
+        (compute_is_allocation_node [61])
+        [true] (=);
     ]

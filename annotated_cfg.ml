@@ -37,8 +37,14 @@ let resource_equal r1 r2 =
     Asto.expression_equal e1 e2
   | _ -> false
 
+type assignment = {
+  left_value: Ast_c.expression;
+  right_value: Asto.assignment;
+}
+
 type resource_handling =
     Allocation  of resource
+  | Assignment  of assignment
   | Release     of resource
   | Computation of Ast_c.expression list
   | Test        of Ast_c.expression list
@@ -121,7 +127,26 @@ let line_number_of_node cfg cn =
   in
   aux cn
 
-let base_visitor f = {
+let side_effect_visitor f = {
+  Visitor_c.default_visitor_c with
+  Visitor_c.kexpr =
+    (fun (k, visitor) e ->
+       Asto.apply_on_assignment
+         f
+         e;
+       Asto.apply_on_funcall_side_effect
+         f
+         e;
+       k e);
+  Visitor_c.konedecl =
+    (fun (k, visitor) dl ->
+       Asto.apply_on_initialisation
+         f
+         dl;
+       k dl)
+}
+
+let assignment_visitor f = {
   Visitor_c.default_visitor_c with
   Visitor_c.kexpr =
     (fun (k, visitor) e ->
@@ -137,15 +162,17 @@ let base_visitor f = {
        k dl)
 }
 
-
-let apply_base_visitor f node =
-  let visitor = base_visitor f in
+let apply_side_effect_visitor f node =
+  let visitor = side_effect_visitor f in
   Visitor_c.vk_node visitor node.parser_node
 
+let apply_assignment_visitor f node =
+  let visitor = assignment_visitor f in
+  Visitor_c.vk_node visitor node.parser_node
 
 let is_killing_reach identifier node =
   let acc = ref false in
-  apply_base_visitor
+  apply_side_effect_visitor
     (fun r l -> acc := !acc || Asto.expression_equal identifier r)
     node;
   !acc
@@ -225,6 +252,14 @@ let is_on_error_branch get_assignment_type cfg n head =
   | _ -> false
 (**********************************************************)
 
+let is_assigning_variable cn =
+  match cn.node.resource_handling_type with
+    Assignment a ->
+    (match a.right_value with
+       Asto.Variable _ -> true
+     | _ -> false)
+  | _ -> false
+
 let filter_returns cfg identifier nodes =
   NodeiSet.filter
     (fun index ->
@@ -246,6 +281,7 @@ let annotate_resource cfg cn resource =
     (            _,       Test _)
   | (            _,    Release _)
   | (Computation _, Allocation _)
+  | (Assignment  _, Allocation _)
   | (Unannotated  ,            _) ->
     cfg#replace_node
       (cn.index, {cn.node with resource_handling_type = resource})
@@ -262,6 +298,10 @@ let configurable_is_reference config cfg cn r =
 let is_last_reference =
   configurable_is_reference (get_basic_node_config (fun _ _ -> true))
 
+let is_last_reference_before_killed_reached identifier =
+  configurable_is_reference
+    (get_basic_node_config
+       (fun _ (n, _) -> not (is_killing_reach identifier n.node)))
 
 let is_first_reference =
   configurable_is_reference (get_backward_basic_node_config (fun _ _ -> true))
@@ -269,7 +309,7 @@ let is_first_reference =
 
 let is_return_value_tested cfg cn =
   let assigned_variable = ref None in
-  apply_base_visitor
+  apply_side_effect_visitor
     (fun l r -> assigned_variable := Some l)
     cn.node;
   match !assigned_variable with
@@ -378,3 +418,15 @@ let is_returning_resource resource cn =
     Void _     -> false
   | Resource r ->
     test_returned_expression (Asto.expression_equal r) false cn.node
+
+let get_assignment cn =
+  let assignment = ref None in
+  let f l r =
+    match r with
+      Some r ->
+      assignment :=
+        Some {left_value = l; right_value = Asto.get_assignment_type r}
+    | None   -> ()
+  in
+  apply_assignment_visitor f cn;
+  !assignment

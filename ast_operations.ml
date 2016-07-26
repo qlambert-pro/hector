@@ -269,12 +269,14 @@ let rec is_pointer exp =
   let ((expression, info), _) = exp in
   match expression with
     ParenExpr e -> is_pointer e
-  | Unary (_, GetRef) -> true
-  | Cast ((_, (Pointer _, _)), _) ->
-    true
+  | Unary (_, GetRef)
+  | Cast ((_, (Pointer _, _)), _) -> true
+  | Constant _ -> false
   | _ ->
+
     match !info with
-      (Some ((_, (Pointer _, _)), _), _) -> true
+      (None, _)
+    | (Some ((_, (Pointer _, _)), _), _) -> true
     | _ -> false
 
 let expressions_of_arguments arguments =
@@ -390,6 +392,11 @@ let apply_on_assignment f (expression, _) =
     Assignment (e1, op, e2)
     when is_simple_assignment op ->
     f e1 (Some e2)
+  | e -> ()
+
+
+let apply_on_funcall_side_effect f (expression, _) =
+  match unwrap expression with
   | FunCall (_, arguments') ->
     let arguments = expressions_of_arguments arguments' in
     let pointers = List.find_all is_pointer arguments in
