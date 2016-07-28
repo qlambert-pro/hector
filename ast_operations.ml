@@ -389,11 +389,8 @@ let is_string e =
 
 let apply_on_assignment f (expression, _) =
   match unwrap expression with
-    Assignment (e1, op, e2)
-    when is_simple_assignment op ->
-    f e1 (Some e2)
+    Assignment (e1, op, e2) -> f e1 op e2
   | e -> ()
-
 
 let apply_on_funcall_side_effect f (expression, _) =
   match unwrap expression with
@@ -401,7 +398,7 @@ let apply_on_funcall_side_effect f (expression, _) =
     let arguments = expressions_of_arguments arguments' in
     let pointers = List.find_all is_pointer arguments in
     (match pointers with
-       [p] -> f p None
+       [p] -> f p
      | _   -> ())
   | e -> ()
 
@@ -409,7 +406,8 @@ let apply_on_initialisation f declaration =
   match declaration.v_namei with
     Some (n, ValInit (_, (InitExpr e, _))) ->
     f (mk_e_bis (Ident n)
-         (ref (Some (declaration.v_type, NotLocalVar), NotTest)) []) (Some e)
+         (ref (Some (declaration.v_type, NotLocalVar), NotTest)) [])
+      (SimpleAssign, []) e
   | _ -> ()
 
 (*TODO None ..*)

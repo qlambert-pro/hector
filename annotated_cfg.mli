@@ -24,8 +24,13 @@ module Asto = Ast_operations
 
 exception NoCFG
 
+type assignment_operator =
+    Simple
+  | Algebraic
+
 type assignment = {
   left_value: Ast_c.expression;
+  operator: assignment_operator;
   right_value: Asto.assignment;
 }
 
@@ -74,10 +79,13 @@ val get_arguments: node ->  (Ast_c.expression list) option
 val line_number_of_node: t -> node complete_node -> int
 
 val apply_side_effect_visitor:
-  ((Ast_c.expression -> Ast_c.expression option -> unit)) -> node -> unit
+  (Ast_c.expression -> Ast_c.assignOp option ->
+    Ast_c.expression option -> unit) ->
+  node -> unit
 
 val apply_assignment_visitor:
-  ((Ast_c.expression -> Ast_c.expression option -> unit)) -> node -> unit
+  (Ast_c.expression -> Ast_c.assignOp -> Ast_c.expression -> unit) ->
+  node -> unit
 
 val is_killing_reach:
   Ast_c.expression -> node -> bool

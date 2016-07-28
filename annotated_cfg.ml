@@ -37,8 +37,13 @@ let resource_equal r1 r2 =
     Asto.expression_equal e1 e2
   | _ -> false
 
+type assignment_operator =
+    Simple
+  | Algebraic
+
 type assignment = {
   left_value: Ast_c.expression;
+  operator: assignment_operator;
   right_value: Asto.assignment;
 }
 
@@ -127,24 +132,26 @@ let line_number_of_node cfg cn =
   in
   aux cn
 
-let side_effect_visitor f = {
-  Visitor_c.default_visitor_c with
-  Visitor_c.kexpr =
-    (fun (k, visitor) e ->
-       Asto.apply_on_assignment
-         f
-         e;
-       Asto.apply_on_funcall_side_effect
-         f
-         e;
-       k e);
-  Visitor_c.konedecl =
-    (fun (k, visitor) dl ->
-       Asto.apply_on_initialisation
-         f
-         dl;
-       k dl)
-}
+let side_effect_visitor f =
+  let assignment_f e1 op e2 = f e1 (Some op) (Some e2) in
+  let funcall_f e1 = f e1 None None in
+  {Visitor_c.default_visitor_c with
+   Visitor_c.kexpr =
+     (fun (k, visitor) e ->
+        Asto.apply_on_assignment
+          assignment_f
+          e;
+        Asto.apply_on_funcall_side_effect
+          funcall_f
+          e;
+        k e);
+   Visitor_c.konedecl =
+     (fun (k, visitor) dl ->
+        Asto.apply_on_initialisation
+          assignment_f
+          dl;
+        k dl)
+  }
 
 let assignment_visitor f = {
   Visitor_c.default_visitor_c with
@@ -173,7 +180,7 @@ let apply_assignment_visitor f node =
 let is_killing_reach identifier node =
   let acc = ref false in
   apply_side_effect_visitor
-    (fun r l -> acc := !acc || Asto.expression_equal identifier r)
+    (fun r _ _ -> acc := !acc || Asto.expression_equal identifier r)
     node;
   !acc
 
@@ -310,7 +317,7 @@ let is_first_reference =
 let is_return_value_tested cfg cn =
   let assigned_variable = ref None in
   apply_side_effect_visitor
-    (fun l r -> assigned_variable := Some l)
+    (fun l _ _ -> assigned_variable := Some l)
     cn.node;
   match !assigned_variable with
     None    -> false
@@ -421,12 +428,16 @@ let is_returning_resource resource cn =
 
 let get_assignment cn =
   let assignment = ref None in
-  let f l r =
-    match r with
-      Some r ->
-      assignment :=
-        Some {left_value = l; right_value = Asto.get_assignment_type r}
-    | None   -> ()
+  let f l op r =
+    let op =
+      if Asto.is_simple_assignment op
+      then Simple
+      else Algebraic
+    in
+    assignment :=
+      Some {left_value = l;
+            operator = op;
+            right_value = Asto.get_assignment_type r}
   in
   apply_assignment_visitor f cn;
   !assignment

@@ -54,21 +54,21 @@ val resources_of_arguments:
 
 val is_string:  Ast_c.expression -> bool
 val is_pointer: Ast_c.expression -> bool
+val is_simple_assignment: Ast_c.assignOp -> bool
 val is_testing_identifier:
   Ast_c.expression -> Ast_c.expression -> bool
 
 (* Side Effects *)
 val apply_on_assignment:
-  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
-  unit
+  (Ast_c.expression -> Ast_c.assignOp -> Ast_c.expression -> unit) ->
+  Ast_c.expression -> unit
 
 val apply_on_funcall_side_effect:
-  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.expression ->
-  unit
+  (Ast_c.expression -> unit) -> Ast_c.expression -> unit
 
 val apply_on_initialisation:
-  (Ast_c.expression -> Ast_c.expression option -> unit) -> Ast_c.onedecl ->
-  unit
+  (Ast_c.expression -> Ast_c.assignOp -> Ast_c.expression -> unit) ->
+  Ast_c.onedecl -> unit
 
 val which_is_the_error_branch:
   (Ast_c.expression -> value) ->

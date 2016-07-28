@@ -40,18 +40,23 @@ let get_assignment_type_through_alias cfg =
                 else
                   let temp = ref None in
                   ACFG.apply_side_effect_visitor
-                    (fun l r ->
+                    (fun l op r ->
                        if Asto.expression_equal e l
                        then
-                         match r with
-                           Some r ->
+                         match (op, r) with
+                           (Some op,      _) when
+                            not (Asto.is_simple_assignment op) ->
+                           temp := Some Asto.NonError
+                         | (Some  _, Some r) ->
                            temp :=
                              if GO.NodeiSet.mem n.GO.index !visited_node
                              then
                                Some (Asto.Error Asto.Ambiguous)
                              else
                                Some (aux n r)
-                         | None   -> temp := Some (Asto.Error Asto.Ambiguous)
+                         | (    _,   None) ->
+                           temp := Some (Asto.Error Asto.Ambiguous)
+                         | _ -> failwith "unexpected missing operator or right value"
                        else
                          ())
                     n.GO.node;
@@ -76,11 +81,14 @@ let get_error_assignments cfg identifiers =
   cfg#nodes#iter
     (fun (i, node) ->
        ACFG.apply_side_effect_visitor
-         (fun l r ->
+         (fun l op r ->
             if List.exists (fun e -> Asto.expression_equal e l) identifiers
             then
-              match r with
-                Some r ->
+              match (op, r) with
+                (Some op,      _) when
+                 not (Asto.is_simple_assignment op) ->
+                ()
+              | (Some  _, Some r) ->
                 let assignment_type =
                   get_assignment_type_through_alias
                     cfg {GO.index = i; GO.node = node} r
@@ -88,7 +96,9 @@ let get_error_assignments cfg identifiers =
                 (match assignment_type with
                    Asto.Error err -> Hashtbl.add t ((i, node), l) err
                  | _    -> ())
-              | None ->  Hashtbl.add t ((i, node), l) Asto.Ambiguous
+              | (      _,   None) ->
+                Hashtbl.add t ((i, node), l) Asto.Ambiguous
+              | _ -> failwith "unexpected missing operator or right value"
             else
               ())
          node);
@@ -319,7 +329,7 @@ let get_resource cfg relevant_resources cn =
   let should_ignore arguments = List.exists Asto.is_string arguments in
   let assigned_variable = ref None in
   ACFG.apply_assignment_visitor
-    (fun l _ ->
+    (fun l _ _ ->
        if Asto.is_pointer l
        then assigned_variable := Some l
        else ())

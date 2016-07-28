@@ -63,12 +63,13 @@ let get_previous_statements cfg block_head release =
     (GO.get_backward_config
        (fun _ (cn, _) ->
           match cn.GO.node.ACFG.resource_handling_type with
-            ACFG.Allocation r
-            when ACFG.resource_equal r release.resource ->
-            false
+            ACFG.Allocation r ->
+            not (ACFG.resource_equal r release.resource)
+          | ACFG.Assignment a ->
+            not (ACFG.resource_equal
+                   (ACFG.Resource a.ACFG.left_value)
+                   release.resource)
           | ACFG.Computation _
-          | ACFG.Allocation _
-          | ACFG.Assignment _
           | ACFG.Release _
           | ACFG.Test _
           | ACFG.Unannotated -> true)
@@ -92,7 +93,6 @@ let get_exemplars cfg error_blocks =
   let get_resource_release acc block =
     get_resource_release cfg block acc
   in
-
   let releases = List.fold_left get_resource_release [] error_blocks in
 
   let exemplars_of_release acc (release, model_block) =
