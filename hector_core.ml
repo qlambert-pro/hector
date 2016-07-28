@@ -29,7 +29,7 @@ let get_assignment_type_through_alias cfg =
     visited_node := GO.NodeiSet.add n.GO.index !visited_node;
     match Asto.get_assignment_type e with
       Asto.Variable e ->
-      let assignements =
+      let assignments =
         GO.breadth_first_fold
           (GO.get_backward_config
              (fun _ (n, _) -> not (ACFG.is_killing_reach e n.GO.node))
@@ -61,9 +61,9 @@ let get_assignment_type_through_alias cfg =
              [])
           cfg (GO.complete_node_of cfg n.GO.index)
       in
-      if List.for_all ((=) (List.hd assignements)) assignements
+      if List.for_all ((=) (List.hd assignments)) assignments
       then
-        List.hd assignements
+        List.hd assignments
       else
         Asto.Error Asto.Ambiguous
     | Asto.Value v    -> v
@@ -406,7 +406,7 @@ let annotate_resource_handling cfg =
 
   let annotate_if_allocation r cfg cn =
     if ACFG.is_first_reference cfg cn (ACFG.Resource r) &&
-      not (ACFG.is_assigning_variable cn)
+       not (ACFG.is_assigning_variable cn)
     then
       ACFG.annotate_resource cfg cn (ACFG.Allocation (ACFG.Resource r))
     else
