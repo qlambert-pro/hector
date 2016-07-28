@@ -372,7 +372,7 @@ let get_resource cfg relevant_resources cn =
 
 
 let annotate_resource_handling cfg =
-  let relevant_resources =
+  let relevant_resources' =
     (Common.profile_code "find_resource" (fun () ->
          GO.fold_node
            (fun acc (i, n) ->
@@ -388,6 +388,26 @@ let annotate_resource_handling cfg =
                 acc)
            [] cfg
        ))
+  in
+
+  let relevant_resources =
+    GO.fold_node
+      (fun acc (_, n) ->
+         let assignement = ACFG.get_assignment n in
+         match assignement with
+           Some a ->
+           if List.exists (Asto.expression_equal a.ACFG.left_value) acc
+           then
+             match a.ACFG.right_value with
+               Asto.Variable e ->
+               if not (List.exists (Asto.expression_equal e) acc)
+               then e::acc
+               else acc
+             | _ -> acc
+           else
+             acc
+         | _ -> acc)
+      relevant_resources' cfg
   in
 
   GO.fold_node
