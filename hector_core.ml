@@ -45,7 +45,7 @@ let get_assignment_type_through_alias cfg =
                        then
                          match (op, r) with
                            (Some op,      _) when
-                            not (Asto.is_simple_assignment op) ->
+                             not (Asto.is_simple_assignment op) ->
                            temp := Some Asto.NonError
                          | (Some  _, Some r) ->
                            temp :=
@@ -86,7 +86,7 @@ let get_error_assignments cfg identifiers =
             then
               match (op, r) with
                 (Some op,      _) when
-                 not (Asto.is_simple_assignment op) ->
+                  not (Asto.is_simple_assignment op) ->
                 ()
               | (Some  _, Some r) ->
                 let assignment_type =
@@ -267,7 +267,7 @@ let annotate_error_handling cfg =
                 GO.conditional_get_post_dominated (fun _ -> true) cfg
                   (GO.complete_node_of cfg index)
               in
-             GO.NodeiSet.union acc nodes)
+              GO.NodeiSet.union acc nodes)
            GO.NodeiSet.empty error_returns
        ))
   in
@@ -370,7 +370,6 @@ let get_resource cfg relevant_resources cn =
     if test <> []
     then ACFG.Test test
     else
-      begin
       match ACFG.get_assignment cn.GO.node with
         Some a when
           List.exists
@@ -378,7 +377,6 @@ let get_resource cfg relevant_resources cn =
             relevant_resources ->
         ACFG.Assignment a
       | _ -> ACFG.Unannotated
-      end
 
 
 let annotate_resource_handling cfg =

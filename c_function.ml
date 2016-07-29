@@ -57,36 +57,54 @@ let get_resource_release cfg block_head acc =
        acc)
     cfg block_head
 
-(*TODO study trough aliases by following through assignements*)
-let get_previous_statements cfg block_head release =
-  GO.breadth_first_fold
-    (GO.get_backward_config
-       (fun _ (cn, _) ->
-          match cn.GO.node.ACFG.resource_handling_type with
-            ACFG.Allocation r ->
-            not (ACFG.resource_equal r release.resource)
-          | ACFG.Assignment a ->
-            not (ACFG.resource_equal
-                   (ACFG.Resource a.ACFG.left_value)
-                   release.resource)
-          | ACFG.Computation _
-          | ACFG.Release _
-          | ACFG.Test _
-          | ACFG.Unannotated -> true)
+let get_allocs cfg block_head release =
+  let visited_node = ref GO.NodeiSet.empty in
+  let rec aux b resource resources =
+    visited_node := GO.NodeiSet.add b.GO.index !visited_node;
+    GO.breadth_first_fold
+      (GO.get_backward_config
+         (fun _ (cn, _) ->
+            match cn.GO.node.ACFG.resource_handling_type with
+              ACFG.Allocation r ->
+              not (ACFG.resource_equal r resource)
+            | ACFG.Assignment a ->
+              not (ACFG.resource_equal
+                     (ACFG.Resource a.ACFG.left_value) resource)
+            | ACFG.Computation _
+            | ACFG.Release _
+            | ACFG.Test _
+            | ACFG.Unannotated -> true)
 
-       (fun _ (cn, _) res ->
-          match cn.GO.node.ACFG.resource_handling_type with
-            ACFG.Allocation r
-            when ACFG.resource_equal r release.resource ->
-            cn::res
-          | ACFG.Computation _
-          | ACFG.Allocation _
-          | ACFG.Assignment _
-          | ACFG.Release _
-          | ACFG.Test _
-          | ACFG.Unannotated -> res)
-       [])
-    cfg block_head
+         (fun _ (cn, _) allocs ->
+            match cn.GO.node.ACFG.resource_handling_type with
+              ACFG.Allocation r
+              when ACFG.resource_equal r resource ->
+              cn::allocs
+            | ACFG.Assignment a when
+                not (ACFG.resource_equal
+                       (ACFG.Resource a.ACFG.left_value) resource) ->
+              let nr = (ACFG.Resource a.ACFG.left_value) in
+
+              if GO.NodeiSet.mem cn.GO.index !visited_node
+              then allocs
+              else
+                let nallocs = aux cn nr (nr::resources) in
+                List.fold_left
+                  (fun acc cn ->
+                     if List.exists ((=) cn) acc
+                     then acc
+                     else cn::acc)
+                  allocs nallocs
+            | ACFG.Computation _
+            | ACFG.Allocation _
+            | ACFG.Assignment _
+            | ACFG.Release _
+            | ACFG.Test _
+            | ACFG.Unannotated -> allocs)
+         [])
+      cfg b
+  in
+  aux block_head release.resource [release.resource]
 
 
 let get_exemplars cfg error_blocks =
@@ -97,7 +115,7 @@ let get_exemplars cfg error_blocks =
 
   let exemplars_of_release acc (release, model_block) =
     (*TODO may not need model_block*)
-    let allocs = get_previous_statements cfg model_block release in
+    let allocs = get_allocs cfg model_block release in
 
     List.fold_left (fun acc alloc ->
         let a = ACFG.get_function_call_name alloc in
@@ -121,51 +139,82 @@ let exists_after_block cfg block predicate =
   GO.breadth_first_fold
     (GO.get_forward_config
        (fun _ _ -> true)
-       (fun _ (cn, _) res -> res || predicate cn)
+       (fun _ (cn, _) res ->
+          res || predicate cn)
        false)
     cfg block
 
 
-let is_releasing_resource cfg resource b =
-  exists_after_block cfg b
-    (fun b ->
-       match b.GO.node.ACFG.resource_handling_type with
-         ACFG.Release r when ACFG.resource_equal r resource -> true
-       | ACFG.Computation _
-       | ACFG.Allocation _
-       | ACFG.Release _
-       | ACFG.Assignment _
-       | ACFG.Test _
-       | ACFG.Unannotated -> false)
+let is_releasing_resource cfg resources b =
+    List.exists
+      (fun resource ->
+        exists_after_block cfg b
+          (fun b ->
+             match b.GO.node.ACFG.resource_handling_type with
+               ACFG.Release r when ACFG.resource_equal r resource -> true
+             | ACFG.Computation _
+             | ACFG.Allocation _
+             | ACFG.Release _
+             | ACFG.Assignment _
+             | ACFG.Test _
+             | ACFG.Unannotated -> false))
+      resources
 
 
-let is_returning_resource cfg resource b =
-  exists_after_block cfg b (ACFG.is_returning_resource resource)
+let is_returning_resource cfg resources b =
+    List.exists (fun resource ->
+        exists_after_block cfg b (ACFG.is_returning_resource resource))
+      resources
 
-
-(*TODO study trough aliases by remmebering aliases and calling itself
- * recursively on assignments to new alias*)
-let get_candidate_blocks cfg error_blocks exemplar =
-  GO.breadth_first_fold
-    (GO.get_forward_config
-       (fun _ (cn, _) ->
+let update_aliases cn aliases =
+  match cn.GO.node.ACFG.resource_handling_type with
+    ACFG.Assignment a ->
+    let resource_assignment = ACFG.Resource a.ACFG.left_value in
+    (match a.ACFG.right_value with
+       Asto.Variable v ->
+       let resource_variable    = ACFG.Resource v in
+       if List.exists (ACFG.resource_equal resource_variable) aliases &&
           not (List.exists
-                 (fun n -> n.GO.index = cn.GO.index)
-                 error_blocks))
-       (fun _ (cn, _) res ->
-          try
-            let block =
-              List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
-            in
-            if not (is_releasing_resource cfg exemplar.res block) &&
-               not (is_returning_resource cfg exemplar.res block)
-            then
-              block::res
-            else
-              res
-          with Not_found -> res)
-       [])
-    cfg exemplar.alloc
+                 (ACFG.resource_equal resource_assignment)
+                 aliases)
+       then resource_assignment::aliases
+       else aliases
+     | Asto.Value _ ->
+       List.find_all
+         (fun r -> not (ACFG.resource_equal resource_assignment r))
+         aliases)
+  | ACFG.Computation _
+  | ACFG.Allocation _
+  | ACFG.Release _
+  | ACFG.Test _
+  | ACFG.Unannotated -> aliases
+
+
+
+let get_candidate_blocks cfg error_blocks exemplar =
+  fst
+    (GO.breadth_first_fold
+       (GO.get_forward_config
+          (fun _ (cn, _) ->
+             not (List.exists
+                    (fun n -> n.GO.index = cn.GO.index)
+                    error_blocks))
+          (fun _ (cn, _) (res, aliases) ->
+             let naliases = update_aliases cn aliases in
+             try
+               let block =
+                 List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
+               in
+               if not (is_releasing_resource cfg naliases block) &&
+                  not (is_returning_resource cfg naliases block)
+               then
+                 (block::res, naliases)
+               else
+                 (       res, naliases)
+             with Not_found ->
+               (res, naliases))
+          ([], [exemplar.res]))
+       cfg exemplar.alloc)
 
 
 let filter_faults cfg exemplar blocks =
