@@ -295,23 +295,28 @@ let annotate_resource cfg cn resource =
   | _ -> ()
 
 let configurable_is_reference config cfg cn r =
-  let nodes' = breadth_first_fold config cfg cn in
-  let nodes  = NodeiSet.remove cn.index nodes' in
+  let nodes = breadth_first_fold config cfg cn in
   NodeiSet.fold
     (fun i acc -> acc && not (is_referencing_resource r (cfg#nodes#assoc i)))
     nodes
     true
 
 let is_last_reference =
-  configurable_is_reference (get_basic_node_config (fun _ _ -> true))
+  let just_true = (fun _ _ -> true) in
+  configurable_is_reference
+    (get_basic_node_config just_true NodeiSet.empty)
 
 let is_last_reference_before_killed_reached identifier =
+  let kill_reach _ (n, _) =
+    not (is_killing_reach identifier n.node)
+  in
   configurable_is_reference
-    (get_basic_node_config
-       (fun _ (n, _) -> not (is_killing_reach identifier n.node)))
+    (get_basic_node_config kill_reach NodeiSet.empty)
 
 let is_first_reference =
-  configurable_is_reference (get_backward_basic_node_config (fun _ _ -> true))
+  let just_true = (fun _ _ -> true) in
+  configurable_is_reference
+    (get_backward_basic_node_config just_true NodeiSet.empty)
 
 
 let is_return_value_tested cfg cn =
@@ -322,9 +327,10 @@ let is_return_value_tested cfg cn =
   match !assigned_variable with
     None    -> false
   | Some id ->
+    let just_true = (fun _ _ -> true) in
     let downstream_nodes =
       breadth_first_fold
-        (get_basic_node_config (fun _ _ -> true))
+        (get_basic_node_config just_true NodeiSet.empty)
         cfg cn
     in
     NodeiSet.for_all
@@ -415,7 +421,8 @@ let of_ast_c ast =
          (get_forward_config
             (fun _ _ -> true)
             (fun _ (cn, _) () -> process_node cn)
-            ())
+            (fun _ _ -> true)
+            true ())
          cocci_cfg
          (complete_node_of cocci_cfg top_node)));
   cfg

@@ -23,6 +23,7 @@ module Asto = Ast_operations
 module ACFG = Annotated_cfg
 module GO = Graph_operations
 
+(*TODO fixed point*)
 let get_assignment_type_through_alias cfg =
   let visited_node = ref GO.NodeiSet.empty in
   let rec aux n e =
@@ -32,7 +33,7 @@ let get_assignment_type_through_alias cfg =
       let assignments =
         GO.breadth_first_fold
           (GO.get_backward_config
-             (fun _ (n, _) -> not (ACFG.is_killing_reach e n.GO.node))
+             (fun _ _ -> true)
              (fun _ (n, _) res ->
                 if ACFG.is_top_node n.GO.node
                 then
@@ -63,7 +64,8 @@ let get_assignment_type_through_alias cfg =
                   match !temp with
                     None   -> res
                   | Some v -> v::res)
-             [])
+             (fun _ (n, _) -> not (ACFG.is_killing_reach e n.GO.node))
+             true [])
           cfg (GO.complete_node_of cfg n.GO.index)
       in
       if List.for_all ((=) (List.hd assignments)) assignments
@@ -117,13 +119,18 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
         GO.fold_successors
           (fun acc (cn, e) ->
              acc &&
-             (is_backedge e || GO.NodeiSet.mem cn.GO.index set))
+             (is_backedge e ||
+              (GO.NodeMap.mem  cn.GO.index set &&
+               GO.NodeMap.find cn.GO.index set)))
           true cfg n.GO.index
       in
       GO.NodeiSet.mem n.GO.index nodes &&
       is_post_dominated
     in
-    let config = GO.get_backward_basic_node_config predicate in
+    let config =
+      GO.get_backward_basic_node_config predicate
+        (GO.NodeiSet.singleton index)
+    in
     GO.breadth_first_fold config cfg (GO.complete_node_of cfg index)
   in
 
@@ -145,14 +152,17 @@ let add_post_dominated cfg index acc =
 
 let get_nodes_leading_to_error_return cfg error_assignments =
   let get_reachable_nodes ((index, node), identifier) error_type acc =
+    let kill_reach _ (cn, _) =
+         not (ACFG.is_killing_reach identifier cn.GO.node)
+    in
     match error_type with
       Asto.Clear ->
       (Common.profile_code "clear" (fun () ->
            let nodes =
              GO.breadth_first_fold
                (GO.get_basic_node_config
-                  (fun _ (cn, _) ->
-                     not (ACFG.is_killing_reach identifier cn.GO.node)))
+                  kill_reach
+                  (GO.NodeiSet.singleton index))
                cfg (GO.complete_node_of cfg index)
            in
            let reachable_returns = ACFG.filter_returns cfg identifier nodes in
@@ -174,8 +184,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
            let heads =
              GO.breadth_first_fold
                (GO.get_forward_config
-                  (fun _ (cn, _) ->
-                     not (ACFG.is_killing_reach identifier cn.GO.node))
+                  (fun _ _ -> true)
                   (*TODO is_testing_identifier is incorrect*)
                   (* add complex if cases to prove it *)
                   (fun _ (cn, e) res ->
@@ -196,7 +205,8 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                        if is_correct_branch && is_testing_identifier
                        then GO.NodeiSet.add cn.GO.index res
                        else res)
-                  GO.NodeiSet.empty)
+
+                  kill_reach true GO.NodeiSet.empty)
                cfg (GO.complete_node_of cfg index)
            in
            let nodes =
@@ -205,8 +215,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                   GO.NodeiSet.union s
                     (GO.breadth_first_fold
                        (GO.get_basic_node_config
-                          (fun _ (cn, _) ->
-                             not (ACFG.is_killing_reach identifier cn.GO.node)))
+                          kill_reach (GO.NodeiSet.singleton index))
                        cfg (GO.complete_node_of cfg index)))
                heads GO.NodeiSet.empty
            in
@@ -443,8 +452,7 @@ let annotate_resource_handling cfg =
 
   let config r =
     GO.get_forward_config
-      (fun _ (cn, _) ->
-         not (ACFG.is_referencing_resource (ACFG.Resource r) cn.GO.node))
+      (fun _ _ -> true)
       (fun _ (cn, _) res ->
          match cn.GO.node.ACFG.resource_handling_type with
          | ACFG.Computation [cr] when Asto.expression_equal r cr ->
@@ -455,7 +463,9 @@ let annotate_resource_handling cfg =
          | ACFG.Allocation _
          | ACFG.Release _
          | ACFG.Unannotated -> ())
-      ()
+      (fun _ (cn, _) ->
+         not (ACFG.is_referencing_resource (ACFG.Resource r) cn.GO.node))
+      true ()
   in
   List.iter
     (fun r -> GO.breadth_first_fold (config r) cfg (ACFG.get_top_node cfg))

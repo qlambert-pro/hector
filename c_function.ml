@@ -54,27 +54,18 @@ let get_resource_release cfg block_head acc =
             ACFG.Release r ->
             ({node = cn; resource = r}, block_head)::res
           | _         -> res)
-       acc)
+       (fun _ _ -> true)
+       true acc)
     cfg block_head
 
+(*TODO fixed point*)
 let get_allocs cfg block_head release =
   let visited_node = ref GO.NodeiSet.empty in
   let rec aux b resource resources =
     visited_node := GO.NodeiSet.add b.GO.index !visited_node;
     GO.breadth_first_fold
       (GO.get_backward_config
-         (fun _ (cn, _) ->
-            match cn.GO.node.ACFG.resource_handling_type with
-              ACFG.Allocation r ->
-              not (ACFG.resource_equal r resource)
-            | ACFG.Assignment a ->
-              not (ACFG.resource_equal
-                     (ACFG.Resource a.ACFG.left_value) resource)
-            | ACFG.Computation _
-            | ACFG.Release _
-            | ACFG.Test _
-            | ACFG.Unannotated -> true)
-
+         (fun _ _ -> true)
          (fun _ (cn, _) allocs ->
             match cn.GO.node.ACFG.resource_handling_type with
               ACFG.Allocation r
@@ -101,7 +92,18 @@ let get_allocs cfg block_head release =
             | ACFG.Release _
             | ACFG.Test _
             | ACFG.Unannotated -> allocs)
-         [])
+         (fun _ (cn, _) ->
+            match cn.GO.node.ACFG.resource_handling_type with
+              ACFG.Allocation r ->
+              not (ACFG.resource_equal r resource)
+            | ACFG.Assignment a ->
+              not (ACFG.resource_equal
+                     (ACFG.Resource a.ACFG.left_value) resource)
+            | ACFG.Computation _
+            | ACFG.Release _
+            | ACFG.Test _
+            | ACFG.Unannotated -> true)
+         true [])
       cfg b
   in
   aux block_head release.resource [release.resource]
@@ -141,7 +143,8 @@ let exists_after_block cfg block predicate =
        (fun _ _ -> true)
        (fun _ (cn, _) res ->
           res || predicate cn)
-       false)
+       (fun _ _ -> true)
+       true false)
     cfg block
 
 
@@ -190,15 +193,12 @@ let update_aliases cn aliases =
   | ACFG.Unannotated -> aliases
 
 
-
+(*TODO fixed point*)
 let get_candidate_blocks cfg error_blocks exemplar =
   fst
     (GO.breadth_first_fold
        (GO.get_forward_config
-          (fun _ (cn, _) ->
-             not (List.exists
-                    (fun n -> n.GO.index = cn.GO.index)
-                    error_blocks))
+          (fun _ _ -> true)
           (fun _ (cn, _) (res, aliases) ->
              let naliases = update_aliases cn aliases in
              try
@@ -213,7 +213,11 @@ let get_candidate_blocks cfg error_blocks exemplar =
                  (       res, naliases)
              with Not_found ->
                (res, naliases))
-          ([], [exemplar.res]))
+          (fun _ (cn, _) ->
+             not (List.exists
+                    (fun n -> n.GO.index = cn.GO.index)
+                    error_blocks))
+           true ([], [exemplar.res]))
        cfg exemplar.alloc)
 
 
@@ -222,11 +226,7 @@ let filter_faults cfg exemplar blocks =
     (fun b ->
        GO.breadth_first_fold
          (GO.get_backward_config
-            (fun _ (cn, _) ->
-               not (List.exists
-                      (fun e ->
-                         ACFG.resource_equal exemplar.res (ACFG.Resource e))
-                      cn.GO.node.ACFG.referenced_resources))
+            (fun _ _ -> true)
             (fun _ (cn, edge) acc ->
                match cn.GO.node.ACFG.resource_handling_type with
                  ACFG.Allocation r ->
@@ -259,7 +259,12 @@ let filter_faults cfg exemplar blocks =
                | ACFG.Test _
                | ACFG.Unannotated
                | ACFG.Computation _ -> acc)
-            true)
+            (fun _ (cn, _) ->
+               not (List.exists
+                      (fun e ->
+                         ACFG.resource_equal exemplar.res (ACFG.Resource e))
+                      cn.GO.node.ACFG.referenced_resources))
+            true true)
          cfg b)
     blocks
 

@@ -22,6 +22,7 @@
 open Ograph_extended
 
 module NodeiSet: Set.S with type elt = nodei
+module NodeMap : Map.S with type key = nodei
 
 type ('node, 'edge, 'g) readable_graph =
   < nodes: (nodei, 'node) Oassoc.oassoc;
@@ -56,48 +57,59 @@ val find_all:
   (nodei * 'node -> bool) -> ('node, 'edge, 'g) readable_graph ->
   (nodei * 'node) list
 
-type ('node, 'edge, 'g, 'res) fold_configuration =
+type ('node, 'edge, 'g, 'value, 'res) fold_configuration =
   {get_next_nodes:
      ('node, 'edge, 'g) readable_graph -> ('node complete_node * 'edge) list ->
      'node complete_node -> ('node complete_node * 'edge) list;
 
-   predicate: NodeiSet.t -> ('node complete_node * 'edge) -> bool;
-   (* **
-    * The predicate is called with visited_nodes as first argument and
-    * the algorithm only fold on the node if predicate returns true
-    * *)
+   update_value_for_fixed_point:
+     'value NodeMap.t -> ('node complete_node * 'edge) -> 'value;
 
-   compute_result: NodeiSet.t -> ('node complete_node * 'edge) -> 'res -> 'res;
+   compute_result:
+     'value NodeMap.t -> ('node complete_node * 'edge) -> 'res -> 'res;
    (* **
     * This function compute the new result from visited_nodes,
     * the current node and the current result value
     * *)
 
+   predicate: 'value NodeMap.t -> ('node complete_node * 'edge) -> bool;
+   (* **
+    * The predicate is called with visited_nodes as first argument and
+    * the algorithm only fold on the node if predicate returns true
+    * *)
+
+   initial_value:  'value;
    initial_result: 'res;
   }
 
 val breadth_first_fold:
-  ('node, 'edge, 'g, 'res) fold_configuration ->
+  ('node, 'edge, 'g, 'value, 'res) fold_configuration ->
   ('node, 'edge, 'g) readable_graph ->
   'node complete_node -> 'res
 
 val get_forward_config:
-  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  (NodeiSet.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
-  'res -> ('node, 'edge, 'g, 'res) fold_configuration
+  ('value NodeMap.t -> ('node complete_node * 'edge) -> 'value) ->
+  ('value NodeMap.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
+  ('value NodeMap.t -> ('node complete_node * 'edge) -> bool) ->
+  'value -> 'res ->
+  ('node, 'edge, 'g, 'value, 'res) fold_configuration
 
 val get_backward_config:
-  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  (NodeiSet.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
-  'res -> ('node, 'edge, 'g, 'res) fold_configuration
+  ('value NodeMap.t -> ('node complete_node * 'edge) -> 'value) ->
+  ('value NodeMap.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
+  ('value NodeMap.t -> ('node complete_node * 'edge) -> bool) ->
+  'value -> 'res ->
+  ('node, 'edge, 'g, 'value, 'res) fold_configuration
 
 val get_basic_node_config:
-  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  ('node, 'edge, 'g, NodeiSet.t) fold_configuration
+  (bool NodeMap.t -> ('node complete_node * 'edge) -> bool) ->
+  NodeiSet.t ->
+  ('node, 'edge, 'g, bool, NodeiSet.t) fold_configuration
 
 val get_backward_basic_node_config:
-  (NodeiSet.t -> ('node complete_node * 'edge) -> bool) ->
-  ('node, 'edge, 'g, NodeiSet.t) fold_configuration
+  (bool NodeMap.t -> ('node complete_node * 'edge) -> bool) ->
+  NodeiSet.t ->
+  ('node, 'edge, 'g, bool, NodeiSet.t) fold_configuration
 
 val conditional_get_post_dominated:
   (('node complete_node * 'edge) -> bool) ->
