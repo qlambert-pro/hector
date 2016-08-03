@@ -239,11 +239,7 @@ let filter_faults cfg exemplar blocks =
                         ACFG.resource_equal
                           exemplar.res (ACFG.Resource e))
                      rs ->
-                 let end_node =
-                   match edge with
-                     ACFG.Direct       (s, e)
-                   | ACFG.PostBackedge (s, e) -> e
-                 in
+                 let end_node = edge.ACFG.end_node in
                  acc &&
                  not (ACFG.is_on_error_branch
                         HC.get_assignment_type_through_alias

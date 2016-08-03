@@ -53,11 +53,15 @@ type node = {
   parser_node: Control_flow_c.node
 }
 
-type edge =
-    Direct of node complete_node * node complete_node
-  | PostBackedge of node complete_node * node complete_node
+type edge_type =
+    Direct
+  | PostBackedge
 
-
+type edge = {
+  start_node: node complete_node;
+  end_node:   node complete_node;
+  edge_type:  edge_type;
+}
 
 type t = (node, edge) Ograph_extended.ograph_mutable
 

@@ -77,9 +77,15 @@ let is_similar_statement n1 n2 =
     Asto.statement_equal st1 st2
   | _ -> false
 
-type edge =
-    Direct of node complete_node * node complete_node
-  | PostBackedge of node complete_node * node complete_node
+type edge_type =
+    Direct
+  | PostBackedge
+
+type edge = {
+  start_node: node complete_node;
+  end_node:   node complete_node;
+  edge_type:  edge_type;
+}
 
 type t = (node, edge) Ograph_extended.ograph_mutable
 
@@ -398,14 +404,23 @@ let of_ast_c ast =
           cocci_cfg (complete_node_of cocci_cfg cn.index)
       in
 
-      let edge =
+      let complete_start_node =
+        {index = start_node; node = cfg#nodes#assoc start_node}
+      in
+
+      let complete_end_node =
+        {index = end_node; node = cfg#nodes#assoc end_node}
+      in
+
+      let edge_type =
         if NodeiSet.mem index' post_dominated
         then PostBackedge
-            ({index = start_node; node = cfg#nodes#assoc start_node},
-             {index = end_node  ; node = cfg#nodes#assoc end_node  })
         else Direct
-            ({index = start_node; node = cfg#nodes#assoc start_node},
-             {index = end_node  ; node = cfg#nodes#assoc end_node  })
+      in
+      let edge =
+        {start_node = complete_start_node;
+         end_node   = complete_end_node;
+         edge_type  = edge_type;}
       in
       cfg#add_arc ((start_node, end_node), edge)
     in

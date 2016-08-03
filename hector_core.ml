@@ -110,9 +110,9 @@ let get_error_assignments cfg identifiers =
 let add_branch_nodes_leading_to_return cfg returns nodes acc =
   let post_dominated index =
     let is_backedge e =
-      match e with
-        ACFG.Direct       _ -> false
-      | ACFG.PostBackedge _ -> true
+      match e.ACFG.edge_type with
+        ACFG.Direct       -> false
+      | ACFG.PostBackedge -> true
     in
     let predicate set (n, e) =
       let is_post_dominated =
@@ -185,26 +185,25 @@ let get_nodes_leading_to_error_return cfg error_assignments =
              GO.breadth_first_fold
                (GO.get_forward_config
                   (fun _ _ -> true)
+
                   (*TODO is_testing_identifier is incorrect*)
                   (* add complex if cases to prove it *)
                   (fun _ (cn, e) res ->
-                     match e with
-                       ACFG.PostBackedge (pred, _)
-                     | ACFG.Direct (pred, _) ->
-                       let head = cn.GO.node in
-                       let is_correct_branch =
-                         ACFG.is_on_error_branch
-                           get_assignment_type_through_alias
-                           cfg pred head
-                       in
-                       let is_testing_identifier =
-                         ACFG.test_if_header
-                           (Asto.is_testing_identifier identifier)
-                           false pred.GO.node
-                       in
-                       if is_correct_branch && is_testing_identifier
-                       then GO.NodeiSet.add cn.GO.index res
-                       else res)
+                     let pred = e.ACFG.start_node in
+                     let head = cn.GO.node in
+                     let is_correct_branch =
+                       ACFG.is_on_error_branch
+                         get_assignment_type_through_alias
+                         cfg pred head
+                     in
+                     let is_testing_identifier =
+                       ACFG.test_if_header
+                         (Asto.is_testing_identifier identifier)
+                         false pred.GO.node
+                     in
+                     if is_correct_branch && is_testing_identifier
+                     then GO.NodeiSet.add cn.GO.index res
+                     else res)
 
                   kill_reach true GO.NodeiSet.empty)
                cfg (GO.complete_node_of cfg index)
