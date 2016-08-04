@@ -86,10 +86,10 @@ let concat_get_nodes_leading_to_error_return cfgs =
  * *)
 let compute_is_on_error_branch node_indices head_indices cfgs =
   List.map2
-    (fun x (a, b) ->
+    (fun cfg (a, b) ->
        ACFG.is_on_error_branch
          get_assignment_type_through_alias
-         x (GO.complete_node_of x a) (x#nodes#assoc b))
+         cfg (GO.complete_node_of cfg a) (cfg#nodes#assoc b))
     cfgs (List.combine node_indices head_indices)
 
 

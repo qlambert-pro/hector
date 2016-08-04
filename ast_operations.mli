@@ -43,8 +43,11 @@ val function_name_of_expression:
   Ast_c.expression -> string option
 
 val expression_equal: Ast_c.expression -> Ast_c.expression -> bool
+val string_of_expression: Ast_c.expression -> string
 val expression_compare: Ast_c.expression -> Ast_c.expression -> int
 val statement_equal: Ast_c.statement -> Ast_c.statement -> bool
+
+module ExpressionSet: Set.S with type elt = Ast_c.expression
 
 val get_arguments:
   Ast_c.expression -> (Ast_c.expression list) option

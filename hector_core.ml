@@ -23,60 +23,90 @@ module Asto = Ast_operations
 module ACFG = Annotated_cfg
 module GO = Graph_operations
 
-(*TODO fixed point*)
-let get_assignment_type_through_alias cfg =
-  let visited_node = ref GO.NodeiSet.empty in
-  let rec aux n e =
-    visited_node := GO.NodeiSet.add n.GO.index !visited_node;
-    match Asto.get_assignment_type e with
-      Asto.Variable e ->
-      let assignments =
-        GO.breadth_first_fold
-          (GO.get_backward_config
-             (fun _ _ -> true)
-             (fun _ (n, _) res ->
-                if ACFG.is_top_node n.GO.node
-                then
-                  (Asto.Error Asto.Ambiguous)::res
-                else
-                  let temp = ref None in
-                  ACFG.apply_side_effect_visitor
-                    (fun l op r ->
-                       if Asto.expression_equal e l
-                       then
-                         match (op, r) with
-                           (Some op,      _) when
-                             not (Asto.is_simple_assignment op) ->
-                           temp := Some Asto.NonError
-                         | (Some  _, Some r) ->
-                           temp :=
-                             if GO.NodeiSet.mem n.GO.index !visited_node
-                             then
-                               Some (Asto.Error Asto.Ambiguous)
-                             else
-                               Some (aux n r)
-                         | (    _,   None) ->
-                           temp := Some (Asto.Error Asto.Ambiguous)
-                         | _ -> failwith "unexpected missing operator or right value"
-                       else
-                         ())
-                    n.GO.node;
-                  match !temp with
-                    None   -> res
-                  | Some v -> v::res)
-             (fun _ (n, _) -> not (ACFG.is_killing_reach e n.GO.node))
-             true [])
-          cfg (GO.complete_node_of cfg n.GO.index)
-      in
-      if List.for_all ((=) (List.hd assignments)) assignments
-      then
-        List.hd assignments
-      else
-        Asto.Error Asto.Ambiguous
-    | Asto.Value v    -> v
+let get_assignment_type_through_alias cfg cn id =
+  let update_value value cn =
+    let side_effects = ref [] in
+    ACFG.apply_side_effect_visitor
+      (fun l op r ->
+         let right_value =
+           match (op, r) with
+             (Some op, Some r) when Asto.is_simple_assignment op ->
+             Some (Asto.get_assignment_type r)
+           | (Some op, Some r) ->
+             Some (Asto.Value (Asto.NonError))
+           | (      _,   None) ->
+             None
+           | _ -> failwith "unexpected missing operator or right value"
+         in
+         side_effects := (l, right_value)::!side_effects)
+      cn.GO.node;
+    List.fold_left
+      (fun acc (l, r) ->
+         let nvalue =
+           if Asto.ExpressionSet.exists (Asto.expression_equal l) acc
+           then
+             match r with
+               Some (Asto.Variable e) -> Asto.ExpressionSet.add e acc
+             | Some (Asto.Value    _)
+             | None -> acc
+           else acc
+         in
+         Asto.ExpressionSet.remove l nvalue)
+      value !side_effects
   in
-  aux
-
+  let add_error_type n e acc =
+    let temp = ref None in
+    ACFG.apply_side_effect_visitor
+      (fun l op r ->
+         if Asto.expression_equal e l
+         then
+           match (op, r) with
+             (Some op,      _) when
+               not (Asto.is_simple_assignment op) ->
+             temp := Some Asto.NonError
+           | (Some  _, Some r) ->
+             (match Asto.get_assignment_type r with
+                Asto.Value v    -> temp := Some v
+              | Asto.Variable _ -> ())
+           | (      _,   None) ->
+             temp := Some (Asto.Error Asto.Ambiguous)
+           | _ -> failwith "unexpected missing operator or right value"
+         else
+           ())
+      n.GO.node;
+    match !temp with
+      None   -> acc
+    | Some v -> v::acc
+  in
+  let initial_value = update_value (Asto.ExpressionSet.singleton id) cn in
+  let initial_result = add_error_type cn id [] in
+  let assignments =
+    GO.breadth_first_fold
+      (GO.get_backward_config
+         (fun values (cn, e) ->
+            let value' = GO.NodeMap.find e.ACFG.end_node.GO.index values in
+            let value  = update_value value' cn in
+            try
+              let old_value = GO.NodeMap.find cn.GO.index values in
+              Asto.ExpressionSet.union old_value value
+            with Not_found -> value)
+         (fun v (n, _) res ->
+            if ACFG.is_top_node n.GO.node
+            then
+              (Asto.Error Asto.Ambiguous)::res
+            else
+              Asto.ExpressionSet.fold (add_error_type n)
+                (GO.NodeMap.find cn.GO.index v) res)
+         (fun v (cn, _) ->
+            not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
+         initial_value initial_result)
+      cfg cn
+  in
+  if List.for_all ((=) (List.hd assignments)) assignments
+  then
+    List.hd assignments
+  else
+    Asto.Error Asto.Ambiguous
 
 let get_error_assignments cfg identifiers =
   let t = Hashtbl.create 101 in
@@ -86,21 +116,13 @@ let get_error_assignments cfg identifiers =
          (fun l op r ->
             if List.exists (fun e -> Asto.expression_equal e l) identifiers
             then
-              match (op, r) with
-                (Some op,      _) when
-                  not (Asto.is_simple_assignment op) ->
-                ()
-              | (Some  _, Some r) ->
-                let assignment_type =
-                  get_assignment_type_through_alias
-                    cfg {GO.index = i; GO.node = node} r
-                in
-                (match assignment_type with
-                   Asto.Error err -> Hashtbl.add t ((i, node), l) err
-                 | _    -> ())
-              | (      _,   None) ->
-                Hashtbl.add t ((i, node), l) Asto.Ambiguous
-              | _ -> failwith "unexpected missing operator or right value"
+              let assignment_type =
+                get_assignment_type_through_alias
+                  cfg {GO.index = i; GO.node = node} l
+              in
+              (match assignment_type with
+                 Asto.Error err -> Hashtbl.add t ((i, node), l) err
+               | _    -> ())
             else
               ())
          node);

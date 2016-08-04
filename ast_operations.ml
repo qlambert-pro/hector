@@ -260,6 +260,9 @@ let testing_functions = [
   "unlikely";
   "IS_ERR"]
 
+
+let string_of_expression = Pretty_print_c.string_of_expression
+
 let is_simple_assignment op =
   match unwrap op with
     SimpleAssign -> true
@@ -341,15 +344,29 @@ let rec function_name_of_expression exp  =
   | _ -> None
 
 
+let test_error_value alias_f f e =
+  let error_type =
+    match get_assignment_type e with
+      Value e    -> e
+    | Variable v -> alias_f v
+  in
+  f error_type
+
 let is_error_return_code alias_f e =
-  match alias_f e with
-    Error Clear -> true
-  | _           -> false
+  let test e =
+    match e with
+      Error Clear -> true
+    | _           -> false
+  in
+  test_error_value alias_f test e
 
 let is_error_right_value alias_f e =
-  match alias_f e with
-    Error _ -> true
-  | _       -> false
+  let test e =
+    match e with
+      Error _ -> true
+    | _       -> false
+  in
+  test_error_value alias_f test e
 
 
 let expression_equal expression1 expression2 =
@@ -357,11 +374,19 @@ let expression_equal expression1 expression2 =
 
 let expression_compare expression1 expression2 =
   String.compare
-    (Pretty_print_c.string_of_expression expression1)
-    (Pretty_print_c.string_of_expression expression2)
+    (string_of_expression expression1)
+    (string_of_expression expression2)
 
 let statement_equal st1 st2 =
   Lib_parsing_c.real_al_statement st1 = Lib_parsing_c.real_al_statement st2
+
+module OrderedExpression =
+struct
+  type t = expression
+  let compare = expression_compare
+end
+
+module ExpressionSet = Set.Make(OrderedExpression)
 
 
 let rec get_arguments expression =
@@ -474,6 +499,6 @@ let rec is_testing_identifier identifier expression' =
   | FunCall (e, args) ->
     let arguments = expressions_of_arguments args in
     let n = identifier_name_of_expression e in
-       List.exists (fun e -> (=) n (Some e)) testing_functions &&
-       List.exists (is_testing_identifier identifier) arguments
+    List.exists (fun e -> (=) n (Some e)) testing_functions &&
+    List.exists (is_testing_identifier identifier) arguments
   | _ -> expression_equal identifier expression'
