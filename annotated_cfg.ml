@@ -139,6 +139,8 @@ let line_number_of_node cfg cn =
   aux cn
 
 let side_effect_visitor f =
+  (*TODO create a type the makes it explicit that either both the operator and
+   * the right value exists or neither*)
   let assignment_f e1 op e2 = f e1 (Some op) (Some e2) in
   let funcall_f e1 = f e1 None None in
   {Visitor_c.default_visitor_c with
@@ -185,7 +187,7 @@ let apply_assignment_visitor f node =
 
 let is_killing_reach identifier node =
   let acc = ref false in
-  apply_side_effect_visitor
+  apply_assignment_visitor
     (fun r _ _ -> acc := !acc || Asto.expression_equal identifier r)
     node;
   !acc
