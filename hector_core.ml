@@ -23,61 +23,61 @@ module Asto = Ast_operations
 module ACFG = Annotated_cfg
 module GO = Graph_operations
 
-let get_assignment_type_through_alias cfg cn id =
-  let update_value value cn =
-    let side_effects = ref [] in
-    ACFG.apply_side_effect_visitor
-      (fun l op r ->
-         let right_value =
-           match (op, r) with
-             (Some op, Some r) when Asto.is_simple_assignment op ->
-             Some (Asto.get_assignment_type r)
-           | (Some op, Some r) ->
-             Some (Asto.Value (Asto.NonError))
-           | (      _,   None) ->
-             None
-           | _ -> failwith "unexpected missing operator or right value"
-         in
-         side_effects := (l, right_value)::!side_effects)
-      cn.GO.node;
-    List.fold_left
-      (fun acc (l, r) ->
-         let nvalue =
-           if Asto.ExpressionSet.exists (Asto.expression_equal l) acc
-           then
-             match r with
-               Some (Asto.Variable e) -> Asto.ExpressionSet.add e acc
-             | Some (Asto.Value    _)
-             | None -> acc
-           else acc
-         in
-         Asto.ExpressionSet.remove l nvalue)
-      value !side_effects
-  in
-  let add_error_type n e acc =
-    let temp = ref None in
-    ACFG.apply_side_effect_visitor
-      (fun l op r ->
-         if Asto.expression_equal e l
+let update_value value cn =
+  let side_effects = ref [] in
+  ACFG.apply_side_effect_visitor
+    (fun l op r ->
+       let right_value =
+         match (op, r) with
+           (Some op, Some r) when Asto.is_simple_assignment op ->
+           Some (Asto.get_assignment_type r)
+         | (Some op, Some r) ->
+           Some (Asto.Value (Asto.NonError))
+         | (      _,   None) ->
+           None
+         | _ -> failwith "unexpected missing operator or right value"
+       in
+       side_effects := (l, right_value)::!side_effects)
+    cn.GO.node;
+  List.fold_left
+    (fun acc (l, r) ->
+       let nvalue =
+         if Asto.ExpressionSet.exists (Asto.expression_equal l) acc
          then
-           match (op, r) with
-             (Some op,      _) when
-               not (Asto.is_simple_assignment op) ->
-             temp := Some Asto.NonError
-           | (Some  _, Some r) ->
-             (match Asto.get_assignment_type r with
-                Asto.Value v    -> temp := Some v
-              | Asto.Variable _ -> ())
-           | (      _,   None) ->
-             temp := Some (Asto.Error Asto.Ambiguous)
-           | _ -> failwith "unexpected missing operator or right value"
-         else
-           ())
-      n.GO.node;
-    match !temp with
-      None   -> acc
-    | Some v -> v::acc
-  in
+           match r with
+             Some (Asto.Variable e) -> Asto.ExpressionSet.add e acc
+           | Some (Asto.Value    _)
+           | None -> acc
+         else acc
+       in
+       Asto.ExpressionSet.remove l nvalue)
+    value !side_effects
+
+let add_error_type n e acc =
+  let temp = ref None in
+  ACFG.apply_side_effect_visitor
+    (fun l op r ->
+       if Asto.expression_equal e l
+       then
+         match (op, r) with
+           (Some op,      _) when
+             not (Asto.is_simple_assignment op) ->
+           temp := Some Asto.NonError
+         | (Some  _, Some r) ->
+           (match Asto.get_assignment_type r with
+              Asto.Value v    -> temp := Some v
+            | Asto.Variable _ -> ())
+         | (      _,   None) ->
+           temp := Some (Asto.Error Asto.Ambiguous)
+         | _ -> failwith "unexpected missing operator or right value"
+       else
+         ())
+    n.GO.node;
+  match !temp with
+    None   -> acc
+  | Some v -> v::acc
+
+let get_assignment_type_through_alias cfg cn id =
   let initial_value = update_value (Asto.ExpressionSet.singleton id) cn in
   let initial_result = add_error_type cn id [] in
   let assignments =
