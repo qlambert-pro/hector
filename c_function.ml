@@ -58,55 +58,60 @@ let get_resource_release cfg block_head acc =
        true acc)
     cfg block_head
 
-(*TODO fixed point*)
-let get_allocs cfg block_head release =
-  let visited_node = ref GO.NodeiSet.empty in
-  let rec aux b resource resources =
-    visited_node := GO.NodeiSet.add b.GO.index !visited_node;
-    GO.breadth_first_fold
-      (GO.get_backward_config
-         (fun _ _ -> true)
-         (fun _ (cn, _) allocs ->
-            match cn.GO.node.ACFG.resource_handling_type with
-              ACFG.Allocation r
-              when ACFG.resource_equal r resource ->
-              cn::allocs
-            | ACFG.Assignment a when
-                not (ACFG.resource_equal
-                       (ACFG.Resource a.ACFG.left_value) resource) ->
-              let nr = (ACFG.Resource a.ACFG.left_value) in
 
-              if GO.NodeiSet.mem cn.GO.index !visited_node
-              then allocs
-              else
-                let nallocs = aux cn nr (nr::resources) in
-                List.fold_left
-                  (fun acc cn ->
-                     if List.exists ((=) cn) acc
-                     then acc
-                     else cn::acc)
-                  allocs nallocs
-            | ACFG.Computation _
-            | ACFG.Allocation _
-            | ACFG.Assignment _
-            | ACFG.Release _
-            | ACFG.Test _
-            | ACFG.Unannotated -> allocs)
-         (fun _ (cn, _) ->
-            match cn.GO.node.ACFG.resource_handling_type with
-              ACFG.Allocation r ->
-              not (ACFG.resource_equal r resource)
-            | ACFG.Assignment a ->
-              not (ACFG.resource_equal
-                     (ACFG.Resource a.ACFG.left_value) resource)
-            | ACFG.Computation _
-            | ACFG.Release _
-            | ACFG.Test _
-            | ACFG.Unannotated -> true)
-         true [])
-      cfg b
+let update_value value cn =
+  match cn.GO.node.ACFG.resource_handling_type with
+    ACFG.Assignment a ->
+    let is_relevant = Asto.ExpressionSet.mem a.ACFG.left_value value in
+    (match (is_relevant, a.ACFG.operator, a.ACFG.right_value) with
+      (true, ACFG.Simple, Asto.Variable e) ->
+      let value' = Asto.ExpressionSet.add e value in
+      Asto.ExpressionSet.remove a.ACFG.left_value value'
+     | _ -> value)
+    | ACFG.Computation _
+    | ACFG.Allocation _
+    | ACFG.Release _
+    | ACFG.Test _
+    | ACFG.Unannotated -> value
+
+
+let get_allocs cfg block_head release =
+  let initial_value =
+    match release.resource with
+      ACFG.Resource e -> Asto.ExpressionSet.singleton e
+    | _               -> Asto.ExpressionSet.empty
   in
-  aux block_head release.resource [release.resource]
+  GO.breadth_first_fold
+    (GO.get_backward_config
+       (fun values (cn, e) ->
+          let value' = GO.NodeMap.find e.ACFG.end_node.GO.index values in
+          let value  = update_value value' cn in
+          try
+            let old_value = GO.NodeMap.find cn.GO.index values in
+            Asto.ExpressionSet.union old_value value
+          with Not_found -> value)
+
+
+       (fun values (cn, _) allocs ->
+          match cn.GO.node.ACFG.resource_handling_type with
+            ACFG.Allocation r
+            when Asto.ExpressionSet.exists
+                (fun e -> ACFG.resource_equal r (ACFG.Resource e))
+                (GO.NodeMap.find cn.GO.index values) ->
+            if List.exists (fun n -> (=) cn.GO.index n.GO.index) allocs
+            then allocs
+            else cn::allocs
+          | ACFG.Computation _
+          | ACFG.Allocation _
+          | ACFG.Assignment _
+          | ACFG.Release _
+          | ACFG.Test _
+          | ACFG.Unannotated -> allocs)
+
+         (fun v (cn, _) ->
+            not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
+       initial_value [])
+    cfg block_head
 
 
 let get_exemplars cfg error_blocks =
@@ -149,25 +154,25 @@ let exists_after_block cfg block predicate =
 
 
 let is_releasing_resource cfg resources b =
-    List.exists
-      (fun resource ->
-        exists_after_block cfg b
-          (fun b ->
-             match b.GO.node.ACFG.resource_handling_type with
-               ACFG.Release r when ACFG.resource_equal r resource -> true
-             | ACFG.Computation _
-             | ACFG.Allocation _
-             | ACFG.Release _
-             | ACFG.Assignment _
-             | ACFG.Test _
-             | ACFG.Unannotated -> false))
-      resources
+  List.exists
+    (fun resource ->
+       exists_after_block cfg b
+         (fun b ->
+            match b.GO.node.ACFG.resource_handling_type with
+              ACFG.Release r when ACFG.resource_equal r resource -> true
+            | ACFG.Computation _
+            | ACFG.Allocation _
+            | ACFG.Release _
+            | ACFG.Assignment _
+            | ACFG.Test _
+            | ACFG.Unannotated -> false))
+    resources
 
 
 let is_returning_resource cfg resources b =
-    List.exists (fun resource ->
-        exists_after_block cfg b (ACFG.is_returning_resource resource))
-      resources
+  List.exists (fun resource ->
+      exists_after_block cfg b (ACFG.is_returning_resource resource))
+    resources
 
 let update_aliases cn aliases =
   match cn.GO.node.ACFG.resource_handling_type with
