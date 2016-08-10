@@ -1,83 +1,56 @@
-int __must_check pci_create_sysfs_dev_files (struct pci_dev *pdev)
+int mg_get_ICV(struct scsi_cmnd *srb, struct rtsx_chip *chip)
 {
+	struct ms_info *ms_card = &chip->ms_card;
 	int retval;
-	int rom_size = 0;
-	struct bin_attribute *attr;
+	int bufflen;
+	unsigned int lun = SCSI_LUN(srb);
+	u8 *buf = NULL;
 
-	if (!sysfs_initialized)
-		return -EACCES;
+	ms_cleanup_work(chip);
 
-	if (pdev->cfg_size < PCI_CFG_SPACE_EXP_SIZE)
-		retval = sysfs_create_bin_file(&pdev->dev.kobj, &pci_config_attr);
-	else
-		retval = sysfs_create_bin_file(&pdev->dev.kobj, &pcie_config_attr);
-	if (retval)
-		goto err;
-
-	retval = pci_create_resource_files(pdev);
-	if (retval)
-		goto err_config_file;
-
-	if (pci_resource_len(pdev, PCI_ROM_RESOURCE))
-		rom_size = pci_resource_len(pdev, PCI_ROM_RESOURCE);
-	else if (pdev->resource[PCI_ROM_RESOURCE].flags & IORESOURCE_ROM_SHADOW)
-		rom_size = 0x20000;
-
-	/* If the device has a ROM, try to expose it in sysfs. */
-	if (rom_size) {
-		attr = kzalloc(sizeof(*attr), GFP_ATOMIC);
-		if (!attr) {
-			retval = -ENOMEM;
-			goto err_resource_files;
-		}
-		sysfs_bin_attr_init(attr);
-		attr->size = rom_size;
-		attr->attr.name = "rom";
-		attr->attr.mode = S_IRUSR;
-		attr->read = pci_read_rom;
-		attr->write = pci_write_rom;
-		retval = sysfs_create_bin_file(&pdev->dev.kobj, attr);
-		if (retval) {
-			kfree(attr);
-			goto err_resource_files;
-		}
-		pdev->rom_attr = attr;
+	retval = ms_switch_clock(chip);
+	if (retval != STATUS_SUCCESS) {
+		rtsx_trace(chip);
+		return STATUS_FAIL;
 	}
 
-	if ((pdev->class >> 8) == PCI_CLASS_DISPLAY_VGA) {
-		retval = device_create_file(&pdev->dev, &vga_attr);
-		if (retval)
-			goto err_rom_file;
+	buf = kmalloc(1028, GFP_KERNEL);
+	if (!buf) {
+		rtsx_trace(chip);
+		return STATUS_ERROR;
 	}
 
-	/* add platform-specific attributes */
-	retval = pcibios_add_platform_entries(pdev);
-	if (retval)
-		goto err_vga_file;
+	buf[0] = 0x04;
+	buf[1] = 0x02;
+	buf[2] = 0x00;
+	buf[3] = 0x00;
 
-	/* add sysfs entries for various capabilities */
-	retval = pci_create_capabilities_sysfs(pdev);
-	if (retval)
-		goto err_vga_file;
-
-	return 0;
-
-err_vga_file:
-	if ((pdev->class >> 8) == PCI_CLASS_DISPLAY_VGA)
-		device_remove_file(&pdev->dev, &vga_attr);
-err_rom_file:
-	if (rom_size) {
-		sysfs_remove_bin_file(&pdev->dev.kobj, pdev->rom_attr);
-		kfree(pdev->rom_attr);
-		pdev->rom_attr = NULL;
+	retval = mg_send_ex_cmd(chip, MG_GET_IBD, ms_card->mg_entry_num);
+	if (retval != STATUS_SUCCESS) {
+		set_sense_type(chip, lun, SENSE_TYPE_MEDIA_UNRECOVER_READ_ERR);
+		rtsx_trace(chip);
+		goto GetICVFinish;
 	}
-err_resource_files:
-	pci_remove_resource_files(pdev);
-err_config_file:
-	if (pdev->cfg_size < PCI_CFG_SPACE_EXP_SIZE)
-		sysfs_remove_bin_file(&pdev->dev.kobj, &pci_config_attr);
-	else
-		sysfs_remove_bin_file(&pdev->dev.kobj, &pcie_config_attr);
-err:
+
+	retval = ms_transfer_data(chip, MS_TM_AUTO_READ, PRO_READ_LONG_DATA,
+				2, WAIT_INT, 0, 0, buf + 4, 1024);
+	if (retval != STATUS_SUCCESS) {
+		set_sense_type(chip, lun, SENSE_TYPE_MEDIA_UNRECOVER_READ_ERR);
+		rtsx_clear_ms_error(chip);
+		rtsx_trace(chip);
+		goto GetICVFinish;
+	}
+	if (check_ms_err(chip)) {
+		set_sense_type(chip, lun, SENSE_TYPE_MEDIA_UNRECOVER_READ_ERR);
+		rtsx_clear_ms_error(chip);
+		rtsx_trace(chip);
+		return STATUS_FAIL;
+	}
+
+	bufflen = min_t(int, 1028, scsi_bufflen(srb));
+	rtsx_stor_set_xfer_buf(buf, bufflen, srb);
+
+GetICVFinish:
+	kfree(buf);
 	return retval;
 }

@@ -224,12 +224,12 @@ let () =
         (compute_is_allocation_node [14; 16; 19; 8])
         [true; false; false; true] (=);
       mk_cfg_test
-        "annotate_resource_handling" "./tests/complex_resources.c"
+        "annotate_resource_handling" "./tests/complex_no_resources.c"
         " does not behave as expected on "
         (compute_is_assignment_node [126])
         [true] (=);
       mk_cfg_test
-        "annotate_resource_handling" "./tests/complex_resources.c"
+        "annotate_resource_handling" "./tests/complex_no_resources.c"
         " does not behave as expected on "
         (compute_is_allocation_node [61])
         [true] (=);
