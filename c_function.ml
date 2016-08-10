@@ -59,21 +59,45 @@ let get_resource_release cfg block_head acc =
     cfg block_head
 
 
-let update_value value cn =
+let update_value_backward value cn =
   match cn.GO.node.ACFG.resource_handling_type with
     ACFG.Assignment a ->
     let is_relevant = Asto.ExpressionSet.mem a.ACFG.left_value value in
     (match (is_relevant, a.ACFG.operator, a.ACFG.right_value) with
-      (true, ACFG.Simple, Asto.Variable e) ->
-      let value' = Asto.ExpressionSet.add e value in
-      Asto.ExpressionSet.remove a.ACFG.left_value value'
+       (true, ACFG.Simple, Asto.Variable e) ->
+       let value' = Asto.ExpressionSet.add e value in
+       Asto.ExpressionSet.remove a.ACFG.left_value value'
      | _ -> value)
-    | ACFG.Computation _
-    | ACFG.Allocation _
-    | ACFG.Release _
-    | ACFG.Test _
-    | ACFG.Unannotated -> value
+  | ACFG.Computation _
+  | ACFG.Allocation _
+  | ACFG.Release _
+  | ACFG.Test _
+  | ACFG.Unannotated -> value
 
+
+let update_value_forward value cn =
+  match cn.GO.node.ACFG.resource_handling_type with
+    ACFG.Assignment a ->
+    (match (a.ACFG.operator, a.ACFG.right_value) with
+       (ACFG.Simple, Asto.Variable e) ->
+       if Asto.ExpressionSet.mem e value
+       then Asto.ExpressionSet.add    a.ACFG.left_value value
+       else Asto.ExpressionSet.remove a.ACFG.left_value value
+     | _ -> value)
+  | ACFG.Computation _
+  | ACFG.Allocation _
+  | ACFG.Release _
+  | ACFG.Test _
+  | ACFG.Unannotated -> value
+
+
+let maintain_value update_value get_previous_value values (cn, e) =
+  let value' = get_previous_value values in
+  let value  = update_value value' cn in
+  try
+    let old_value = GO.NodeMap.find cn.GO.index values in
+    Asto.ExpressionSet.union old_value value
+  with Not_found -> value
 
 let get_allocs cfg block_head release =
   let initial_value =
@@ -83,13 +107,10 @@ let get_allocs cfg block_head release =
   in
   GO.breadth_first_fold
     (GO.get_backward_config
-       (fun values (cn, e) ->
-          let value' = GO.NodeMap.find e.ACFG.end_node.GO.index values in
-          let value  = update_value value' cn in
-          try
-            let old_value = GO.NodeMap.find cn.GO.index values in
-            Asto.ExpressionSet.union old_value value
-          with Not_found -> value)
+       (fun v (cn, e) ->
+          maintain_value
+            update_value_backward
+            (GO.NodeMap.find e.ACFG.end_node.GO.index) v (cn, e))
 
 
        (fun values (cn, _) allocs ->
@@ -154,12 +175,13 @@ let exists_after_block cfg block predicate =
 
 
 let is_releasing_resource cfg resources b =
-  List.exists
+  Asto.ExpressionSet.exists
     (fun resource ->
        exists_after_block cfg b
          (fun b ->
             match b.GO.node.ACFG.resource_handling_type with
-              ACFG.Release r when ACFG.resource_equal r resource -> true
+              ACFG.Release r
+              when ACFG.resource_equal r (ACFG.Resource resource) -> true
             | ACFG.Computation _
             | ACFG.Allocation _
             | ACFG.Release _
@@ -170,60 +192,45 @@ let is_releasing_resource cfg resources b =
 
 
 let is_returning_resource cfg resources b =
-  List.exists (fun resource ->
-      exists_after_block cfg b (ACFG.is_returning_resource resource))
+  Asto.ExpressionSet.exists (fun resource ->
+      exists_after_block cfg b
+        (ACFG.is_returning_resource (ACFG.Resource resource)))
     resources
 
-let update_aliases cn aliases =
-  match cn.GO.node.ACFG.resource_handling_type with
-    ACFG.Assignment a ->
-    let resource_assignment = ACFG.Resource a.ACFG.left_value in
-    (match a.ACFG.right_value with
-       Asto.Variable v ->
-       let resource_variable    = ACFG.Resource v in
-       if List.exists (ACFG.resource_equal resource_variable) aliases &&
-          not (List.exists
-                 (ACFG.resource_equal resource_assignment)
-                 aliases)
-       then resource_assignment::aliases
-       else aliases
-     | Asto.Value _ ->
-       List.find_all
-         (fun r -> not (ACFG.resource_equal resource_assignment r))
-         aliases)
-  | ACFG.Computation _
-  | ACFG.Allocation _
-  | ACFG.Release _
-  | ACFG.Test _
-  | ACFG.Unannotated -> aliases
-
-
-(*TODO fixed point*)
 let get_candidate_blocks cfg error_blocks exemplar =
-  fst
-    (GO.breadth_first_fold
-       (GO.get_forward_config
-          (fun _ _ -> true)
-          (fun _ (cn, _) (res, aliases) ->
-             let naliases = update_aliases cn aliases in
-             try
-               let block =
-                 List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
-               in
-               if not (is_releasing_resource cfg naliases block) &&
-                  not (is_returning_resource cfg naliases block)
-               then
-                 (block::res, naliases)
-               else
-                 (       res, naliases)
-             with Not_found ->
-               (res, naliases))
-          (fun _ (cn, _) ->
-             not (List.exists
-                    (fun n -> n.GO.index = cn.GO.index)
-                    error_blocks))
-           true ([], [exemplar.res]))
-       cfg exemplar.alloc)
+  let initial_value =
+    match exemplar.res with
+      ACFG.Resource e -> Asto.ExpressionSet.singleton e
+    | _               -> Asto.ExpressionSet.empty
+  in
+  GO.breadth_first_fold
+    (GO.get_forward_config
+       (fun v (cn, e) ->
+          maintain_value update_value_forward
+            (GO.NodeMap.find e.ACFG.start_node.GO.index) v (cn, e))
+
+       (fun values (cn, _) res ->
+          try
+            let block =
+              List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
+            in
+            let aliases = GO.NodeMap.find cn.GO.index values in
+
+            if not (is_releasing_resource cfg aliases block) &&
+               not (is_returning_resource cfg aliases block)
+            then block::res
+            else res
+          with Not_found -> res)
+
+       (fun v (cn, e) ->
+          not (List.exists
+                 (fun n -> n.GO.index = cn.GO.index)
+                 error_blocks) &&
+          not (Asto.ExpressionSet.is_empty
+                 (GO.NodeMap.find e.ACFG.start_node.GO.index v)))
+
+       initial_value [])
+    cfg exemplar.alloc
 
 
 let filter_faults cfg exemplar blocks =
