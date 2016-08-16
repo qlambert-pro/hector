@@ -383,7 +383,8 @@ let statement_equal st1 st2 =
 module OrderedExpression =
 struct
   type t = expression
-  let compare = expression_compare
+  let compare e1 e2 = compare (Lib_parsing_c.real_al_expr e1)
+      (Lib_parsing_c.real_al_expr e2)
 end
 
 module ExpressionSet = Set.Make(OrderedExpression)
