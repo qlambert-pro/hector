@@ -90,18 +90,19 @@ let get_assignment_type_through_alias cfg cn id =
               let old_value = GO.NodeMap.find cn.GO.index values in
               Asto.ExpressionSet.union old_value value
             with Not_found -> value)
-         (fun v (n, _) res ->
+         (fun v (n, e) res ->
             if ACFG.is_top_node n.GO.node
             then
               (Asto.Error Asto.Ambiguous)::res
             else
               Asto.ExpressionSet.fold (add_error_type n)
-                (GO.NodeMap.find cn.GO.index v) res)
+                (GO.NodeMap.find e.ACFG.end_node.GO.index v) res)
          (fun v (cn, _) ->
             not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
          initial_value initial_result)
       cfg cn
   in
+
   if List.for_all ((=) (List.hd assignments)) assignments
   then
     List.hd assignments
@@ -175,7 +176,7 @@ let add_post_dominated cfg index acc =
 let get_nodes_leading_to_error_return cfg error_assignments =
   let get_reachable_nodes ((index, node), identifier) error_type acc =
     let kill_reach _ (cn, _) =
-         not (ACFG.is_killing_reach identifier cn.GO.node)
+      not (ACFG.is_killing_reach identifier cn.GO.node)
     in
     match error_type with
       Asto.Clear ->
