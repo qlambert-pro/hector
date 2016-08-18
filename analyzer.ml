@@ -42,23 +42,13 @@ let remove_doubles acc c =
 let analyze_def toplevel definition infos =
   let func_name = fst (Ast_c.get_s_and_ii_of_name definition.Ast_c.f_name) in
   try
-    let cfg =
-      (Common.profile_code "cfg"
-         (fun () -> Annotated_cfg.of_ast_c toplevel))
-    in
+    let cfg = Annotated_cfg.of_ast_c toplevel in
 
     HC.annotate_error_handling cfg;
     HC.annotate_resource_handling cfg;
 
-    let error_blocks =
-      Common.profile_code "find_errorhandling"
-        (fun () -> C_function.find_errorhandling cfg)
-    in
-
-    let exemplars =
-      Common.profile_code "get_exemplars"
-        (fun () -> C_function.get_exemplars cfg error_blocks)
-    in
+    let error_blocks = C_function.find_errorhandling cfg in
+    let exemplars = C_function.get_exemplars cfg error_blocks in
 
     (*TODO get allocations and use them instead of exemplars*)
     let candidates =

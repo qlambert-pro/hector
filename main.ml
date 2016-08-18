@@ -22,18 +22,16 @@
 open Common
 
 let test_type_c infile =
-  let (program2, _stat) =
-    Common.profile_code "parsing" (fun () -> Parse_c.parse_c_and_cpp false infile) in
+  let (program2, _stat) = Parse_c.parse_c_and_cpp false infile in
   let program2' =
-    Common.profile_code "type inference" (fun () ->
-        program2
-        +> Common.unzip
-        +> (fun (program, infos) ->
-            Type_annoter_c.annotate_program !Type_annoter_c.initial_env
-              program +> List.map fst,
-            infos
-          )
-        +> Common.uncurry Common.zip)
+    program2
+    +> Common.unzip
+    +> (fun (program, infos) ->
+        Type_annoter_c.annotate_program !Type_annoter_c.initial_env
+          program +> List.map fst,
+        infos
+      )
+    +> Common.uncurry Common.zip
   in
   let (program, infos) = Common.unzip program2' in
 
@@ -42,7 +40,7 @@ let test_type_c infile =
     | h::t->
       (Analyzer.analyze_toplevel h)::(loop t)
 
-  in Common.profile_code "analysis" (fun () -> loop program)
+  in loop program
 
 (*  List.map (Analyzer.analyze_toplevel program) program*)
 
@@ -64,13 +62,13 @@ let pretty_print_to_file new_code op =
 let compare old_file new_code cmp =
   pretty_print_to_file new_code
     (function fl ->
-      let tmp_old = Filename.temp_file "old_error" "c" in
-      Common.command2
-        (Printf.sprintf "cp %s %s; indent -linux %s" old_file tmp_old tmp_old);
-      let (run,show) = cmp tmp_old fl in
-      match Common.cmd_to_list run with
-        [] -> ()
-      | lst -> List.iter (function x -> Printf.printf "%s\n" x) (show::lst))
+       let tmp_old = Filename.temp_file "old_error" "c" in
+       Common.command2
+         (Printf.sprintf "cp %s %s; indent -linux %s" old_file tmp_old tmp_old);
+       let (run,show) = cmp tmp_old fl in
+       match Common.cmd_to_list run with
+         [] -> ()
+       | lst -> List.iter (function x -> Printf.printf "%s\n" x) (show::lst))
 
 let compare_with_indented old_file new_code = ()
 (*  compare old_file new_code *)

@@ -433,15 +433,14 @@ let of_ast_c ast =
   in
   let top_node = Control_flow_c.first_node cocci_cfg in
   process_node {index = top_node; node = (cocci_cfg#nodes)#assoc top_node};
-  (Common.profile_code "create_cfg" (fun () ->
-       breadth_first_fold
-         (get_forward_config
-            (fun _ _ -> true)
-            (fun _ (cn, _) () -> process_node cn)
-            (fun _ _ -> true)
-            true ())
-         cocci_cfg
-         (complete_node_of cocci_cfg top_node)));
+  breadth_first_fold
+    (get_forward_config
+       (fun _ _ -> true)
+       (fun _ (cn, _) () -> process_node cn)
+       (fun _ _ -> true)
+       true ())
+    cocci_cfg
+    (complete_node_of cocci_cfg top_node);
   cfg
 
 let is_returning_resource resource cn =

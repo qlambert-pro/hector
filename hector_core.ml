@@ -180,74 +180,71 @@ let get_nodes_leading_to_error_return cfg error_assignments =
     in
     match error_type with
       Asto.Clear ->
-      (Common.profile_code "clear" (fun () ->
-           let nodes =
-             GO.breadth_first_fold
-               (GO.get_basic_node_config
-                  kill_reach
-                  (GO.NodeiSet.singleton index))
-               cfg (GO.complete_node_of cfg index)
-           in
-           let reachable_returns = ACFG.filter_returns cfg identifier nodes in
-           if reachable_returns != GO.NodeiSet.empty
-           then
-             let error_branch_nodes =
-               add_branch_nodes_leading_to_return
-                 cfg reachable_returns nodes acc
-             in
-             if GO.NodeiSet.mem index error_branch_nodes
-             then
-               add_post_dominated cfg index error_branch_nodes
-             else
-               error_branch_nodes
-           else
-             acc))
+      let nodes =
+        GO.breadth_first_fold
+          (GO.get_basic_node_config
+             kill_reach
+             (GO.NodeiSet.singleton index))
+          cfg (GO.complete_node_of cfg index)
+      in
+      let reachable_returns = ACFG.filter_returns cfg identifier nodes in
+      if reachable_returns != GO.NodeiSet.empty
+      then
+        let error_branch_nodes =
+          add_branch_nodes_leading_to_return
+            cfg reachable_returns nodes acc
+        in
+        if GO.NodeiSet.mem index error_branch_nodes
+        then
+          add_post_dominated cfg index error_branch_nodes
+        else
+          error_branch_nodes
+      else
+        acc
     | Asto.Ambiguous ->
-      (Common.profile_code "ambiguous" (fun () ->
-           let heads =
-             GO.breadth_first_fold
-               (GO.get_forward_config
-                  (fun _ _ -> true)
+      let heads =
+        GO.breadth_first_fold
+          (GO.get_forward_config
+             (fun _ _ -> true)
 
-                  (*TODO is_testing_identifier is incorrect*)
-                  (* add complex if cases to prove it *)
-                  (fun _ (cn, e) res ->
-                     let pred = e.ACFG.start_node in
-                     let head = cn.GO.node in
-                     let is_correct_branch =
-                       ACFG.is_on_error_branch
-                         get_assignment_type_through_alias
-                         cfg pred head
-                     in
-                     let is_testing_identifier =
-                       ACFG.test_if_header
-                         (Asto.is_testing_identifier identifier)
-                         false pred.GO.node
-                     in
-                     if is_correct_branch && is_testing_identifier
-                     then GO.NodeiSet.add cn.GO.index res
-                     else res)
+             (*TODO is_testing_identifier is incorrect*)
+             (* add complex if cases to prove it *)
+             (fun _ (cn, e) res ->
+                let pred = e.ACFG.start_node in
+                let head = cn.GO.node in
+                let is_correct_branch =
+                  ACFG.is_on_error_branch
+                    get_assignment_type_through_alias
+                    cfg pred head
+                in
+                let is_testing_identifier =
+                  ACFG.test_if_header
+                    (Asto.is_testing_identifier identifier)
+                    false pred.GO.node
+                in
+                if is_correct_branch && is_testing_identifier
+                then GO.NodeiSet.add cn.GO.index res
+                else res)
 
-                  kill_reach true GO.NodeiSet.empty)
-               cfg (GO.complete_node_of cfg index)
-           in
-           let nodes =
-             GO.NodeiSet.fold
-               (fun index s ->
-                  GO.NodeiSet.union s
-                    (GO.breadth_first_fold
-                       (GO.get_basic_node_config
-                          kill_reach (GO.NodeiSet.singleton index))
-                       cfg (GO.complete_node_of cfg index)))
-               heads GO.NodeiSet.empty
-           in
-           let reachable_returns = ACFG.filter_returns cfg identifier nodes in
-           if reachable_returns != GO.NodeiSet.empty
-           then
-             add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
-           else
-             acc
-         ))
+             kill_reach true GO.NodeiSet.empty)
+          cfg (GO.complete_node_of cfg index)
+      in
+      let nodes =
+        GO.NodeiSet.fold
+          (fun index s ->
+             GO.NodeiSet.union s
+               (GO.breadth_first_fold
+                  (GO.get_basic_node_config
+                     kill_reach (GO.NodeiSet.singleton index))
+                  cfg (GO.complete_node_of cfg index)))
+          heads GO.NodeiSet.empty
+      in
+      let reachable_returns = ACFG.filter_returns cfg identifier nodes in
+      if reachable_returns != GO.NodeiSet.empty
+      then
+        add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
+      else
+        acc
   in
   Hashtbl.fold get_reachable_nodes error_assignments GO.NodeiSet.empty
 
@@ -267,54 +264,44 @@ let is_head cfg (index, node) =
 let annotate_error_handling cfg =
   let error_returns, identifiers =
 
-    (Common.profile_code "get_returns" (fun () ->
-         GO.fold_node
-           (fun (error_returns, id_set) (i, node) ->
-              let error_type =
-                ACFG.test_returned_expression Asto.get_assignment_type
-                  (Asto.Value Asto.NonError) node
-              in
-              match error_type with
-                Asto.Value (Asto.Error Asto.Clear) ->
-                ((i,node)::error_returns, id_set)
-              | Asto.Variable e ->
-                (error_returns, e::id_set)
-              | _ -> (error_returns, id_set))
-           ([], []) cfg))
+    GO.fold_node
+      (fun (error_returns, id_set) (i, node) ->
+         let error_type =
+           ACFG.test_returned_expression Asto.get_assignment_type
+             (Asto.Value Asto.NonError) node
+         in
+         match error_type with
+           Asto.Value (Asto.Error Asto.Clear) ->
+           ((i,node)::error_returns, id_set)
+         | Asto.Variable e ->
+           (error_returns, e::id_set)
+         | _ -> (error_returns, id_set))
+      ([], []) cfg
   in
-  let error_assignments =
-    (Common.profile_code "get_assignement" (fun () ->
-         get_error_assignments cfg identifiers)) in
+  let error_assignments = get_error_assignments cfg identifiers in
   let error_branch_nodes =
-    (Common.profile_code "get_nodes" (fun () ->
-         get_nodes_leading_to_error_return cfg error_assignments
-       ))
+    get_nodes_leading_to_error_return cfg error_assignments
   in
   let error_return_post_dominated =
-    (Common.profile_code "get_postdominated" (fun () ->
-         List.fold_left
-           (fun acc (index, _) ->
-              let nodes =
-                GO.conditional_get_post_dominated (fun _ -> true) cfg
-                  (GO.complete_node_of cfg index)
-              in
-              GO.NodeiSet.union acc nodes)
-           GO.NodeiSet.empty error_returns
-       ))
+    List.fold_left
+      (fun acc (index, _) ->
+         let nodes =
+           GO.conditional_get_post_dominated (fun _ -> true) cfg
+             (GO.complete_node_of cfg index)
+         in
+         GO.NodeiSet.union acc nodes)
+      GO.NodeiSet.empty error_returns
   in
-  (Common.profile_code "annotate_error_handling" (fun () ->
-       GO.fold_node
-         (fun () (index, node) ->
-            if GO.NodeiSet.mem index error_branch_nodes ||
-               GO.NodeiSet.mem index error_return_post_dominated
-            then
-              cfg#replace_node
-                (index, {node with ACFG.is_error_handling = true})
-            else
-              ())
-         () cfg
-     ))
-
+  GO.fold_node
+    (fun () (index, node) ->
+       if GO.NodeiSet.mem index error_branch_nodes ||
+          GO.NodeiSet.mem index error_return_post_dominated
+       then
+         cfg#replace_node
+           (index, {node with ACFG.is_error_handling = true})
+       else
+         ())
+    () cfg
 
 (*TODO implement*)
 let is_interprocedural c = false
@@ -412,21 +399,19 @@ let get_resource cfg relevant_resources cn =
 
 let annotate_resource_handling cfg =
   let relevant_resources' =
-    (Common.profile_code "find_resource" (fun () ->
-         GO.fold_node
-           (fun acc (i, n) ->
-              if n.ACFG.is_error_handling
-              then
-                let resource =
-                  annotate_if_release cfg {GO.index = i; GO.node = n}
-                in
-                match resource with
-                  None   -> acc
-                | Some r -> r::acc
-              else
-                acc)
-           [] cfg
-       ))
+    GO.fold_node
+      (fun acc (i, n) ->
+         if n.ACFG.is_error_handling
+         then
+           let resource =
+             annotate_if_release cfg {GO.index = i; GO.node = n}
+           in
+           match resource with
+             None   -> acc
+           | Some r -> r::acc
+         else
+           acc)
+      [] cfg
   in
 
   let relevant_resources =
