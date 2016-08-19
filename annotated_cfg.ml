@@ -437,8 +437,7 @@ let of_ast_c ast =
     (get_forward_config
        (fun _ _ -> true)
        (fun _ (cn, _) () -> process_node cn)
-       (fun _ _ -> true)
-       true ())
+       (=) (fun _ _ -> true) true ())
     cocci_cfg
     (complete_node_of cocci_cfg top_node);
   cfg

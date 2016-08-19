@@ -81,6 +81,8 @@ type ('node, 'edge, 'g, 'value, 'res) fold_configuration =
    compute_result:
      'value NodeMap.t -> ('node complete_node * 'edge) -> 'res -> 'res;
 
+   equal_value: 'value -> 'value -> bool;
+
    predicate: 'value NodeMap.t -> ('node complete_node * 'edge) -> bool;
 
    initial_value:  'value;
@@ -131,7 +133,7 @@ let breadth_first_fold config g cn =
       match (should_visit, old_value, new_value) with
         ( true,    None,  v) ->
         s::added_nodes
-      | ( true, Some ov, nv) when ov <> nv ->
+      | ( true, Some ov, nv) when not (config.equal_value ov nv) ->
         s::added_nodes
       | _ ->
         added_nodes
@@ -155,22 +157,24 @@ let breadth_first_fold config g cn =
      result           = config.initial_result}
 
 
-let get_forward_config update_value compute_result predicate initial_value
-    initial_result =
+let get_forward_config update_value compute_result equal_value predicate
+    initial_value initial_result =
   {get_next_nodes                 = add_successors;
    update_value_for_fixed_point   = update_value;
-   predicate                      = predicate;
    compute_result                 = compute_result;
+   equal_value                    = equal_value;
+   predicate                      = predicate;
    initial_value                  = initial_value;
    initial_result                 = initial_result;}
 
 
-let get_backward_config update_value compute_result predicate initial_value
-   initial_result =
+let get_backward_config update_value compute_result equal_value predicate
+    initial_value initial_result =
   {get_next_nodes                 = add_predecessors;
    update_value_for_fixed_point   = update_value;
-   predicate                      = predicate;
    compute_result                 = compute_result;
+   equal_value                    = equal_value;
+   predicate                      = predicate;
    initial_value                  = initial_value;
    initial_result                 = initial_result;}
 
@@ -184,7 +188,7 @@ let get_basic_node_config predicate initial_result =
          NodeiSet.add s.index res
        else
          res)
-    predicate true initial_result
+    (=) predicate true initial_result
 
 let get_backward_basic_node_config predicate initial_result =
   get_backward_config predicate
@@ -195,7 +199,7 @@ let get_backward_basic_node_config predicate initial_result =
          NodeiSet.add s.index res
        else
          res)
-    predicate true initial_result
+    (=) predicate true initial_result
 
 let conditional_get_post_dominated p g cn =
   let predicate set (n, e) =

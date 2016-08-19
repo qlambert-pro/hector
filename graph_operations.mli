@@ -72,6 +72,8 @@ type ('node, 'edge, 'g, 'value, 'res) fold_configuration =
     * the current node and the current result value
     * *)
 
+   equal_value: 'value -> 'value -> bool;
+
    predicate: 'value NodeMap.t -> ('node complete_node * 'edge) -> bool;
    (* **
     * The predicate is called with visited_nodes as first argument and
@@ -90,6 +92,7 @@ val breadth_first_fold:
 val get_forward_config:
   ('value NodeMap.t -> ('node complete_node * 'edge) -> 'value) ->
   ('value NodeMap.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
+  ('value -> 'value -> bool) ->
   ('value NodeMap.t -> ('node complete_node * 'edge) -> bool) ->
   'value -> 'res ->
   ('node, 'edge, 'g, 'value, 'res) fold_configuration
@@ -97,6 +100,7 @@ val get_forward_config:
 val get_backward_config:
   ('value NodeMap.t -> ('node complete_node * 'edge) -> 'value) ->
   ('value NodeMap.t -> ('node complete_node * 'edge) -> 'res -> 'res) ->
+  ('value -> 'value -> bool) ->
   ('value NodeMap.t -> ('node complete_node * 'edge) -> bool) ->
   'value -> 'res ->
   ('node, 'edge, 'g, 'value, 'res) fold_configuration

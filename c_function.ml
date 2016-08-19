@@ -54,8 +54,7 @@ let get_resource_release cfg block_head acc =
             ACFG.Release r ->
             ({node = cn; resource = r}, block_head)::res
           | _         -> res)
-       (fun _ _ -> true)
-       true acc)
+       (=) (fun _ _ -> true) true acc)
     cfg block_head
 
 
@@ -128,7 +127,7 @@ let get_allocs cfg block_head release =
           | ACFG.Release _
           | ACFG.Test _
           | ACFG.Unannotated -> allocs)
-
+       Asto.ExpressionSet.equal
          (fun v (cn, _) ->
             not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
        initial_value [])
@@ -169,8 +168,7 @@ let exists_after_block cfg block predicate =
        (fun _ _ -> true)
        (fun _ (cn, _) res ->
           res || predicate cn)
-       (fun _ _ -> true)
-       true false)
+       (=) (fun _ _ -> true) true false)
     cfg block
 
 
@@ -221,7 +219,7 @@ let get_candidate_blocks cfg error_blocks exemplar =
             then block::res
             else res
           with Not_found -> res)
-
+       Asto.ExpressionSet.equal
        (fun v (cn, e) ->
           not (List.exists
                  (fun n -> n.GO.index = cn.GO.index)
@@ -267,6 +265,7 @@ let filter_faults cfg exemplar blocks =
                | ACFG.Test _
                | ACFG.Unannotated
                | ACFG.Computation _ -> acc)
+            (=)
             (fun _ (cn, _) ->
                not (List.exists
                       (fun e ->

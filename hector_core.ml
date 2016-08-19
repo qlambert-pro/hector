@@ -97,6 +97,7 @@ let get_assignment_type_through_alias cfg cn id =
             else
               Asto.ExpressionSet.fold (add_error_type n)
                 (GO.NodeMap.find e.ACFG.end_node.GO.index v) res)
+         (Asto.ExpressionSet.equal)
          (fun v (cn, _) ->
             not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
          initial_value initial_result)
@@ -226,7 +227,7 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                 then GO.NodeiSet.add cn.GO.index res
                 else res)
 
-             kill_reach true GO.NodeiSet.empty)
+             (=) kill_reach true GO.NodeiSet.empty)
           cfg (GO.complete_node_of cfg index)
       in
       let nodes =
@@ -470,6 +471,7 @@ let annotate_resource_handling cfg =
          | ACFG.Allocation _
          | ACFG.Release _
          | ACFG.Unannotated -> ())
+      (=)
       (fun _ (cn, _) ->
          not (ACFG.is_referencing_resource (ACFG.Resource r) cn.GO.node))
       true ()
