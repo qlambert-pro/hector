@@ -21,6 +21,12 @@
 
 open Kaputt
 
+let configs = Configs.get ((Sys.getenv "PWD") ^ "/configs")
+
+let _ =
+  Asto.set_error_constants   configs.Configs.error_constants;
+  Asto.set_testing_functions configs.Configs.testing_functions
+
 let get_cfgs filename =
   let (program, _) = Parse_c.parse_c_and_cpp false filename in
   let (functions', _) = Common.unzip program in

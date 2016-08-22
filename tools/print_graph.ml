@@ -20,6 +20,13 @@
  * *)
 
 module ACFG = Annotated_cfg
+module Asto = Ast_operations
+
+let configs = Configs.get ((Sys.getenv "PWD") ^ "/configs")
+
+let _ =
+  Asto.set_error_constants   configs.Configs.error_constants;
+  Asto.set_testing_functions configs.Configs.testing_functions
 
 let cpt = ref 0
 

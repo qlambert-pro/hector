@@ -19,4 +19,12 @@
  * Hector under other licenses.
  * *)
 
-val analyze_toplevel: Ast_c.toplevel -> unit
+module Asto = Ast_operations
+
+type t = {
+  error_constants:     Asto.StringSet.t;
+  non_error_constants: Asto.StringSet.t;
+  testing_functions:   Asto.StringSet.t;
+}
+
+val get: string -> t

@@ -21,6 +21,8 @@
 
 open Common
 
+module Asto = Ast_operations
+
 let analyze_file filename =
   let (program, _) = Parse_c.parse_c_and_cpp false filename in
   let (functions', _) = Common.unzip program in
@@ -31,40 +33,52 @@ let analyze_file filename =
   in
   List.iter Analyzer.analyze_toplevel functions
 
+
 let verbose = ref false
+let config_dir = ref ((Sys.getenv "HOME") ^ "/.hector.d")
 let macros = ref ""
-let profile = ref false
 
 let options = [
   (* if you want command line arguments, put them here:
      "option name", operation described in man Arg, "description"; *)
   "-verbose", Arg.Set verbose,
   "  verbose output";
-  "-macro_file_builtins", Arg.Set_string macros,
+  "--config_dir", Arg.Set_string config_dir,
+  "  Specify the directory where to look for config files. The default value is ~/.hector.d";
+  "--macro_file_builtins", Arg.Set_string macros,
   "  macro definition file";
 ]
+
 
 let get_files file_argument =
   if Sys.is_directory file_argument
   then Common.cmd_to_list ("find "^ file_argument ^" -name \"*.[ch]\"")
   else [file_argument]
 
-let file = ref ""
-let anonymous str = file := str
 
 let _ =
+  let file = ref "" in
+  let anonymous str = file := str in
+
   Arg.parse options anonymous "";
-  if !macros = "" then macros := ("/usr/local/lib/coccinelle/standard.h");
+
+  if !macros = "" then macros := !config_dir ^ "/standard.h";
+
   Parse_c.init_defs_builtins !macros;
-  Common.print_to_stderr := !verbose || !profile;
+  Common.print_to_stderr := !verbose;
   Flag_parsing_c.verbose_lexing := !verbose;
   Flag_parsing_c.verbose_parsing := !verbose;
   Flag_parsing_c.verbose_type := !verbose;
 
   let files = get_files !file in
+  let configs = Configs.get !config_dir in
+
+  Asto.set_error_constants   configs.Configs.error_constants;
+  Asto.set_testing_functions configs.Configs.testing_functions;
 
   List.iter
     (function x ->
-     try Common.timeout_function "60" 60 (function () -> analyze_file x)
+     try Common.timeout_function "60" 60
+           (function () -> analyze_file x)
      with _ -> ())
     files

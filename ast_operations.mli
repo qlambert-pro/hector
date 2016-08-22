@@ -19,6 +19,11 @@
  * Hector under other licenses.
  * *)
 
+module StringSet: Set.S with type elt = string
+
+val set_error_constants:   StringSet.t -> unit
+val set_testing_functions: StringSet.t -> unit
+
 type branch_side =
     Then
   | Else
