@@ -97,13 +97,9 @@ type ('value, 'a, 'node, 'edge) breadth_first_fold_data =
 
 
 let breadth_first_fold config g cn =
-  let rec breadth_first_fold_aux
-      {visited_nodes    = visited_nodes;
-       last_added_nodes = last_added_nodes;
-       result           = result} =
-
+  let rec breadth_first_fold_aux data =
     let next_nodes =
-      List.fold_left (config.get_next_nodes g) [] last_added_nodes
+      List.fold_left (config.get_next_nodes g) [] data.last_added_nodes
     in
 
     let new_visited_nodes =
@@ -113,18 +109,24 @@ let breadth_first_fold config g cn =
              config.update_value_for_fixed_point visited_nodes (s, e)
            in
            NodeMap.add s.index new_value visited_nodes)
-        visited_nodes next_nodes
+        data.visited_nodes next_nodes
     in
 
     let new_result =
       List.fold_left
         (fun result cn -> config.compute_result new_visited_nodes cn result)
-        result next_nodes
+        data.result next_nodes
+    in
+
+    let add_no_double cn l =
+      if List.exists (fun n -> (=) cn.index n.index) l
+      then l
+      else cn::l
     in
 
     let add_to_visited_nodes added_nodes (s, e) =
       let old_value =
-        try Some (NodeMap.find s.index visited_nodes)
+        try Some (NodeMap.find s.index data.visited_nodes)
         with Not_found -> None
       in
       let new_value = NodeMap.find s.index new_visited_nodes in
@@ -132,9 +134,9 @@ let breadth_first_fold config g cn =
 
       match (should_visit, old_value, new_value) with
         ( true,    None,  v) ->
-        s::added_nodes
+        add_no_double s added_nodes
       | ( true, Some ov, nv) when not (config.equal_value ov nv) ->
-        s::added_nodes
+        add_no_double s added_nodes
       | _ ->
         added_nodes
     in
@@ -143,7 +145,7 @@ let breadth_first_fold config g cn =
       List.fold_left add_to_visited_nodes [] next_nodes
     in
 
-    if NodeMap.equal (=) new_visited_nodes visited_nodes
+    if NodeMap.equal config.equal_value new_visited_nodes data.visited_nodes
     then new_result
     else breadth_first_fold_aux
         {visited_nodes    = new_visited_nodes;
