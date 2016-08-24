@@ -41,16 +41,16 @@ let update_value value cn =
     cn.GO.node;
   List.fold_left
     (fun acc (l, r) ->
-       let nvalue =
-         if Asto.ExpressionSet.exists (Asto.expression_equal l) acc
-         then
-           match r with
-             Some (Asto.Variable e) -> Asto.ExpressionSet.add e acc
-           | Some (Asto.Value    _)
-           | None -> acc
-         else acc
-       in
-       Asto.ExpressionSet.remove l nvalue)
+       if Asto.ExpressionSet.exists (Asto.expression_equal l) acc
+       then
+         match r with
+           Some (Asto.Variable e) when not (Asto.expression_equal e l) ->
+           let nvalue = Asto.ExpressionSet.add e acc in
+           Asto.ExpressionSet.remove l nvalue
+         | Some (Asto.Variable e) -> acc
+         | Some (Asto.Value    _)
+         | None -> Asto.ExpressionSet.remove l acc
+       else acc)
     value !side_effects
 
 let add_error_type n e acc =
