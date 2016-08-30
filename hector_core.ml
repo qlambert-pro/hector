@@ -390,11 +390,26 @@ let get_resource cfg relevant_resources cn =
     then ACFG.Test test
     else
       match ACFG.get_assignment cn.GO.node with
-        Some a when
+        Some a ->
+        let is_left =
           List.exists
             (Asto.expression_equal a.ACFG.left_value)
-            relevant_resources ->
-        ACFG.Assignment a
+            relevant_resources
+        in
+        let is_right =
+          match a.ACFG.right_value with
+            Asto.Variable v when
+              List.exists
+                (Asto.expression_equal v)
+                relevant_resources -> true
+          | Asto.Value _
+          | Asto.Variable _ -> false
+        in
+        if is_left || is_right
+        then
+          ACFG.Assignment a
+        else
+          ACFG.Unannotated
       | _ -> ACFG.Unannotated
 
 
