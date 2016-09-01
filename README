@@ -16,3 +16,11 @@ $ make
 To compile a tool to visualize the control flow graph used by hector run:
 
 $ make print_graph
+
+and use it as follow:
+
+$ ./print_graph path/to/file.c path/to/graph_file
+$ xdot path/to/graph_file_0
+
+print_graph generate a file for each function, the name are indexed accoring
+to the order in the file
