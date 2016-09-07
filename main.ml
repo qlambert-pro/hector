@@ -24,7 +24,7 @@ open Common
 module Asto = Ast_operations
 
 let analyze_file filename =
-  let (program, _) = Parse_c.parse_c_and_cpp false filename in
+  let (program, _) = Parse_c.parse_c_and_cpp false false filename in
   let (functions', _) = Common.unzip program in
   let functions'' = List.tl (List.rev functions') in
   let functions =

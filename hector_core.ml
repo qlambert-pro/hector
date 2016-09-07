@@ -21,7 +21,10 @@
 
 module Asto = Ast_operations
 module ACFG = Annotated_cfg
+module ACFGO = Acfg_operations
 module GO = Graph_operations
+
+module ACFGOps = GO.Make (ACFG)
 
 let update_value value cn =
   let side_effects = ref [] in
@@ -81,13 +84,15 @@ let get_assignment_type_through_alias cfg cn id =
   let initial_value = update_value (Asto.ExpressionSet.singleton id) cn in
   let initial_result = add_error_type cn id [] in
   let assignments =
-    GO.breadth_first_fold
-      (GO.get_backward_config
+    ACFGOps.breadth_first_fold
+      (ACFGOps.get_backward_config
          (fun values (cn, e) ->
-            let value' = GO.NodeMap.find e.ACFG.end_node.GO.index values in
+            let value' =
+              ACFGOps.NodeMap.find e.ACFG.end_node.GO.index values
+            in
             let value  = update_value value' cn in
             try
-              let old_value = GO.NodeMap.find cn.GO.index values in
+              let old_value = ACFGOps.NodeMap.find cn.GO.index values in
               Asto.ExpressionSet.union old_value value
             with Not_found -> value)
          (fun v (n, e) res ->
@@ -96,10 +101,10 @@ let get_assignment_type_through_alias cfg cn id =
               (Asto.Error Asto.Ambiguous)::res
             else
               Asto.ExpressionSet.fold (add_error_type n)
-                (GO.NodeMap.find e.ACFG.end_node.GO.index v) res)
+                (ACFGOps.NodeMap.find e.ACFG.end_node.GO.index v) res)
          (Asto.ExpressionSet.equal)
          (fun v (cn, _) ->
-            not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
+            not (Asto.ExpressionSet.is_empty (ACFGOps.NodeMap.find cn.GO.index v)))
          initial_value initial_result)
       cfg cn
   in
@@ -112,8 +117,8 @@ let get_assignment_type_through_alias cfg cn id =
 
 let get_error_assignments cfg identifiers =
   let t = Hashtbl.create 101 in
-  cfg#nodes#iter
-    (fun (i, node) ->
+  ACFG.KeyMap.iter
+    (fun i node ->
        ACFG.apply_side_effect_visitor
          (fun l op r ->
             if List.exists (fun e -> Asto.expression_equal e l) identifiers
@@ -127,7 +132,8 @@ let get_error_assignments cfg identifiers =
                | _    -> ())
             else
               ())
-         node);
+         node)
+    cfg#nodes;
   t
 
 
@@ -140,38 +146,38 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
     in
     let predicate set (n, e) =
       let is_post_dominated =
-        GO.fold_successors
-          (fun acc (cn, e) ->
+        ACFGOps.fold_successors
+          (fun (cn, e) acc ->
              acc &&
              (is_backedge e ||
-              (GO.NodeMap.mem  cn.GO.index set &&
-               GO.NodeMap.find cn.GO.index set)))
-          true cfg n.GO.index
+              (ACFGOps.NodeMap.mem  cn.GO.index set &&
+               ACFGOps.NodeMap.find cn.GO.index set)))
+          cfg n.GO.index true
       in
-      GO.NodeiSet.mem n.GO.index nodes &&
+      ACFG.KeySet.mem n.GO.index nodes &&
       is_post_dominated
     in
     let config =
-      GO.get_backward_basic_node_config predicate
-        (GO.NodeiSet.singleton index)
+      ACFGOps.get_backward_basic_node_config predicate
+        (ACFG.KeySet.singleton index)
     in
-    GO.breadth_first_fold config cfg (GO.complete_node_of cfg index)
+    ACFGOps.breadth_first_fold config cfg (ACFGOps.complete_node_of cfg index)
   in
 
-  GO.NodeiSet.fold
+  ACFG.KeySet.fold
     (fun return acc ->
        let branch_nodes = post_dominated return in
-       GO.NodeiSet.union branch_nodes acc)
+       ACFG.KeySet.union branch_nodes acc)
     returns acc
 
 
 let add_post_dominated cfg index acc =
   let post_dominated =
-    GO.conditional_get_post_dominated
+    ACFGOps.conditional_get_post_dominated
       (fun _ -> true)
-      cfg (GO.complete_node_of cfg index)
+      cfg (ACFGOps.complete_node_of cfg index)
   in
-  GO.NodeiSet.union post_dominated acc
+  ACFG.KeySet.union post_dominated acc
 
 
 let get_nodes_leading_to_error_return cfg error_assignments =
@@ -182,20 +188,20 @@ let get_nodes_leading_to_error_return cfg error_assignments =
     match error_type with
       Asto.Clear ->
       let nodes =
-        GO.breadth_first_fold
-          (GO.get_basic_node_config
+        ACFGOps.breadth_first_fold
+          (ACFGOps.get_basic_node_config
              kill_reach
-             (GO.NodeiSet.singleton index))
-          cfg (GO.complete_node_of cfg index)
+             (ACFG.KeySet.singleton index))
+          cfg (ACFGOps.complete_node_of cfg index)
       in
       let reachable_returns = ACFG.filter_returns cfg identifier nodes in
-      if reachable_returns != GO.NodeiSet.empty
+      if reachable_returns != ACFG.KeySet.empty
       then
         let error_branch_nodes =
           add_branch_nodes_leading_to_return
             cfg reachable_returns nodes acc
         in
-        if GO.NodeiSet.mem index error_branch_nodes
+        if ACFG.KeySet.mem index error_branch_nodes
         then
           add_post_dominated cfg index error_branch_nodes
         else
@@ -204,8 +210,8 @@ let get_nodes_leading_to_error_return cfg error_assignments =
         acc
     | Asto.Ambiguous ->
       let heads =
-        GO.breadth_first_fold
-          (GO.get_forward_config
+        ACFGOps.breadth_first_fold
+          (ACFGOps.get_forward_config
              (fun _ _ -> true)
 
              (*TODO is_testing_identifier is incorrect*)
@@ -224,40 +230,41 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                     false pred.GO.node
                 in
                 if is_correct_branch && is_testing_identifier
-                then GO.NodeiSet.add cn.GO.index res
+                then ACFG.KeySet.add cn.GO.index res
                 else res)
 
-             (=) kill_reach true GO.NodeiSet.empty)
-          cfg (GO.complete_node_of cfg index)
+             (=) kill_reach true ACFG.KeySet.empty)
+          cfg (ACFGOps.complete_node_of cfg index)
       in
       let nodes =
-        GO.NodeiSet.fold
+        ACFG.KeySet.fold
           (fun index s ->
-             GO.NodeiSet.union s
-               (GO.breadth_first_fold
-                  (GO.get_basic_node_config
-                     kill_reach (GO.NodeiSet.singleton index))
-                  cfg (GO.complete_node_of cfg index)))
-          heads GO.NodeiSet.empty
+             ACFG.KeySet.union s
+               (ACFGOps.breadth_first_fold
+                  (ACFGOps.get_basic_node_config
+                     kill_reach (ACFG.KeySet.singleton index))
+                  cfg (ACFGOps.complete_node_of cfg index)))
+          heads ACFG.KeySet.empty
       in
       let reachable_returns = ACFG.filter_returns cfg identifier nodes in
-      if reachable_returns != GO.NodeiSet.empty
+      if reachable_returns != ACFG.KeySet.empty
       then
         add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
       else
         acc
   in
-  Hashtbl.fold get_reachable_nodes error_assignments GO.NodeiSet.empty
+  Hashtbl.fold get_reachable_nodes error_assignments ACFG.KeySet.empty
 
 
-let is_head cfg (index, node) =
+let is_head cfg index node =
   let predecessors = cfg#predecessors index in
   node.ACFG.is_error_handling &&
-  predecessors#exists
+  ACFG.KeyEdgeSet.exists
     (fun (index, _) ->
-       let node = cfg#nodes#assoc index in
+       let node = ACFG.KeyMap.find index cfg#nodes in
        ACFG.is_selection node &&
        not (node.ACFG.is_error_handling))
+    predecessors
 
 
 (*TODO optimise number of pass*)
@@ -265,8 +272,8 @@ let is_head cfg (index, node) =
 let annotate_error_handling cfg =
   let error_returns, identifiers =
 
-    GO.fold_node
-      (fun (error_returns, id_set) (i, node) ->
+    ACFGOps.fold_node cfg
+      (fun i node (error_returns, id_set) ->
          let error_type =
            ACFG.test_returned_expression Asto.get_assignment_type
              (Asto.Value Asto.NonError) node
@@ -277,7 +284,7 @@ let annotate_error_handling cfg =
          | Asto.Variable e ->
            (error_returns, e::id_set)
          | _ -> (error_returns, id_set))
-      ([], []) cfg
+      ([], [])
   in
   let error_assignments = get_error_assignments cfg identifiers in
   let error_branch_nodes =
@@ -287,22 +294,22 @@ let annotate_error_handling cfg =
     List.fold_left
       (fun acc (index, _) ->
          let nodes =
-           GO.conditional_get_post_dominated (fun _ -> true) cfg
-             (GO.complete_node_of cfg index)
+           ACFGOps.conditional_get_post_dominated (fun _ -> true) cfg
+             (ACFGOps.complete_node_of cfg index)
          in
-         GO.NodeiSet.union acc nodes)
-      GO.NodeiSet.empty error_returns
+         ACFG.KeySet.union acc nodes)
+      ACFG.KeySet.empty error_returns
   in
-  GO.fold_node
-    (fun () (index, node) ->
-       if GO.NodeiSet.mem index error_branch_nodes ||
-          GO.NodeiSet.mem index error_return_post_dominated
+  ACFGOps.fold_node cfg
+    (fun index node () ->
+       if ACFG.KeySet.mem index error_branch_nodes ||
+          ACFG.KeySet.mem index error_return_post_dominated
        then
          cfg#replace_node
            (index, {node with ACFG.is_error_handling = true})
        else
          ())
-    () cfg
+    ()
 
 (*TODO implement*)
 let is_interprocedural c = false
@@ -317,9 +324,9 @@ let get_released_resource cfg cn =
   | ( [], Some  [r]) when not (Asto.is_string   r) -> Some (ACFG.Void (Some r))
   | ([r], Some args) when not (should_ignore args) ->
 
-    if (ACFG.is_last_reference_before_killed_reached r
+    if (ACFGO.is_last_reference_before_killed_reached r
           cfg cn (ACFG.Resource r) &&
-        not (ACFG.is_return_value_tested cfg cn)) ||
+        not (ACFGO.is_return_value_tested cfg cn)) ||
        is_interprocedural cn
     then
       Some (ACFG.Resource r)
@@ -365,7 +372,7 @@ let get_resource cfg relevant_resources cn =
     ACFG.Allocation (ACFG.Resource r)
   | (     _, [r], Some args) when
       List.exists (Asto.expression_equal r) relevant_resources &&
-      ACFG.is_last_reference cfg cn (ACFG.Resource r) ->
+      ACFGO.is_last_reference cfg cn (ACFG.Resource r) ->
     ACFG.Release (ACFG.Resource r)
   | (     _,  rs, Some args) when
       List.exists
@@ -415,8 +422,8 @@ let get_resource cfg relevant_resources cn =
 
 let annotate_resource_handling cfg =
   let relevant_resources' =
-    GO.fold_node
-      (fun acc (i, n) ->
+    ACFGOps.fold_node cfg
+      (fun i n acc ->
          if n.ACFG.is_error_handling
          then
            let resource =
@@ -427,12 +434,12 @@ let annotate_resource_handling cfg =
            | Some r -> r::acc
          else
            acc)
-      [] cfg
+      []
   in
 
   let relevant_resources =
-    GO.fold_node
-      (fun acc (_, n) ->
+    ACFGOps.fold_node cfg
+      (fun _ n acc ->
          let assignement = ACFG.get_assignment n in
          match assignement with
            Some a ->
@@ -447,11 +454,11 @@ let annotate_resource_handling cfg =
            else
              acc
          | _ -> acc)
-      relevant_resources' cfg
+      relevant_resources'
   in
 
-  GO.fold_node
-    (fun () (i, n) ->
+  ACFGOps.fold_node cfg
+    (fun i n () ->
        let cn = {GO.index = i; GO.node = n} in
        let rs =
          List.find_all
@@ -462,10 +469,10 @@ let annotate_resource_handling cfg =
        cfg#replace_node (cn.GO.index, nnode);
        ACFG.annotate_resource cfg {cn with GO.node = nnode}
          (get_resource cfg relevant_resources cn))
-    () cfg;
+    ();
 
   let annotate_if_allocation r cfg cn =
-    if ACFG.is_first_reference cfg cn (ACFG.Resource r) &&
+    if ACFGO.is_first_reference cfg cn (ACFG.Resource r) &&
        not (ACFG.is_assigning_variable cn)
     then
       ACFG.annotate_resource cfg cn (ACFG.Allocation (ACFG.Resource r))
@@ -474,7 +481,7 @@ let annotate_resource_handling cfg =
   in
 
   let config r =
-    GO.get_forward_config
+    ACFGOps.get_forward_config
       (fun _ _ -> true)
       (fun _ (cn, _) res ->
          match cn.GO.node.ACFG.resource_handling_type with
@@ -492,12 +499,13 @@ let annotate_resource_handling cfg =
       true ()
   in
   List.iter
-    (fun r -> GO.breadth_first_fold (config r) cfg (ACFG.get_top_node cfg))
+    (fun r ->
+       ACFGOps.breadth_first_fold (config r) cfg (ACFGO.get_top_node cfg))
     relevant_resources
 
 
 (*TODO maybe optimise*)
 let get_error_handling_branch_head cfg =
-  let nodes = GO.find_all (is_head cfg) cfg in
-  List.fold_left
-    (fun acc (i, n) -> {GO.node = n; GO.index = i}::acc) [] nodes
+  let nodes = ACFGOps.find_all (is_head cfg) cfg in
+  ACFG.KeyMap.fold
+    (fun i n acc -> {GO.node = n; GO.index = i}::acc) nodes []

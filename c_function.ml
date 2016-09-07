@@ -26,6 +26,8 @@ module ACFG = Annotated_cfg
 module Asto = Ast_operations
 module HC = Hector_core
 
+module ACFGOps = GO.Make (ACFG)
+
 type exemplar = {
   alloc: ACFG.node GO.complete_node;
   alloc_name: string;
@@ -46,11 +48,11 @@ type fault = {
 let find_errorhandling cfg = HC.get_error_handling_branch_head cfg
 
 let get_resource_release cfg block_head acc =
-  GO.breadth_first_fold
-    (GO.get_forward_config
+  ACFGOps.breadth_first_fold
+    (ACFGOps.get_forward_config
        (fun _ _ -> true)
        (fun _ (cn, _) res ->
-          match cn.GO.node.Annotated_cfg.resource_handling_type with
+          match cn.GO.node.ACFG.resource_handling_type with
             ACFG.Release r ->
             ({node = cn; resource = r}, block_head)::res
           | _         -> res)
@@ -94,7 +96,7 @@ let maintain_value update_value get_previous_value values (cn, e) =
   let value' = get_previous_value values in
   let value  = update_value value' cn in
   try
-    let old_value = GO.NodeMap.find cn.GO.index values in
+    let old_value = ACFGOps.NodeMap.find cn.GO.index values in
     Asto.ExpressionSet.union old_value value
   with Not_found -> value
 
@@ -104,12 +106,12 @@ let get_allocs cfg block_head release =
       ACFG.Resource e -> Asto.ExpressionSet.singleton e
     | _               -> Asto.ExpressionSet.empty
   in
-  GO.breadth_first_fold
-    (GO.get_backward_config
+  ACFGOps.breadth_first_fold
+    (ACFGOps.get_backward_config
        (fun v (cn, e) ->
           maintain_value
             update_value_backward
-            (GO.NodeMap.find e.ACFG.end_node.GO.index) v (cn, e))
+            (ACFGOps.NodeMap.find e.ACFG.end_node.GO.index) v (cn, e))
 
 
        (fun values (cn, _) allocs ->
@@ -117,7 +119,7 @@ let get_allocs cfg block_head release =
             ACFG.Allocation r
             when Asto.ExpressionSet.exists
                 (fun e -> ACFG.resource_equal r (ACFG.Resource e))
-                (GO.NodeMap.find cn.GO.index values) ->
+                (ACFGOps.NodeMap.find cn.GO.index values) ->
             if List.exists (fun n -> (=) cn.GO.index n.GO.index) allocs
             then allocs
             else cn::allocs
@@ -129,7 +131,8 @@ let get_allocs cfg block_head release =
           | ACFG.Unannotated -> allocs)
        Asto.ExpressionSet.equal
          (fun v (cn, _) ->
-            not (Asto.ExpressionSet.is_empty (GO.NodeMap.find cn.GO.index v)))
+            not (Asto.ExpressionSet.is_empty
+                 (ACFGOps.NodeMap.find cn.GO.index v)))
        initial_value [])
     cfg block_head
 
@@ -163,8 +166,8 @@ let get_exemplars cfg error_blocks =
 
 
 let exists_after_block cfg block predicate =
-  GO.breadth_first_fold
-    (GO.get_forward_config
+  ACFGOps.breadth_first_fold
+    (ACFGOps.get_forward_config
        (fun _ _ -> true)
        (fun _ (cn, _) res ->
           res || predicate cn)
@@ -201,18 +204,18 @@ let get_candidate_blocks cfg error_blocks exemplar =
       ACFG.Resource e -> Asto.ExpressionSet.singleton e
     | _               -> Asto.ExpressionSet.empty
   in
-  GO.breadth_first_fold
-    (GO.get_forward_config
+  ACFGOps.breadth_first_fold
+    (ACFGOps.get_forward_config
        (fun v (cn, e) ->
           maintain_value update_value_forward
-            (GO.NodeMap.find e.ACFG.start_node.GO.index) v (cn, e))
+            (ACFGOps.NodeMap.find e.ACFG.start_node.GO.index) v (cn, e))
 
        (fun values (cn, _) res ->
           try
             let block =
               List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
             in
-            let aliases = GO.NodeMap.find cn.GO.index values in
+            let aliases = ACFGOps.NodeMap.find cn.GO.index values in
 
             if not (is_releasing_resource cfg aliases block) &&
                not (is_returning_resource cfg aliases block)
@@ -225,7 +228,7 @@ let get_candidate_blocks cfg error_blocks exemplar =
                  (fun n -> n.GO.index = cn.GO.index)
                  error_blocks) &&
           not (Asto.ExpressionSet.is_empty
-                 (GO.NodeMap.find e.ACFG.start_node.GO.index v)))
+                 (ACFGOps.NodeMap.find e.ACFG.start_node.GO.index v)))
 
        initial_value [])
     cfg exemplar.alloc
@@ -234,8 +237,8 @@ let get_candidate_blocks cfg error_blocks exemplar =
 let filter_faults cfg exemplar blocks =
   List.find_all
     (fun b ->
-       GO.breadth_first_fold
-         (GO.get_backward_config
+       ACFGOps.breadth_first_fold
+         (ACFGOps.get_backward_config
             (fun _ _ -> true)
             (fun _ (cn, edge) acc ->
                match cn.GO.node.ACFG.resource_handling_type with

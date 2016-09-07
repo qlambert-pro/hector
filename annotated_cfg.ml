@@ -19,8 +19,7 @@
  * Hector under other licenses.
  * *)
 
-open Graph_operations
-
+module GO = Graph_operations
 module Asto = Ast_operations
 
 exception NoCFG
@@ -62,16 +61,9 @@ type node = {
   parser_node: Control_flow_c.node
 }
 
-let mk_node is_error_handling parser_node = {
-  is_error_handling = is_error_handling;
-  resource_handling_type = Unannotated;
-  referenced_resources = [];
-  parser_node = parser_node
-}
-
 let is_similar_statement n1 n2 =
-  n1.index = n2.index ||
-  match (n1.node.parser_node, n2.node.parser_node) with
+  n1.GO.index = n2.GO.index ||
+  match (n1.GO.node.parser_node, n2.GO.node.parser_node) with
     (((Control_flow_c.ExprStatement (st1, _), _), _),
      ((Control_flow_c.ExprStatement (st2, _), _), _)) ->
     Asto.statement_equal st1 st2
@@ -82,20 +74,39 @@ type edge_type =
   | PostBackedge
 
 type edge = {
-  start_node: node complete_node;
-  end_node:   node complete_node;
+  start_node: node GO.complete_node;
+  end_node:   node GO.complete_node;
   edge_type:  edge_type;
 }
 
-type t = (node, edge) Ograph_extended.ograph_mutable
+module Key : Set.OrderedType with type t = int = struct
+  type t = int
+  let compare = compare
+end
+
+module KeySet : Set.S with type elt = Key.t = Set.Make (Key)
+
+module KeyMap : Map.S with type key = Key.t = Map.Make (Key)
+
+module Edge : Set.OrderedType with type t = edge = struct
+  type t = edge
+  let compare = compare
+end
+
+module KeyEdgePair : Set.OrderedType with type t = Key.t * Edge.t = struct
+  type t = Key.t * Edge.t
+  let compare = compare
+end
+
+module KeyEdgeSet : Set.S with type elt = KeyEdgePair.t =
+  Set.Make (KeyEdgePair)
+
+module G = Ograph_extended.Make (Key) (KeySet) (KeyMap)
+  (Edge) (KeyEdgePair) (KeyEdgeSet)
+
+type t = node G.ograph_mutable
 
 (**** Unwrapper and boolean function on Control_flow_c ****)
-
-let is_after_node node =
-  match Control_flow_c.unwrap node.parser_node with
-    Control_flow_c.AfterNode _ -> true
-  | _ -> false
-
 
 let is_top_node node =
   match Control_flow_c.unwrap node.parser_node with
@@ -120,23 +131,6 @@ let test_if_header predicate default node =
     Control_flow_c.IfHeader (_, (e, _)) -> predicate e
   | _ -> default
 
-
-let line_number_of_node cfg cn =
-  let rec aux cn =
-    let st = Control_flow_c.extract_fullstatement cn.node.parser_node in
-    let succ = (cfg#successors cn.index)#tolist in
-    match (st, succ) with
-      (  None, [(i, _)]) -> aux (complete_node_of cfg i)
-    | (Some s,        _) ->
-      let (_, _, (l, _), _) =
-        Lib_parsing_c.lin_col_by_pos (Lib_parsing_c.ii_of_stmt s)
-      in
-      l
-    | (  None,       xs) ->
-      failwith
-        "the block head does not reach a node with line infos before branching."
-  in
-  aux cn
 
 let side_effect_visitor f =
   (*TODO create a type the makes it explicit that either both the operator and
@@ -213,7 +207,7 @@ let get_function_call_name n =
       (fun (k, visitor) e -> name := Asto.function_name_of_expression e)
   }
   in
-  Visitor_c.vk_node visitor n.node.parser_node;
+  Visitor_c.vk_node visitor n.GO.node.parser_node;
   !name
 
 
@@ -251,7 +245,7 @@ let get_error_branch get_assignment_type cfg n =
            (fun x -> branch_side := x) e)
   }
   in
-  Visitor_c.vk_node visitor n.node.parser_node;
+  Visitor_c.vk_node visitor n.GO.node.parser_node;
   !branch_side
 
 (* **
@@ -268,7 +262,7 @@ let is_on_error_branch get_assignment_type cfg n head =
 (**********************************************************)
 
 let is_assigning_variable cn =
-  match cn.node.resource_handling_type with
+  match cn.GO.node.resource_handling_type with
     Assignment a ->
     (match a.right_value with
        Asto.Variable _ -> true
@@ -276,177 +270,30 @@ let is_assigning_variable cn =
   | _ -> false
 
 let filter_returns cfg identifier nodes =
-  NodeiSet.filter
+  KeySet.filter
     (fun index ->
        test_returned_expression
          (Asto.expression_equal identifier)
          false
-         (cfg#nodes#assoc index))
+         (KeyMap.find index cfg#nodes))
     nodes
 
-
-let get_top_node cfg =
-  let top_nodes = find_all (fun (_, n) -> is_top_node n) cfg in
-  match top_nodes with
-    [(i, n)] -> {index = i; node = n}
-  | _        -> failwith "malformed control flow graph"
-
 let annotate_resource cfg cn resource =
-  match (cn.node.resource_handling_type, resource) with
+  match (cn.GO.node.resource_handling_type, resource) with
     (            _,       Test _)
   | (            _,    Release _)
   | (Computation _, Allocation _)
   | (Assignment  _, Allocation _)
   | (Unannotated  ,            _) ->
     cfg#replace_node
-      (cn.index, {cn.node with resource_handling_type = resource})
+      (cn.GO.index, {cn.GO.node with resource_handling_type = resource})
   | _ -> ()
-
-let configurable_is_reference config cfg cn r =
-  let nodes = breadth_first_fold config cfg cn in
-  NodeiSet.fold
-    (fun i acc -> acc && not (is_referencing_resource r (cfg#nodes#assoc i)))
-    nodes
-    true
-
-let is_last_reference =
-  let just_true = (fun _ _ -> true) in
-  configurable_is_reference
-    (get_basic_node_config just_true NodeiSet.empty)
-
-let is_last_reference_before_killed_reached identifier =
-  let kill_reach _ (n, _) =
-    not (is_killing_reach identifier n.node)
-  in
-  configurable_is_reference
-    (get_basic_node_config kill_reach NodeiSet.empty)
-
-let is_first_reference =
-  let just_true = (fun _ _ -> true) in
-  configurable_is_reference
-    (get_backward_basic_node_config just_true NodeiSet.empty)
-
-
-let is_return_value_tested cfg cn =
-  let assigned_variable = ref None in
-  apply_side_effect_visitor
-    (fun l _ _ -> assigned_variable := Some l)
-    cn.node;
-  match !assigned_variable with
-    None    -> false
-  | Some id ->
-    let just_true = (fun _ _ -> true) in
-    let downstream_nodes =
-      breadth_first_fold
-        (get_basic_node_config just_true NodeiSet.empty)
-        cfg cn
-    in
-    NodeiSet.for_all
-      (fun i ->
-         test_if_header
-           (fun e -> Asto.is_testing_identifier id e)
-           false (cfg#nodes#assoc i))
-      downstream_nodes
-
-
-let remove_after_nodes_mutable cfg =
-  let remove_pred_arcs i =
-    fold_predecessors
-      (fun _ (cn, e) -> cfg#del_arc ((cn.index, i), e))
-      () cfg i
-  in
-  let remove_succ_arcs i =
-    fold_successors
-      (fun _ (cn, e) -> cfg#del_arc ((i, cn.index), e))
-      () cfg i
-  in
-  let remove_after_node () (i, node) =
-    let n = (mk_node false node) in
-    if (is_after_node n)
-    then
-      (remove_pred_arcs i;
-       remove_succ_arcs i;
-       cfg#del_node i)
-    else
-      ()
-  in
-  fold_node remove_after_node () cfg
-
-(*TODO improve to only one pass*)
-let of_ast_c ast =
-  let cocci_cfg =
-    match Control_flow_c_build.ast_to_control_flow ast with
-      Some cfg -> Control_flow_c_build.annotate_loop_nodes cfg
-    | None     -> raise NoCFG
-  in
-
-  remove_after_nodes_mutable cocci_cfg;
-  let cfg = new Ograph_extended.ograph_mutable in
-  let added_nodes = Hashtbl.create 100 in
-
-  let process_node cn =
-    let add_node cn =
-      if not (Hashtbl.mem added_nodes cn.index)
-      then
-        let index' = cfg#add_node (mk_node false cn.node) in
-        Hashtbl.add added_nodes cn.index index'
-      else
-        ()
-    in
-
-    let add_node_and_arc (index', _) =
-      let node' = (cocci_cfg#nodes)#assoc index' in
-      add_node {index = index'; node = node'};
-
-      let start_node = Hashtbl.find added_nodes cn.index in
-      let end_node   = Hashtbl.find added_nodes index'   in
-      let post_dominated =
-        conditional_get_post_dominated
-          (fun _ -> true)
-          cocci_cfg (complete_node_of cocci_cfg cn.index)
-      in
-
-      let complete_start_node =
-        {index = start_node; node = cfg#nodes#assoc start_node}
-      in
-
-      let complete_end_node =
-        {index = end_node; node = cfg#nodes#assoc end_node}
-      in
-
-      let edge_type =
-        if NodeiSet.mem index' post_dominated
-        then PostBackedge
-        else Direct
-      in
-      let edge =
-        {start_node = complete_start_node;
-         end_node   = complete_end_node;
-         edge_type  = edge_type;}
-      in
-      cfg#add_arc ((start_node, end_node), edge)
-    in
-
-    add_node cn;
-    let successors = cocci_cfg#successors cn.index in
-    successors#iter add_node_and_arc
-  in
-  let top_node = Control_flow_c.first_node cocci_cfg in
-  process_node {index = top_node; node = (cocci_cfg#nodes)#assoc top_node};
-  breadth_first_fold
-    (get_forward_config
-       (fun _ _ -> true)
-       (fun _ (cn, _) () -> process_node cn)
-       (=) (fun _ _ -> true) true ())
-    cocci_cfg
-    (complete_node_of cocci_cfg top_node);
-  cfg
 
 let is_returning_resource resource cn =
   match resource with
     Void _     -> false
   | Resource r ->
-    test_returned_expression (Asto.expression_equal r) false cn.node
+    test_returned_expression (Asto.expression_equal r) false cn.GO.node
 
 let get_assignment cn =
   let assignment = ref None in

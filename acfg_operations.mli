@@ -19,27 +19,23 @@
  * Hector under other licenses.
  * *)
 
-open Common
+module GO = Graph_operations
+module ACFG = Annotated_cfg
 
-module CF = C_function
-module ACFGO = Acfg_operations
 
-let generate_report_new cfg func_name infos f =
-  let ao = f.CF.exemplar.CF.alloc_name in
-  let ro = f.CF.exemplar.CF.release_name in
-  let filename = Ast_c.file_of_info infos in
+val of_ast_c: Ast_c.toplevel -> ACFG.t
 
-  let line_no =
-    ACFGO.line_number_of_node cfg f.CF.block_head
-  in
-  let st_lineno =
-    ACFGO.line_number_of_node cfg f.CF.exemplar.CF.release
-  in
 
-  Printf.printf
-    ("* TODO  [[view:%s::face=ovl-face1::linb=%d::colb=%d::cole=%d][AO:%s RO:%s *FN:%s %s::%d]]\n%!")
-    filename line_no 0 0 ao ro func_name filename line_no;
+val line_number_of_node: ACFG.t -> ACFG.node GO.complete_node -> int
+val get_top_node: ACFG.t -> ACFG.node GO.complete_node
 
-  Printf.printf
-    ("** [[view:%s::face=ovl-face2::linb=%d::colb=%d::cole=%d][AO:%s RO:%s *FN:%s %s::%d]]\n%!")
-    filename st_lineno 0 0 ao ro func_name filename st_lineno
+val is_last_reference:
+  ACFG.t -> ACFG.node GO.complete_node -> ACFG.resource -> bool
+val is_last_reference_before_killed_reached:
+  Ast_c.expression -> ACFG.t -> ACFG.node GO.complete_node -> ACFG.resource ->
+  bool
+val is_first_reference:
+  ACFG.t -> ACFG.node GO.complete_node -> ACFG.resource -> bool
+
+
+val is_return_value_tested: ACFG.t -> ACFG.node GO.complete_node -> bool

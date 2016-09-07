@@ -20,6 +20,7 @@
  * *)
 
 open Kaputt
+module ACFGO = Acfg_operations
 
 let configs = Configs.get ((Sys.getenv "PWD") ^ "/configs")
 
@@ -28,7 +29,7 @@ let _ =
   Asto.set_testing_functions configs.Configs.testing_functions
 
 let get_cfgs filename =
-  let (program, _) = Parse_c.parse_c_and_cpp false filename in
+  let (program, _) = Parse_c.parse_c_and_cpp false false filename in
   let (functions', _) = Common.unzip program in
   let functions'' = List.tl (List.rev functions') in
   Flag_parsing_c.verbose_type := false;
@@ -37,7 +38,7 @@ let get_cfgs filename =
       (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
   in
   let aux acc toplevel =
-    try (ACFG.of_ast_c toplevel)::acc with
+    try (ACFGO.of_ast_c toplevel)::acc with
       Control_flow_c_build.Error _
     | ACFG.NoCFG -> acc
   in

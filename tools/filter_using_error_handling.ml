@@ -20,6 +20,10 @@
  * *)
 
 module Asto = Ast_operations
+module ACFG = Annotated_cfg
+module ACFGO = Acfg_operations
+module GO = Graph_operations
+module ACFGOps = GO.Make (ACFG)
 
 let configs = Configs.get ((Sys.getenv "PWD") ^ "/configs")
 
@@ -115,7 +119,7 @@ let statement_info_visitor f = {
 let is_error_handling cfg line_number =
   let ln = int_of_string line_number in
   let nodes =
-    Graph_operations.find_all (fun (_, n) -> n.Annotated_cfg.is_error_handling)
+    ACFGOps.find_all (fun _ n -> n.ACFG.is_error_handling)
       cfg
   in
   let is_found = ref false in
@@ -128,8 +132,8 @@ let is_error_handling cfg line_number =
          else
            ())
   in
-  List.exists
-    (fun (i, n) ->
+  ACFG.KeyMap.exists
+    (fun i n ->
        Visitor_c.vk_node v n.Annotated_cfg.parser_node; !is_found)
     nodes
 
@@ -149,7 +153,7 @@ let is_relevant_data path d =
     then
       (snd !current_ast)
     else
-      let (program, _) = Parse_c.parse_c_and_cpp false filename in
+      let (program, _) = Parse_c.parse_c_and_cpp false false filename in
       let (functions', _) = Common.unzip program in
       let functions'' = List.tl (List.rev functions') in
       Hashtbl.clear cfgs;
@@ -169,7 +173,7 @@ let is_relevant_data path d =
          let f = List.find (is_function_name d.allocation.f_name) functions in
          let cfg' =
            try
-             let cfg = Annotated_cfg.of_ast_c f in
+             let cfg = ACFGO.of_ast_c f in
              Hector_core.annotate_error_handling cfg;
              Hector_core.annotate_resource_handling cfg;
              Some cfg

@@ -19,8 +19,9 @@
  * Hector under other licenses.
  * *)
 
-module ACFG = Annotated_cfg
-module Asto = Ast_operations
+module ACFG  = Annotated_cfg
+module Asto  = Ast_operations
+module ACFGO = Acfg_operations
 
 let configs = Configs.get ((Sys.getenv "PWD") ^ "/configs")
 
@@ -31,7 +32,7 @@ let _ =
 let cpt = ref 0
 
 let get_cfgs filename =
-  let (program, _) = Parse_c.parse_c_and_cpp false filename in
+  let (program, _) = Parse_c.parse_c_and_cpp false false filename in
   let (functions', _) = Common.unzip program in
   let functions'' = List.tl (List.rev functions') in
   let functions =
@@ -42,7 +43,7 @@ let get_cfgs filename =
   let cfgs =
     List.map (fun f ->
         try
-          let cfg = Annotated_cfg.of_ast_c f in
+          let cfg = ACFGO.of_ast_c f in
           Hector_core.annotate_error_handling cfg;
           Hector_core.annotate_resource_handling cfg;
           Some cfg
@@ -75,7 +76,7 @@ let color_of node =
   | _                         -> None
 
 let print_graph filename g =
-  Ograph_extended.print_ograph_mutable_generic g
+  ACFG.G.print_ograph_mutable_generic g
     None
     (fun (key, node) ->
        (Cocci_addon.stringify_CFG_node node.ACFG.parser_node,

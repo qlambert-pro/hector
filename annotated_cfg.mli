@@ -19,7 +19,7 @@
  * Hector under other licenses.
  * *)
 
-open Graph_operations
+module GO = Graph_operations
 module Asto = Ast_operations
 
 exception NoCFG
@@ -58,29 +58,37 @@ type edge_type =
   | PostBackedge
 
 type edge = {
-  start_node: node complete_node;
-  end_node:   node complete_node;
+  start_node: node GO.complete_node;
+  end_node:   node GO.complete_node;
   edge_type:  edge_type;
 }
 
-type t = (node, edge) Ograph_extended.ograph_mutable
+module Key : Set.OrderedType with type t = GO.key
+module KeySet : Set.S with type elt = Key.t
+module KeyMap : Map.S with type key = Key.t
+module Edge : Set.OrderedType with type t = edge
+module KeyEdgePair : Set.OrderedType with type t = Key.t * Edge.t
+module KeyEdgeSet : Set.S with type elt = KeyEdgePair.t
+module G : Ograph_extended.S with
+  type key = Key.t and
+  type 'a keymap = 'a KeyMap.t and
+  type edge = edge and
+  type edges = KeyEdgeSet.t
 
-val of_ast_c: Ast_c.toplevel -> t
+type t = node G.ograph_mutable
 
 val resource_equal: resource -> resource -> bool
 val is_void_resource: resource -> bool
-val is_similar_statement: node complete_node -> node complete_node -> bool
-val is_returning_resource: resource -> node complete_node -> bool
+val is_similar_statement: node GO.complete_node -> node GO.complete_node -> bool
+val is_returning_resource: resource -> node GO.complete_node -> bool
 val is_referencing_resource: resource -> node -> bool
 
 val is_on_error_branch:
-  (t -> node complete_node -> Ast_c.expression -> Asto.value) ->
-  t -> node complete_node -> node -> bool
+  (t -> node GO.complete_node -> Ast_c.expression -> Asto.value) ->
+  t -> node GO.complete_node -> node -> bool
 
-val get_function_call_name: node complete_node -> string option
+val get_function_call_name: node GO.complete_node -> string option
 val get_arguments: node ->  (Ast_c.expression list) option
-
-val line_number_of_node: t -> node complete_node -> int
 
 val apply_side_effect_visitor:
   (Ast_c.expression -> Ast_c.assignOp option ->
@@ -94,23 +102,15 @@ val apply_assignment_visitor:
 val is_killing_reach:
   Ast_c.expression -> node -> bool
 
-val get_top_node: t -> node complete_node
 val is_top_node: node -> bool
 
-val filter_returns: t -> Ast_c.expression -> NodeiSet.t -> NodeiSet.t
+val filter_returns: t -> Ast_c.expression -> KeySet.t -> KeySet.t
 
 val test_if_header: (Ast_c.expression -> 'a) -> 'a -> node -> 'a
 val test_returned_expression: (Ast_c.expression -> 'a) -> 'a -> node -> 'a
 
-val is_assigning_variable: node complete_node -> bool
+val is_assigning_variable: node GO.complete_node -> bool
 val is_selection: node -> bool
-val is_last_reference: t -> node complete_node -> resource -> bool
-val is_last_reference_before_killed_reached:
-  Ast_c.expression ->
-  t -> node complete_node -> resource -> bool
-val is_first_reference: t -> node complete_node -> resource -> bool
 
-val is_return_value_tested: t -> node complete_node -> bool
-
-val annotate_resource: t -> node complete_node -> resource_handling -> unit
+val annotate_resource: t -> node GO.complete_node -> resource_handling -> unit
 val get_assignment: node -> assignment option

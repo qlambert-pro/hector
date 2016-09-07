@@ -22,10 +22,11 @@
 
 open Common
 
-module GO = Graph_operations
-module ACFG = Annotated_cfg
-module CF   = C_function
-module HC   = Hector_core
+module GO    = Graph_operations
+module ACFG  = Annotated_cfg
+module ACFGO = Acfg_operations
+module CF    = C_function
+module HC    = Hector_core
 
 
 let remove_doubles acc c =
@@ -42,7 +43,7 @@ let remove_doubles acc c =
 let analyze_def toplevel definition infos =
   let func_name = fst (Ast_c.get_s_and_ii_of_name definition.Ast_c.f_name) in
   try
-    let cfg = Annotated_cfg.of_ast_c toplevel in
+    let cfg = ACFGO.of_ast_c toplevel in
 
     HC.annotate_error_handling cfg;
     HC.annotate_resource_handling cfg;
