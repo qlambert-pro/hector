@@ -20,11 +20,34 @@
  * *)
 
 module GO = Graph_operations
+module CFG = Control_flow_c
 module ACFG = Annotated_cfg
 module Asto = Ast_operations
+module KFP = Key_fix_point
 
 module CFGOps = GO.Make (Control_flow_c)
 module ACFGOps = GO.Make (ACFG)
+
+module type EqualType =
+sig
+  type t
+  val equal: t -> t -> bool
+end
+
+module BoolValue =
+struct
+  type t = bool
+  let equal = (=)
+end
+
+module CFG_Fixpoint  (Val: EqualType) = Fix_point.Make (Val) (CFGOps)
+module ACFG_Fixpoint (Val: EqualType) = Fix_point.Make (Val) (ACFGOps)
+
+module CFG_Bool_Fixpoint  = CFG_Fixpoint  (BoolValue)
+module ACFG_Bool_Fixpoint = ACFG_Fixpoint (BoolValue)
+
+module CFG_KeyFixPoint  = KFP.Make (CFG.KeySet)  (CFGOps)  (CFG_Bool_Fixpoint)
+module ACFG_KeyFixPoint = KFP.Make (ACFG.KeySet) (ACFGOps) (ACFG_Bool_Fixpoint)
 
 let mk_node is_error_handling parser_node = {
   ACFG.is_error_handling = is_error_handling;
@@ -72,7 +95,7 @@ let get_top_node cfg =
     failwith "malformed control flow graph"
 
 let configurable_is_reference config cfg cn r =
-  let nodes = ACFGOps.breadth_first_fold config cfg cn in
+  let nodes = ACFG_Bool_Fixpoint.compute config cfg cn in
   ACFG.KeySet.fold
     (fun i acc ->
        acc &&
@@ -83,19 +106,20 @@ let configurable_is_reference config cfg cn r =
 let is_last_reference =
   let just_true = (fun _ _ -> true) in
   configurable_is_reference
-    (ACFGOps.get_basic_node_config just_true ACFG.KeySet.empty)
+    (ACFG_KeyFixPoint.get_basic_forward_config
+       just_true ACFG.KeySet.empty)
 
 let is_last_reference_before_killed_reached identifier =
   let kill_reach _ (n, _) =
     not (ACFG.is_killing_reach identifier n.GO.node)
   in
   configurable_is_reference
-    (ACFGOps.get_basic_node_config kill_reach ACFG.KeySet.empty)
+    (ACFG_KeyFixPoint.get_basic_forward_config kill_reach ACFG.KeySet.empty)
 
 let is_first_reference =
   let just_true = (fun _ _ -> true) in
   configurable_is_reference
-    (ACFGOps.get_backward_basic_node_config just_true ACFG.KeySet.empty)
+    (ACFG_KeyFixPoint.get_basic_backward_config just_true ACFG.KeySet.empty)
 
 
 let is_return_value_tested cfg cn =
@@ -108,8 +132,8 @@ let is_return_value_tested cfg cn =
   | Some id ->
     let just_true = (fun _ _ -> true) in
     let downstream_nodes =
-      ACFGOps.breadth_first_fold
-        (ACFGOps.get_basic_node_config just_true ACFG.KeySet.empty)
+      ACFG_Bool_Fixpoint.compute
+        (ACFG_KeyFixPoint.get_basic_forward_config just_true ACFG.KeySet.empty)
         cfg cn
     in
     ACFG.KeySet.for_all
@@ -171,7 +195,7 @@ let of_ast_c ast =
       let start_node = Hashtbl.find added_nodes cn.GO.index in
       let end_node   = Hashtbl.find added_nodes index'   in
       let post_dominated =
-        CFGOps.conditional_get_post_dominated
+        CFG_KeyFixPoint.conditional_get_post_dominated
           (fun _ -> true)
           cocci_cfg (CFGOps.complete_node_of cocci_cfg cn.GO.index)
       in
@@ -206,11 +230,11 @@ let of_ast_c ast =
   let top_node = Control_flow_c.first_node cocci_cfg in
   process_node {GO.index = top_node;
                 GO.node = Control_flow_c.KeyMap.find top_node cocci_cfg#nodes };
-  CFGOps.breadth_first_fold
-    (CFGOps.get_forward_config
+  CFG_Bool_Fixpoint.compute
+    (CFG_Bool_Fixpoint.get_forward_config
        (fun _ _ -> true)
        (fun _ (cn, _) () -> process_node cn)
-       (=) (fun _ _ -> true) true ())
+       (fun _ _ -> true) true ())
     cocci_cfg
     (CFGOps.complete_node_of cocci_cfg top_node);
   cfg

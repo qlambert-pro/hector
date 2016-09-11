@@ -23,8 +23,26 @@ module Asto = Ast_operations
 module ACFG = Annotated_cfg
 module ACFGO = Acfg_operations
 module GO = Graph_operations
+module KFP = Key_fix_point
+
+module type EqualType =
+sig
+  type t
+  val equal: t -> t -> bool
+end
+
+module BoolValue =
+struct
+  type t = bool
+  let equal = (=)
+end
 
 module ACFGOps = GO.Make (ACFG)
+module ACFG_Fixpoint (Val: EqualType) = Fix_point.Make (Val) (ACFGOps)
+module ACFG_Bool_Fixpoint = ACFG_Fixpoint (BoolValue)
+module ACFG_KeyFixPoint = KFP.Make (ACFG.KeySet) (ACFGOps) (ACFG_Bool_Fixpoint)
+
+module ACFG_ExpressionSet_Fixpoint = ACFG_Fixpoint (Asto.ExpressionSet)
 
 let update_value value cn =
   let side_effects = ref [] in
@@ -84,15 +102,18 @@ let get_assignment_type_through_alias cfg cn id =
   let initial_value = update_value (Asto.ExpressionSet.singleton id) cn in
   let initial_result = add_error_type cn id [] in
   let assignments =
-    ACFGOps.breadth_first_fold
-      (ACFGOps.get_backward_config
+    ACFG_ExpressionSet_Fixpoint.compute
+      (ACFG_ExpressionSet_Fixpoint.get_backward_config
          (fun values (cn, e) ->
             let value' =
-              ACFGOps.NodeMap.find e.ACFG.end_node.GO.index values
+              ACFG_ExpressionSet_Fixpoint.NodeMap.find
+                e.ACFG.end_node.GO.index values
             in
             let value  = update_value value' cn in
             try
-              let old_value = ACFGOps.NodeMap.find cn.GO.index values in
+              let old_value = ACFG_ExpressionSet_Fixpoint.NodeMap.find
+                  cn.GO.index values
+              in
               Asto.ExpressionSet.union old_value value
             with Not_found -> value)
          (fun v (n, e) res ->
@@ -101,10 +122,11 @@ let get_assignment_type_through_alias cfg cn id =
               (Asto.Error Asto.Ambiguous)::res
             else
               Asto.ExpressionSet.fold (add_error_type n)
-                (ACFGOps.NodeMap.find e.ACFG.end_node.GO.index v) res)
-         (Asto.ExpressionSet.equal)
+                (ACFG_ExpressionSet_Fixpoint.NodeMap.find
+                   e.ACFG.end_node.GO.index v) res)
          (fun v (cn, _) ->
-            not (Asto.ExpressionSet.is_empty (ACFGOps.NodeMap.find cn.GO.index v)))
+            not (Asto.ExpressionSet.is_empty
+                   (ACFG_ExpressionSet_Fixpoint.NodeMap.find cn.GO.index v)))
          initial_value initial_result)
       cfg cn
   in
@@ -150,18 +172,18 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
           (fun (cn, e) acc ->
              acc &&
              (is_backedge e ||
-              (ACFGOps.NodeMap.mem  cn.GO.index set &&
-               ACFGOps.NodeMap.find cn.GO.index set)))
+              (ACFG_Bool_Fixpoint.NodeMap.mem  cn.GO.index set &&
+               ACFG_Bool_Fixpoint.NodeMap.find cn.GO.index set)))
           cfg n.GO.index true
       in
       ACFG.KeySet.mem n.GO.index nodes &&
       is_post_dominated
     in
     let config =
-      ACFGOps.get_backward_basic_node_config predicate
+      ACFG_KeyFixPoint.get_basic_backward_config predicate
         (ACFG.KeySet.singleton index)
     in
-    ACFGOps.breadth_first_fold config cfg (ACFGOps.complete_node_of cfg index)
+    ACFG_Bool_Fixpoint.compute config cfg (ACFGOps.complete_node_of cfg index)
   in
 
   ACFG.KeySet.fold
@@ -173,7 +195,7 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
 
 let add_post_dominated cfg index acc =
   let post_dominated =
-    ACFGOps.conditional_get_post_dominated
+    ACFG_KeyFixPoint.conditional_get_post_dominated
       (fun _ -> true)
       cfg (ACFGOps.complete_node_of cfg index)
   in
@@ -188,8 +210,8 @@ let get_nodes_leading_to_error_return cfg error_assignments =
     match error_type with
       Asto.Clear ->
       let nodes =
-        ACFGOps.breadth_first_fold
-          (ACFGOps.get_basic_node_config
+        ACFG_Bool_Fixpoint.compute
+          (ACFG_KeyFixPoint.get_basic_forward_config
              kill_reach
              (ACFG.KeySet.singleton index))
           cfg (ACFGOps.complete_node_of cfg index)
@@ -210,8 +232,8 @@ let get_nodes_leading_to_error_return cfg error_assignments =
         acc
     | Asto.Ambiguous ->
       let heads =
-        ACFGOps.breadth_first_fold
-          (ACFGOps.get_forward_config
+        ACFG_Bool_Fixpoint.compute
+          (ACFG_Bool_Fixpoint.get_forward_config
              (fun _ _ -> true)
 
              (*TODO is_testing_identifier is incorrect*)
@@ -233,15 +255,15 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                 then ACFG.KeySet.add cn.GO.index res
                 else res)
 
-             (=) kill_reach true ACFG.KeySet.empty)
+              kill_reach true ACFG.KeySet.empty)
           cfg (ACFGOps.complete_node_of cfg index)
       in
       let nodes =
         ACFG.KeySet.fold
           (fun index s ->
              ACFG.KeySet.union s
-               (ACFGOps.breadth_first_fold
-                  (ACFGOps.get_basic_node_config
+               (ACFG_Bool_Fixpoint.compute
+                  (ACFG_KeyFixPoint.get_basic_forward_config
                      kill_reach (ACFG.KeySet.singleton index))
                   cfg (ACFGOps.complete_node_of cfg index)))
           heads ACFG.KeySet.empty
@@ -294,7 +316,7 @@ let annotate_error_handling cfg =
     List.fold_left
       (fun acc (index, _) ->
          let nodes =
-           ACFGOps.conditional_get_post_dominated (fun _ -> true) cfg
+           ACFG_KeyFixPoint.conditional_get_post_dominated (fun _ -> true) cfg
              (ACFGOps.complete_node_of cfg index)
          in
          ACFG.KeySet.union acc nodes)
@@ -481,7 +503,7 @@ let annotate_resource_handling cfg =
   in
 
   let config r =
-    ACFGOps.get_forward_config
+    ACFG_Bool_Fixpoint.get_forward_config
       (fun _ _ -> true)
       (fun _ (cn, _) res ->
          match cn.GO.node.ACFG.resource_handling_type with
@@ -493,14 +515,13 @@ let annotate_resource_handling cfg =
          | ACFG.Allocation _
          | ACFG.Release _
          | ACFG.Unannotated -> ())
-      (=)
       (fun _ (cn, _) ->
          not (ACFG.is_referencing_resource (ACFG.Resource r) cn.GO.node))
       true ()
   in
   List.iter
     (fun r ->
-       ACFGOps.breadth_first_fold (config r) cfg (ACFGO.get_top_node cfg))
+       ACFG_Bool_Fixpoint.compute (config r) cfg (ACFGO.get_top_node cfg))
     relevant_resources
 
 

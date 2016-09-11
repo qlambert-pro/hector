@@ -40,14 +40,15 @@ PRINT_GRAPH_TARGET=print_graph
 
 TARGET=hector
 
-CORE_SRC=ast_operations.ml configs.ml graph_operations.ml annotated_cfg.ml\
-	 acfg_operations.ml hector_core.ml
+CORE_SRC=ast_operations.ml configs.ml graph_operations.ml fix_point.ml\
+	key_fix_point.ml annotated_cfg.ml acfg_operations.ml hector_core.ml
 
 FILTER_SRC=tools/filter_using_error_handling.ml
 PRINT_GRAPH_SRC=tools/cocci_addon.ml tools/print_graph.ml
 
-SRCI=ast_operations.mli configs.mli graph_operations.mli annotated_cfg.mli\
-     acfg_operations.mli hector_core.mli c_function.mli analyzer.mli
+SRCI=ast_operations.mli configs.mli graph_operations.mli fix_point.mli\
+     key_fix_point.mli annotated_cfg.mli acfg_operations.mli hector_core.mli\
+     c_function.mli analyzer.mli
 
 TEST=hector_core.mlt c_function.mlt
 

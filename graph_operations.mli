@@ -39,6 +39,7 @@ type 'node complete_node =
 module Make (RG : ReadableGraph) :
 sig
   type key          = RG.Key.t
+  type keys         = RG.KeySet.t
   type edge         = RG.Edge.t
   type edges        = RG.KeyEdgeSet.t
   type 'node keymap = 'node RG.KeyMap.t
@@ -69,71 +70,4 @@ sig
 
   val find_all:
     (key -> 'node -> bool) -> ('node, 'g) readable_graph -> 'node keymap
-
-  module NodeMap : Map.S with type key = key
-
-  type ('node, 'g, 'value, 'res) fold_configuration =
-    {get_next_nodes:
-       ('node, 'g) readable_graph -> ('node complete_node * RG.Edge.t) list ->
-       'node complete_node -> ('node complete_node * RG.Edge.t) list;
-
-     update_value_for_fixed_point:
-       'value NodeMap.t -> ('node complete_node * RG.Edge.t) -> 'value;
-
-     compute_result:
-       'value NodeMap.t -> ('node complete_node * RG.Edge.t) -> 'res -> 'res;
-     (* **
-      * This function compute the new result from visited_nodes,
-      * the current node and the current result value
-      * *)
-
-     equal_value: 'value -> 'value -> bool;
-
-     predicate: 'value NodeMap.t -> ('node complete_node * RG.Edge.t) -> bool;
-     (* **
-      * The predicate is called with visited_nodes as first argument and
-      * the algorithm only fold on the node if predicate returns true
-      * *)
-
-     initial_value:  'value;
-     initial_result: 'res;
-    }
-
-  val breadth_first_fold:
-    ('node, 'g, 'value, 'res) fold_configuration ->
-    ('node, 'g) readable_graph ->
-    'node complete_node -> 'res
-
-  val get_forward_config:
-    ('value NodeMap.t -> ('node complete_node * RG.Edge.t) -> 'value) ->
-    ('value NodeMap.t -> ('node complete_node * RG.Edge.t) -> 'res -> 'res) ->
-    ('value -> 'value -> bool) ->
-    ('value NodeMap.t -> ('node complete_node * RG.Edge.t) -> bool) ->
-    'value -> 'res ->
-    ('node, 'g, 'value, 'res) fold_configuration
-
-  val get_backward_config:
-    ('value NodeMap.t -> ('node complete_node * RG.Edge.t) -> 'value) ->
-    ('value NodeMap.t -> ('node complete_node * RG.Edge.t) -> 'res -> 'res) ->
-    ('value -> 'value -> bool) ->
-    ('value NodeMap.t -> ('node complete_node * RG.Edge.t) -> bool) ->
-    'value -> 'res ->
-    ('node, 'g, 'value, 'res) fold_configuration
-
-  val get_basic_node_config:
-    (bool NodeMap.t -> ('node complete_node * RG.Edge.t) -> bool) ->
-    RG.KeySet.t ->
-    ('node, 'g, bool, RG.KeySet.t) fold_configuration
-
-  val get_backward_basic_node_config:
-    (bool NodeMap.t -> ('node complete_node * RG.Edge.t) -> bool) ->
-    RG.KeySet.t ->
-    ('node, 'g, bool, RG.KeySet.t) fold_configuration
-
-  val conditional_get_post_dominated:
-    (('node complete_node * RG.Edge.t) -> bool) ->
-    ('node, 'g) readable_graph -> 'node complete_node -> RG.KeySet.t
-
-
-
 end
