@@ -73,8 +73,10 @@ let _ =
   let files = get_files !file in
   let configs = Configs.get !config_dir in
 
-  Asto.set_error_constants   configs.Configs.error_constants;
-  Asto.set_testing_functions configs.Configs.testing_functions;
+  Asto.set_error_constants     configs.Configs.error_constants;
+  Asto.set_testing_functions   configs.Configs.testing_functions;
+  Asto.set_assigning_functions configs.Configs.assigning_functions;
+  Asto.set_contained_fields    configs.Configs.contained_fields;
 
   List.iter
     (function x ->

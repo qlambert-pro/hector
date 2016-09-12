@@ -19,10 +19,13 @@
  * Hector under other licenses.
  * *)
 
-module StringSet: Set.S with type elt = string
+module StringSet: Set.S     with type elt = string
+module StringPairSet: Set.S with type elt = string * string
 
-val set_error_constants:   StringSet.t -> unit
-val set_testing_functions: StringSet.t -> unit
+val set_error_constants:     StringSet.t     -> unit
+val set_testing_functions:   StringSet.t     -> unit
+val set_assigning_functions: StringSet.t     -> unit
+val set_contained_fields:    StringPairSet.t -> unit
 
 type branch_side =
     Then

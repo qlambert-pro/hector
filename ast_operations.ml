@@ -21,14 +21,24 @@
 
 open Ast_c
 
-module StringSet = Set.Make(String)
+module StringPair =
+struct
+  type t = string * string
+  let compare = compare
+end
 
-let error_constants   = ref StringSet.empty
-let testing_functions = ref StringSet.empty
+module StringSet     = Set.Make(String)
+module StringPairSet = Set.Make(StringPair)
 
-let set_error_constants s = error_constants := s
+let error_constants     = ref StringSet.empty
+let testing_functions   = ref StringSet.empty
+let assigning_functions = ref StringSet.empty
+let contained_fields    = ref StringPairSet.empty
 
-let set_testing_functions s = testing_functions := s
+let set_error_constants     s = error_constants     := s
+let set_testing_functions   s = testing_functions   := s
+let set_assigning_functions s = assigning_functions := s
+let set_contained_fields    s = contained_fields    := s
 
 let string_of_expression = Pretty_print_c.string_of_expression
 

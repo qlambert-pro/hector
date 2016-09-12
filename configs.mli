@@ -23,8 +23,9 @@ module Asto = Ast_operations
 
 type t = {
   error_constants:     Asto.StringSet.t;
-  non_error_constants: Asto.StringSet.t;
   testing_functions:   Asto.StringSet.t;
+  assigning_functions: Asto.StringSet.t;
+  contained_fields:    Asto.StringPairSet.t;
 }
 
 val get: string -> t

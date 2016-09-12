@@ -23,11 +23,12 @@ module Asto = Ast_operations
 
 type t = {
   error_constants:     Asto.StringSet.t;
-  non_error_constants: Asto.StringSet.t;
   testing_functions:   Asto.StringSet.t;
+  assigning_functions: Asto.StringSet.t;
+  contained_fields:    Asto.StringPairSet.t;
 }
 
-let read_config filepath =
+let read filepath read_line add init =
 
   let input_line' chan = try Some (input_line chan) with End_of_file -> None in
   let chan = open_in filepath in
@@ -35,38 +36,68 @@ let read_config filepath =
   let rec lines chan acc =
     match input_line' chan with
       None      -> acc
-    | Some line -> lines chan (Asto.StringSet.add line acc)
+    | Some line -> lines chan (add (read_line line) acc)
   in
 
-  let set = lines chan Asto.StringSet.empty in
+  let set = lines chan init in
   close_in chan;
   set
 
+let read_1_word_config filepath =
+  read filepath (fun x -> x) Asto.StringSet.add Asto.StringSet.empty
+
+let read_2_word_config filepath =
+  read filepath
+    (fun s ->
+       let words = Str.split (Str.regexp " ") s in
+       (List.nth words 0, List.nth words 1))
+    Asto.StringPairSet.add Asto.StringPairSet.empty
+
 let get directory =
   let empty_config =
-    {error_constants     = Asto.StringSet.empty;
-     non_error_constants = Asto.StringSet.empty;
-     testing_functions   = Asto.StringSet.empty;
+    {error_constants     =     Asto.StringSet.empty;
+     testing_functions   =     Asto.StringSet.empty;
+     assigning_functions =     Asto.StringSet.empty;
+     contained_fields    = Asto.StringPairSet.empty;
     }
   in
 
   if Sys.file_exists directory &&
      Sys.is_directory directory
   then
-    let error_constants_filepath   = directory ^ "/error_constants"   in
-    let testing_functions_filepath = directory ^ "/testing_functions" in
+    let error_constants_filepath     = directory ^ "/error_constants"     in
+    let testing_functions_filepath   = directory ^ "/testing_functions"   in
+    let assigning_functions_filepath = directory ^ "/assigning_functions" in
+    let contained_fields_filepath    = directory ^ "/contained_fields"    in
 
     let config' =
       if Sys.file_exists error_constants_filepath
       then {empty_config with
-            error_constants = read_config error_constants_filepath}
+            error_constants =
+              read_1_word_config error_constants_filepath}
       else empty_config
     in
 
-    if Sys.file_exists testing_functions_filepath
-    then {config' with
-          testing_functions = read_config testing_functions_filepath}
-    else config'
+    let config'' =
+      if Sys.file_exists testing_functions_filepath
+      then {config' with
+            testing_functions =
+              read_1_word_config testing_functions_filepath}
+      else config'
+    in
+
+    let config''' =
+      if Sys.file_exists assigning_functions_filepath
+      then {config'' with
+            assigning_functions =
+              read_1_word_config assigning_functions_filepath}
+      else config''
+    in
+
+    if Sys.file_exists contained_fields_filepath
+    then {config''' with
+          contained_fields = read_2_word_config contained_fields_filepath}
+    else config'''
   else
     begin
       Printf.eprintf "warning: Empty config. Directory \"%s\" does not exists.\n%!"
