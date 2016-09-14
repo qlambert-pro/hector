@@ -126,4 +126,12 @@ let () =
         "get_faults" "./tests/temp_in_loop.c"
         " should return the empty list for " concat_get_faults 0
         is_length;
+      mk_cfg_test
+        "get_faults" "./tests/interproc.c"
+        " should return the empty list for " concat_get_faults 1
+        is_length;
+      mk_cfg_test
+        "get_faults" "./tests/array_aliases.c"
+        " should return the empty list for " concat_get_faults 2
+        is_length;
     ]
