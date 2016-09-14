@@ -47,6 +47,9 @@ let is_simple_assignment op =
     SimpleAssign -> true
   | _ -> false
 
+let is_pointer_type = function
+    (_, (Pointer _, _)) -> true
+  | _ -> false
 let rec is_pointer exp =
   let ((expression, info), _) = exp in
   match expression with
@@ -55,11 +58,9 @@ let rec is_pointer exp =
   | Cast ((_, (Pointer _, _)), _) -> true
   | Constant _ -> false
   | _ ->
-
     match !info with
-      (None, _)
-    | (Some ((_, (Pointer _, _)), _), _) -> true
-    | _ -> false
+      (None, _) -> true
+    | (Some (ftype, _), _) -> is_pointer_type ftype
 
 let expressions_of_arguments arguments =
   let expressions_of_arguments_aux acc argument =
@@ -283,3 +284,43 @@ let rec is_testing_identifier identifier expression' =
     StringSet.exists (fun e -> (=) n (Some e)) !testing_functions &&
     List.exists (is_testing_identifier identifier) arguments
   | _ -> expression_equal identifier expression'
+
+let string_of_name = function
+    RegularName (n, _) -> n
+  | CppConcatenatedName _
+  | CppVariadicName _
+  | CppIdentBuilder _ -> "error: cpp stuff"
+
+let get_definition_name d = string_of_name d.Ast_c.f_name
+
+type 'a computation =
+    ToplevelAndInfo of (Ast_c.toplevel -> Ast_c.info -> 'a)
+  | Defbis of (Ast_c.definitionbis -> 'a)
+
+let apply_if_function_definition f x default =
+  match x with
+    Ast_c.Definition (defbis, infos::_) ->
+    (match f with
+       ToplevelAndInfo f -> f x infos
+     | Defbis f -> f defbis)
+  | Ast_c.Definition _
+  | Ast_c.Declaration _
+  | Ast_c.CppTop _
+  | Ast_c.Namespace _
+  | Ast_c.EmptyDef _
+  | Ast_c.NotParsedCorrectly _
+  | Ast_c.FinalDef _
+  | Ast_c.IfdefTop _
+  | Ast_c.MacroTop _ -> default
+
+let get_name d =
+  apply_if_function_definition (Defbis get_definition_name) d "unknown name"
+
+let expression_of_parameter (p, info) =
+  let exp_info =
+    ref (Some (p.Ast_c.p_type, Ast_c.NotLocalVar), Ast_c.NotTest)
+  in
+  match p.Ast_c.p_namei with
+    Some n -> Some ((Ast_c.Ident n, exp_info), info)
+  | _ -> None
+

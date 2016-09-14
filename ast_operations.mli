@@ -64,6 +64,7 @@ val resources_of_arguments:
   (Ast_c.expression list) option -> Ast_c.expression list
 
 val is_string:  Ast_c.expression -> bool
+val is_pointer_type: Ast_c.fullType -> bool
 val is_pointer: Ast_c.expression -> bool
 val is_simple_assignment: Ast_c.assignOp -> bool
 val is_testing_identifier:
@@ -84,3 +85,16 @@ val apply_on_initialisation:
 val which_is_the_error_branch:
   (Ast_c.expression -> value) ->
   (branch_side -> unit) -> Ast_c.expression -> unit
+
+val string_of_name: Ast_c.name -> string
+val get_name: Ast_c.toplevel -> string
+
+type 'a computation =
+    ToplevelAndInfo of (Ast_c.toplevel -> Ast_c.info -> 'a)
+  | Defbis of (Ast_c.definitionbis -> 'a)
+
+val apply_if_function_definition:
+  'a computation -> Ast_c.toplevel -> 'a -> 'a
+
+val expression_of_parameter:
+  Ast_c.parameterType Ast_c.wrap2 -> Ast_c.expression option

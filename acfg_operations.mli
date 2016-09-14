@@ -21,10 +21,10 @@
 
 module GO = Graph_operations
 module ACFG = Annotated_cfg
+module Asto = Ast_operations
 
 
 val of_ast_c: Ast_c.toplevel -> ACFG.t
-
 
 val line_number_of_node: ACFG.t -> ACFG.node GO.complete_node -> int
 val get_top_node: ACFG.t -> ACFG.node GO.complete_node
@@ -37,5 +37,6 @@ val is_last_reference_before_killed_reached:
 val is_first_reference:
   ACFG.t -> ACFG.node GO.complete_node -> ACFG.resource -> bool
 
-
 val is_return_value_tested: ACFG.t -> ACFG.node GO.complete_node -> bool
+
+val get_parameters: ACFG.t -> Asto.ExpressionSet.t

@@ -22,6 +22,7 @@
 open Common
 
 module Asto = Ast_operations
+module HC = Hector_core
 
 let analyze_file filename =
   let (program, _) = Parse_c.parse_c_and_cpp false false filename in
@@ -31,6 +32,13 @@ let analyze_file filename =
     List.map fst
       (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
   in
+  let releases = List.fold_left
+      (fun acc f ->
+         if Analyzer.is_release f
+         then Asto.StringSet.add (Asto.get_name f) acc
+         else acc) Asto.StringSet.empty functions
+  in
+  HC.set_local_releases releases;
   List.iter Analyzer.analyze_toplevel functions
 
 

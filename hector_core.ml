@@ -44,6 +44,9 @@ module ACFG_KeyFixPoint = KFP.Make (ACFG.KeySet) (ACFGOps) (ACFG_Bool_Fixpoint)
 
 module ACFG_ExpressionSet_Fixpoint = ACFG_Fixpoint (Asto.ExpressionSet)
 
+let local_releases = ref Asto.StringSet.empty
+let set_local_releases s = local_releases := s
+
 let update_value value cn =
   let side_effects = ref [] in
   ACFG.apply_side_effect_visitor
@@ -333,8 +336,11 @@ let annotate_error_handling cfg =
          ())
     ()
 
-(*TODO implement*)
-let is_interprocedural c = false
+let is_interprocedural c =
+  let name = ACFG.get_function_call_name c in
+  match name with
+    Some n -> Asto.StringSet.mem n !local_releases
+  | None   -> false
 
 
 let get_released_resource cfg cn =

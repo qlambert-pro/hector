@@ -20,3 +20,4 @@
  * *)
 
 val analyze_toplevel: Ast_c.toplevel -> unit
+val is_release: Ast_c.toplevel -> bool

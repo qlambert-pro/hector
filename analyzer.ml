@@ -27,7 +27,9 @@ module ACFG  = Annotated_cfg
 module ACFGO = Acfg_operations
 module CF    = C_function
 module HC    = Hector_core
+module Asto  = Ast_operations
 
+module ACFGOps = GO.Make (ACFG)
 
 let remove_doubles acc c =
   if List.exists
@@ -40,8 +42,8 @@ let remove_doubles acc c =
   else
     c::acc
 
-let analyze_def toplevel definition infos =
-  let func_name = fst (Ast_c.get_s_and_ii_of_name definition.Ast_c.f_name) in
+let analyze_omissions toplevel infos =
+  let func_name = Asto.get_name toplevel in
   try
     let cfg = ACFGO.of_ast_c toplevel in
 
@@ -70,14 +72,25 @@ let analyze_def toplevel definition infos =
   | Annotated_cfg.NoCFG -> ()
 
 let analyze_toplevel x =
-  match x with
-    Ast_c.Definition (defbis, infos::_) ->
-    analyze_def x defbis infos
-  | Ast_c.Declaration _
-  | Ast_c.CppTop _
-  | Ast_c.EmptyDef _
-  | Ast_c.NotParsedCorrectly _
-  | Ast_c.FinalDef _
-  | Ast_c.IfdefTop _
-  | Ast_c.MacroTop _ -> ()
-  | _ -> ()
+  Asto.apply_if_function_definition
+    (Asto.ToplevelAndInfo analyze_omissions) x ()
+
+let analyze_release toplevel _ =
+
+  let cfg = ACFGO.of_ast_c toplevel in
+  let parameters = ACFGO.get_parameters cfg in
+  let releases =
+    ACFGOps.fold_node cfg
+      (fun i n a ->
+         let node = {GO.index = i; GO.node = n} in
+         match HC.get_released_resource cfg node with
+           Some (ACFG.Resource e) -> Asto.ExpressionSet.add e a
+         | _ -> a)
+      Asto.ExpressionSet.empty
+  in
+  not (Asto.ExpressionSet.is_empty
+         (Asto.ExpressionSet.inter parameters releases))
+
+let is_release x =
+  Asto.apply_if_function_definition
+    (Asto.ToplevelAndInfo analyze_release) x false

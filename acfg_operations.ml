@@ -239,4 +239,17 @@ let of_ast_c ast =
     (CFGOps.complete_node_of cocci_cfg top_node);
   cfg
 
-
+let get_parameters cfg =
+  let aux k n acc =
+    match Control_flow_c.unwrap n.ACFG.parser_node with
+      CFG.FunHeader (definition, _) ->
+      let (_, (parameters, _)) = definition.Ast_c.f_type in
+      List.fold_left
+        (fun acc p ->
+           match Asto.expression_of_parameter p with
+             Some e -> Asto.ExpressionSet.add e acc
+           | _ -> acc)
+        acc parameters
+    | _ -> acc
+  in
+  ACFGOps.fold_node cfg aux Asto.ExpressionSet.empty

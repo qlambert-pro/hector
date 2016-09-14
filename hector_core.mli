@@ -23,6 +23,7 @@ module ACFG = Annotated_cfg
 module GO = Graph_operations
 module Asto = Ast_operations
 
+val set_local_releases: Asto.StringSet.t -> unit
 
 val get_error_handling_branch_head:
   ACFG.t -> (ACFG.node GO.complete_node) list
@@ -32,3 +33,6 @@ val annotate_resource_handling: ACFG.t -> unit
 
 val get_assignment_type_through_alias:
   ACFG.t -> ACFG.node GO.complete_node -> Ast_c.expression -> Asto.value
+
+val get_released_resource: ACFG.t -> ACFG.node GO.complete_node ->
+  ACFG.resource option
