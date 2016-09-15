@@ -30,7 +30,7 @@ val set_contained_fields:    StringPairSet.t -> unit
 type branch_side =
     Then
   | Else
-  | None
+  | Neither
 
 type error =
     Clear

@@ -217,11 +217,10 @@ let apply_on_initialisation f declaration =
       (SimpleAssign, []) e
   | _ -> ()
 
-(*TODO None ..*)
 type branch_side =
     Then
   | Else
-  | None
+  | Neither
 
 let rec which_is_the_error_branch alias_f f e =
   let (expression, _) = e in
@@ -264,7 +263,7 @@ let rec which_is_the_error_branch alias_f f e =
   | Unary (_, DeRef)
   | Ident _ ->
     which_branch e
-  | _ -> f None
+  | _ -> f Neither
 
 let rec is_testing_identifier identifier expression' =
   let (expression, _) = expression' in
