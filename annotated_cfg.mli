@@ -42,14 +42,14 @@ type resource_handling =
     Allocation  of resource
   | Assignment  of assignment
   | Release     of resource
-  | Computation of Ast_c.expression list
-  | Test        of Ast_c.expression list
+  | Computation of Asto.ExpressionSet.t
+  | Test        of Asto.ExpressionSet.t
   | Unannotated
 
 type node = {
   is_error_handling: bool;
   resource_handling_type: resource_handling;
-  referenced_resources: Ast_c.expression list;
+  referenced_resources: Asto.ExpressionSet.t;
   parser_node: Control_flow_c.node
 }
 

@@ -52,7 +52,7 @@ module ACFG_KeyFixPoint = KFP.Make (ACFG.KeySet) (ACFGOps) (ACFG_Bool_Fixpoint)
 let mk_node is_error_handling parser_node = {
   ACFG.is_error_handling = is_error_handling;
   ACFG.resource_handling_type = ACFG.Unannotated;
-  ACFG.referenced_resources = [];
+  ACFG.referenced_resources = Asto.ExpressionSet.empty;
   ACFG.parser_node = parser_node
 }
 

@@ -265,7 +265,7 @@ let filter_faults cfg exemplar blocks =
                | ACFG.Release r ->
                  acc && not (ACFG.resource_equal exemplar.res r)
                | ACFG.Test rs when
-                   List.exists
+                   Asto.ExpressionSet.exists
                      (fun e ->
                         ACFG.resource_equal
                           exemplar.res (ACFG.Resource e))
@@ -276,7 +276,7 @@ let filter_faults cfg exemplar blocks =
                         HC.get_assignment_type_through_alias
                         cfg cn end_node.GO.node)
                | ACFG.Computation rs when
-                   List.exists
+                   Asto.ExpressionSet.exists
                      (fun e ->
                         ACFG.resource_equal
                           exemplar.res (ACFG.Resource e))
@@ -287,7 +287,7 @@ let filter_faults cfg exemplar blocks =
                | ACFG.Unannotated
                | ACFG.Computation _ -> acc)
             (fun _ (cn, _) ->
-               not (List.exists
+               not (Asto.ExpressionSet.exists
                       (fun e ->
                          ACFG.resource_equal exemplar.res (ACFG.Resource e))
                       cn.GO.node.ACFG.referenced_resources))

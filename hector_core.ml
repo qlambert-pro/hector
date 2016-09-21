@@ -389,46 +389,53 @@ let get_resource cfg relevant_resources cn =
   | (  None,  [], Some  [r]) when not (Asto.is_string r) ->
     ACFG.Allocation (ACFG.Void (Some r))
   | (Some r,  _, Some args) when
-      List.exists (Asto.expression_equal r) relevant_resources &&
+      Asto.ExpressionSet.exists (Asto.expression_equal r) relevant_resources &&
       not (should_ignore args) ->
     ACFG.Allocation (ACFG.Resource r)
   | (     _, [r], Some args) when
-      List.exists (Asto.expression_equal r) relevant_resources &&
+      Asto.ExpressionSet.exists (Asto.expression_equal r) relevant_resources &&
       ACFGO.is_last_reference cfg cn (ACFG.Resource r) ->
     ACFG.Release (ACFG.Resource r)
   | (     _,  rs, Some args) when
       List.exists
-        (fun e -> List.exists (Asto.expression_equal e)
+        (fun e -> Asto.ExpressionSet.exists (Asto.expression_equal e)
             relevant_resources)
         rs ->
     let current_resources =
-      List.filter
-        (fun e -> List.exists (Asto.expression_equal e)
-            relevant_resources)
-        rs
+      List.fold_left
+        (fun acc e ->
+           if Asto.ExpressionSet.exists (Asto.expression_equal e)
+               relevant_resources
+           then Asto.ExpressionSet.add e acc
+           else acc)
+        Asto.ExpressionSet.empty rs
     in
     ACFG.Computation current_resources
   | _ ->
     let test = ACFG.test_if_header
         (fun e ->
-           List.find_all
-             (fun id -> Asto.is_testing_identifier id e) relevant_resources)
-        [] cn.GO.node
+           Asto.ExpressionSet.fold
+             (fun id acc ->
+                if Asto.is_testing_identifier id e
+                then Asto.ExpressionSet.add id acc
+                else acc)
+             relevant_resources Asto.ExpressionSet.empty)
+        Asto.ExpressionSet.empty cn.GO.node
     in
-    if test <> []
+    if not (Asto.ExpressionSet.is_empty test)
     then ACFG.Test test
     else
       match ACFG.get_assignment cn.GO.node with
         Some a ->
         let is_left =
-          List.exists
+          Asto.ExpressionSet.exists
             (Asto.expression_equal a.ACFG.left_value)
             relevant_resources
         in
         let is_right =
           match a.ACFG.right_value with
             Asto.Variable v when
-              List.exists
+              Asto.ExpressionSet.exists
                 (Asto.expression_equal v)
                 relevant_resources -> true
           | Asto.Value _
@@ -453,10 +460,10 @@ let annotate_resource_handling cfg =
            in
            match resource with
              None   -> acc
-           | Some r -> r::acc
+           | Some r -> Asto.ExpressionSet.add r acc
          else
            acc)
-      []
+      Asto.ExpressionSet.empty
   in
 
   let relevant_resources =
@@ -465,12 +472,13 @@ let annotate_resource_handling cfg =
          let assignement = ACFG.get_assignment n in
          match assignement with
            Some a ->
-           if List.exists (Asto.expression_equal a.ACFG.left_value) acc
+           if Asto.ExpressionSet.exists
+               (Asto.expression_equal a.ACFG.left_value) acc
            then
              match a.ACFG.right_value with
                Asto.Variable e ->
-               if not (List.exists (Asto.expression_equal e) acc)
-               then e::acc
+               if not (Asto.ExpressionSet.exists (Asto.expression_equal e) acc)
+               then Asto.ExpressionSet.add e acc
                else acc
              | _ -> acc
            else
@@ -483,7 +491,7 @@ let annotate_resource_handling cfg =
     (fun i n () ->
        let cn = {GO.index = i; GO.node = n} in
        let rs =
-         List.find_all
+         Asto.ExpressionSet.filter
            (fun e -> ACFG.is_referencing_resource (ACFG.Resource e) cn.GO.node)
            relevant_resources
        in
@@ -507,8 +515,10 @@ let annotate_resource_handling cfg =
       (fun _ _ -> true)
       (fun _ (cn, _) res ->
          match cn.GO.node.ACFG.resource_handling_type with
-         | ACFG.Computation [cr] when Asto.expression_equal r cr ->
-           annotate_if_allocation cr cfg cn
+         | ACFG.Computation cr when
+             Asto.ExpressionSet.cardinal cr == 1 &&
+             Asto.expression_equal r (Asto.ExpressionSet.choose cr) ->
+           annotate_if_allocation (Asto.ExpressionSet.choose cr) cfg cn
          | ACFG.Assignment _
          | ACFG.Computation _
          | ACFG.Test _
@@ -519,7 +529,7 @@ let annotate_resource_handling cfg =
          not (ACFG.is_referencing_resource (ACFG.Resource r) cn.GO.node))
       true ()
   in
-  List.iter
+  Asto.ExpressionSet.iter
     (fun r ->
        ACFG_Bool_Fixpoint.compute (config r) cfg (ACFGO.get_top_node cfg))
     relevant_resources
