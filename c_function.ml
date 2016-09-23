@@ -269,19 +269,16 @@ let get_candidate_blocks cfg error_blocks exemplar =
           maintain_value update_value_forward
             (ACFG_ESF.NodeMap.find e.ACFG.start_node) v (cn, e))
 
-       (*TODO clean that*)
        (fun values (cn, e) res ->
           try
-            let block =
-              List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
-            in
             let aliases = ACFG_ESF.NodeMap.find cn.GO.index values in
 
-            if not (is_handling_allocation_failure cfg
+            if List.exists (fun b -> b.GO.index = cn.GO.index) error_blocks &&
+               not (is_handling_allocation_failure cfg
                       aliases !assignment (cn, e)) &&
-               not (is_releasing_resource cfg aliases block) &&
-               not (is_returning_resource cfg aliases block)
-            then block::res
+               not (is_releasing_resource cfg aliases cn) &&
+               not (is_returning_resource cfg aliases cn)
+            then cn::res
             else res
           with Not_found -> res)
 
