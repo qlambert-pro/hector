@@ -216,40 +216,86 @@ let is_returning_resource cfg resources b =
         (ACFG.is_returning_resource (ACFG.Resource resource)))
     resources
 
-let get_candidate_blocks cfg error_blocks exemplar =
-  let initial_value =
-    match exemplar.res with
-      ACFG.Resource e -> Asto.ExpressionSet.singleton e
-    | _               -> Asto.ExpressionSet.empty
+let is_handling_allocation_failure cfg aliases assignment (cn, edge) =
+  let identifier =
+    match assignment with
+      Some a -> Some a.ACFG.left_value
+    | None   -> None
   in
+
+  let start_node = ACFG.KeyMap.find edge.ACFG.start_node cfg#nodes in
+
+  match (start_node.ACFG.resource_handling_type, identifier) with
+    (ACFG.Test rs, Some id) when
+      Asto.ExpressionSet.exists (Asto.expression_equal id) rs ->
+    ACFG.is_on_error_branch HC.get_assignment_type_through_alias cfg
+      {GO.index = edge.ACFG.start_node; GO.node = start_node} cn.GO.node
+
+  | (ACFG.Test rs,       _) when
+      not (Asto.ExpressionSet.is_empty
+             (Asto.ExpressionSet.inter rs aliases)) ->
+    ACFG.is_on_error_branch HC.get_assignment_type_through_alias cfg
+      {GO.index = edge.ACFG.start_node; GO.node = start_node} cn.GO.node
+
+  | (ACFG.Test        _, _)
+  | (ACFG.Allocation  _, _)
+  | (ACFG.Assignment  _, _)
+  | (ACFG.Computation _, _)
+  | (ACFG.Unannotated  , _)
+  | (ACFG.Release     _, _) -> false
+
+
+let killing_assignment assignment cn =
+  let new_assignement = ACFG.get_assignment cn.GO.node in
+  match (assignment, new_assignement) with
+    (Some a1, Some a2) ->
+    Asto.expression_equal a1.ACFG.left_value a2.ACFG.left_value
+  | (Some  _, None   )
+  | (None   , Some  _)
+  | (None   , None   ) -> false
+
+let get_candidate_blocks cfg error_blocks exemplar =
+  let assignment = ref (ACFG.get_assignment exemplar.alloc.GO.node) in
+  let initial_value =
+    match exemplar.alloc.GO.node.ACFG.resource_handling_type with
+      ACFG.Allocation (ACFG.Resource e) -> Asto.ExpressionSet.singleton e
+    | _                                 -> Asto.ExpressionSet.empty
+  in
+
   ACFG_ESF.compute
     (ACFG_ESF.get_forward_config
        (fun v (cn, e) ->
+          if killing_assignment !assignment cn then assignment := None;
           maintain_value update_value_forward
             (ACFG_ESF.NodeMap.find e.ACFG.start_node) v (cn, e))
 
-       (fun values (cn, _) res ->
+       (*TODO clean that*)
+       (fun values (cn, e) res ->
           try
             let block =
               List.find (fun b -> b.GO.index = cn.GO.index) error_blocks
             in
             let aliases = ACFG_ESF.NodeMap.find cn.GO.index values in
 
-            if not (is_releasing_resource cfg aliases block) &&
+            if not (is_handling_allocation_failure cfg
+                      aliases !assignment (cn, e)) &&
+               not (is_releasing_resource cfg aliases block) &&
                not (is_returning_resource cfg aliases block)
             then block::res
             else res
           with Not_found -> res)
+
        (fun v (cn, e) ->
+          let aliases = ACFG_ESF.NodeMap.find cn.GO.index v in
           not (List.exists
                  (fun n -> n.GO.index = cn.GO.index)
                  error_blocks) &&
           not (Asto.ExpressionSet.is_empty
-                 (ACFG_ESF.NodeMap.find e.ACFG.start_node v)))
+                 (ACFG_ESF.NodeMap.find e.ACFG.start_node v)) &&
+          not (is_handling_allocation_failure cfg aliases !assignment (cn, e)))
 
        initial_value [])
     cfg exemplar.alloc
-
 
 let filter_faults cfg exemplar blocks =
   List.find_all
@@ -257,23 +303,10 @@ let filter_faults cfg exemplar blocks =
        ACFG_Bool_Fixpoint.compute
          (ACFG_Bool_Fixpoint.get_backward_config
             (fun _ _ -> true)
-            (fun _ (cn, edge) acc ->
+            (fun v (cn, edge) acc ->
                match cn.GO.node.ACFG.resource_handling_type with
-                 ACFG.Allocation r ->
-                 acc && not (ACFG.is_similar_statement cn exemplar.alloc)
                | ACFG.Release r ->
                  acc && not (ACFG.resource_equal exemplar.res r)
-               | ACFG.Test rs when
-                   Asto.ExpressionSet.exists
-                     (fun e ->
-                        ACFG.resource_equal
-                          exemplar.res (ACFG.Resource e))
-                     rs ->
-                 let end_node = edge.ACFG.end_node in
-                 acc &&
-                 not (ACFG.is_on_error_branch
-                        HC.get_assignment_type_through_alias
-                        cfg cn (ACFG.KeyMap.find end_node cfg#nodes))
                | ACFG.Computation rs when
                    Asto.ExpressionSet.exists
                      (fun e ->
@@ -281,6 +314,7 @@ let filter_faults cfg exemplar blocks =
                           exemplar.res (ACFG.Resource e))
                      rs ->
                  acc && not (ACFG.is_similar_statement exemplar.release cn)
+               | ACFG.Allocation _
                | ACFG.Assignment _
                | ACFG.Test _
                | ACFG.Unannotated

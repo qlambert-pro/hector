@@ -535,8 +535,45 @@ let annotate_resource_handling cfg =
   Asto.ExpressionSet.iter
     (fun r ->
        ACFG_Bool_Fixpoint.compute (config r) cfg (ACFGO.get_top_node cfg))
-    relevant_resources
+    relevant_resources;
 
+  let allocation_return_variable =
+    ACFGOps.fold_node cfg
+      (fun k n acc ->
+         match n.ACFG.resource_handling_type with
+         | ACFG.Allocation (ACFG.Resource e) ->
+           let assignement = ACFG.get_assignment n in
+           (match assignement with
+             Some a ->
+              if not (Asto.expression_equal e a.ACFG.left_value)
+              then Asto.ExpressionSet.add a.ACFG.left_value acc
+              else acc
+            | _ -> acc)
+         | ACFG.Allocation (ACFG.Void _) ->
+           let assignement = ACFG.get_assignment n in
+           (match assignement with
+             Some a -> Asto.ExpressionSet.add a.ACFG.left_value acc
+            | _     -> acc)
+         | ACFG.Assignment _
+         | ACFG.Computation _
+         | ACFG.Test _
+         | ACFG.Release _
+         | ACFG.Unannotated -> acc)
+      Asto.ExpressionSet.empty
+  in
+  ACFGOps.fold_node cfg
+    (fun i n () ->
+       let tested_identifiers =
+         Asto.ExpressionSet.filter
+           (fun e -> ACFG.test_if_header (Asto.is_testing_identifier e) false n)
+           allocation_return_variable
+       in
+       if not (Asto.ExpressionSet.is_empty tested_identifiers)
+       then
+         ACFG.annotate_resource cfg {GO.index = i; GO.node = n}
+           (ACFG.Test tested_identifiers)
+       else ())
+    ()
 
 (*TODO maybe optimise*)
 let get_error_handling_branch_head cfg =
