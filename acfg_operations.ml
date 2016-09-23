@@ -103,23 +103,28 @@ let configurable_is_reference config cfg cn r =
     nodes
     true
 
+let is_backedge e =
+  match e.ACFG.edge_type with
+    ACFG.Direct       -> false
+  | ACFG.PostBackedge -> true
+
 let is_last_reference =
-  let just_true = (fun _ _ -> true) in
   configurable_is_reference
     (ACFG_KeyFixPoint.get_basic_forward_config
-       just_true ACFG.KeySet.empty)
+       (fun _ (_, e) -> not (is_backedge e)) ACFG.KeySet.empty)
 
 let is_last_reference_before_killed_reached identifier =
-  let kill_reach _ (n, _) =
+  let kill_reach _ (n, e) =
+    not (is_backedge e) &&
     not (ACFG.is_killing_reach identifier n.GO.node)
   in
   configurable_is_reference
     (ACFG_KeyFixPoint.get_basic_forward_config kill_reach ACFG.KeySet.empty)
 
 let is_first_reference =
-  let just_true = (fun _ _ -> true) in
   configurable_is_reference
-    (ACFG_KeyFixPoint.get_basic_backward_config just_true ACFG.KeySet.empty)
+    (ACFG_KeyFixPoint.get_basic_backward_config
+       (fun _ (_, e) -> not (is_backedge e)) ACFG.KeySet.empty)
 
 
 let is_return_value_tested cfg cn =
