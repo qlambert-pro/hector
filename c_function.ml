@@ -162,23 +162,27 @@ let get_exemplars cfg error_blocks =
   let releases = List.fold_left get_resource_release [] error_blocks in
 
   let exemplars_of_release acc (release, model_block) =
-    (*TODO may not need model_block*)
     let allocs = get_allocs cfg model_block release in
 
-    List.fold_left (fun acc alloc ->
-        let a = ACFG.get_function_call_name alloc in
-        let r = ACFG.get_function_call_name release.node in
-        let (an, rn) =
-          match (a, r) with
-            (Some a, Some r) -> (a, r)
-          | _ -> failwith "missing function call from alloc or release"
-        in
-        {alloc        = alloc;
-         alloc_name   = an;
-         release      = release.node;
-         release_name = rn;
-         res          = release.resource;
-        }::acc) acc allocs
+    List.fold_left
+      (fun acc alloc ->
+         if not (List.exists (fun a -> alloc.GO.index = a.alloc.GO.index) acc)
+         then
+           let a = ACFG.get_function_call_name alloc in
+           let r = ACFG.get_function_call_name release.node in
+           let (an, rn) =
+             match (a, r) with
+               (Some a, Some r) -> (a, r)
+             | _ -> failwith "missing function call from alloc or release"
+           in
+           {alloc        = alloc;
+            alloc_name   = an;
+            release      = release.node;
+            release_name = rn;
+            res          = release.resource;
+           }::acc
+         else acc)
+      acc allocs
   in
   List.fold_left exemplars_of_release [] releases
 

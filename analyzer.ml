@@ -53,7 +53,6 @@ let analyze_omissions toplevel infos =
     let error_blocks = C_function.find_errorhandling cfg in
     let exemplars = C_function.get_exemplars cfg error_blocks in
 
-    (*TODO get allocations and use them instead of exemplars*)
     let candidates =
       List.fold_left
         (fun acc e ->
