@@ -293,7 +293,6 @@ let is_head cfg index node =
 (*TODO replace as computed rather than store*)
 let annotate_error_handling cfg =
   let error_returns, identifiers =
-
     ACFGOps.fold_node cfg
       (fun i node (error_returns, id_set) ->
          let error_type =
@@ -302,25 +301,24 @@ let annotate_error_handling cfg =
          in
          match error_type with
            Asto.Value (Asto.Error Asto.Clear) ->
-           ((i,node)::error_returns, id_set)
+           (ACFG.KeySet.add i error_returns, id_set)
          | Asto.Variable e ->
            (error_returns, e::id_set)
          | _ -> (error_returns, id_set))
-      ([], [])
+      (ACFG.KeySet.empty, [])
   in
   let error_assignments = get_error_assignments cfg identifiers in
   let error_branch_nodes =
     get_nodes_leading_to_error_return cfg error_assignments
   in
+  let nodes =
+    ACFGOps.fold_node cfg (fun k _ acc -> ACFG.KeySet.add k acc)
+      ACFG.KeySet.empty
+  in
+
   let error_return_post_dominated =
-    List.fold_left
-      (fun acc (index, _) ->
-         let nodes =
-           ACFG_KeyFixPoint.conditional_get_post_dominated (fun _ -> true) cfg
-             (ACFGOps.complete_node_of cfg index)
-         in
-         ACFG.KeySet.union acc nodes)
-      ACFG.KeySet.empty error_returns
+    add_branch_nodes_leading_to_return cfg error_returns nodes
+      ACFG.KeySet.empty
   in
   ACFGOps.fold_node cfg
     (fun index node () ->
