@@ -452,8 +452,8 @@ let get_resource cfg relevant_resources cn =
       | _ -> ACFG.Unannotated
 
 
-let annotate_resource_handling cfg =
-  let relevant_resources' =
+let get_relevant_resources cfg =
+  let relevant_resources =
     ACFGOps.fold_node cfg
       (fun i n acc ->
          if n.ACFG.is_error_handling
@@ -469,27 +469,26 @@ let annotate_resource_handling cfg =
       Asto.ExpressionSet.empty
   in
 
-  let relevant_resources =
-    ACFGOps.fold_node cfg
-      (fun _ n acc ->
-         let assignement = ACFG.get_assignment n in
-         match assignement with
-           Some a ->
-           if Asto.ExpressionSet.exists
-               (Asto.expression_equal a.ACFG.left_value) acc
-           then
-             match a.ACFG.right_value with
-               Asto.Variable e ->
-               if not (Asto.ExpressionSet.exists (Asto.expression_equal e) acc)
-               then Asto.ExpressionSet.add e acc
-               else acc
-             | _ -> acc
-           else
-             acc
-         | _ -> acc)
-      relevant_resources'
-  in
+  ACFGOps.fold_node cfg
+    (fun _ n acc ->
+       let assignement = ACFG.get_assignment n in
+       match assignement with
+         Some a ->
+         if Asto.ExpressionSet.exists
+             (Asto.expression_equal a.ACFG.left_value) acc
+         then
+           match a.ACFG.right_value with
+             Asto.Variable e ->
+             if not (Asto.ExpressionSet.exists (Asto.expression_equal e) acc)
+             then Asto.ExpressionSet.add e acc
+             else acc
+           | _ -> acc
+         else
+           acc
+       | _ -> acc)
+    relevant_resources
 
+let annotate_resource cfg relevant_resources =
   ACFGOps.fold_node cfg
     (fun i n () ->
        let cn = {GO.index = i; GO.node = n} in
@@ -535,7 +534,12 @@ let annotate_resource_handling cfg =
   Asto.ExpressionSet.iter
     (fun r ->
        ACFG_Bool_Fixpoint.compute (config r) cfg (ACFGO.get_top_node cfg))
-    relevant_resources;
+    relevant_resources
+
+let annotate_resource_handling cfg =
+
+  let relevant_resources = get_relevant_resources cfg in
+  annotate_resource cfg relevant_resources;
 
   let allocation_return_variable =
     ACFGOps.fold_node cfg
@@ -544,7 +548,7 @@ let annotate_resource_handling cfg =
          | ACFG.Allocation (ACFG.Resource e) ->
            let assignement = ACFG.get_assignment n in
            (match assignement with
-             Some a ->
+              Some a ->
               if not (Asto.expression_equal e a.ACFG.left_value)
               then Asto.ExpressionSet.add a.ACFG.left_value acc
               else acc
@@ -552,7 +556,7 @@ let annotate_resource_handling cfg =
          | ACFG.Allocation (ACFG.Void _) ->
            let assignement = ACFG.get_assignment n in
            (match assignement with
-             Some a -> Asto.ExpressionSet.add a.ACFG.left_value acc
+              Some a -> Asto.ExpressionSet.add a.ACFG.left_value acc
             | _     -> acc)
          | ACFG.Assignment _
          | ACFG.Computation _
@@ -561,6 +565,7 @@ let annotate_resource_handling cfg =
          | ACFG.Unannotated -> acc)
       Asto.ExpressionSet.empty
   in
+
   ACFGOps.fold_node cfg
     (fun i n () ->
        let tested_identifiers =
