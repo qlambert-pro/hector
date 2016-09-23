@@ -58,8 +58,8 @@ type edge_type =
   | PostBackedge
 
 type edge = {
-  start_node: node GO.complete_node;
-  end_node:   node GO.complete_node;
+  start_node: int;
+  end_node:   int;
   edge_type:  edge_type;
 }
 

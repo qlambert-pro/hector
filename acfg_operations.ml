@@ -200,24 +200,14 @@ let of_ast_c ast =
           cocci_cfg (CFGOps.complete_node_of cocci_cfg cn.GO.index)
       in
 
-      let complete_start_node =
-        {GO.index = start_node;
-         GO.node = ACFG.KeyMap.find start_node cfg#nodes}
-      in
-
-      let complete_end_node =
-        {GO.index = end_node;
-         GO.node = ACFG.KeyMap.find end_node cfg#nodes}
-      in
-
       let edge_type =
         if Control_flow_c.KeySet.mem index' post_dominated
         then ACFG.PostBackedge
         else ACFG.Direct
       in
       let edge =
-        {ACFG.start_node = complete_start_node;
-         ACFG.end_node   = complete_end_node;
+        {ACFG.start_node = start_node;
+         ACFG.end_node   = end_node;
          ACFG.edge_type  = edge_type;}
       in
       cfg#add_arc ((start_node, end_node), edge)

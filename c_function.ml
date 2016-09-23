@@ -131,8 +131,7 @@ let get_allocs cfg block_head release =
        (fun v (cn, e) ->
           maintain_value
             update_value_backward
-            (ACFG_ESF.NodeMap.find
-               e.ACFG.end_node.GO.index) v (cn, e))
+            (ACFG_ESF.NodeMap.find e.ACFG.end_node) v (cn, e))
 
        (fun values (cn, _) allocs ->
           match cn.GO.node.ACFG.resource_handling_type with
@@ -227,7 +226,7 @@ let get_candidate_blocks cfg error_blocks exemplar =
     (ACFG_ESF.get_forward_config
        (fun v (cn, e) ->
           maintain_value update_value_forward
-            (ACFG_ESF.NodeMap.find e.ACFG.start_node.GO.index) v (cn, e))
+            (ACFG_ESF.NodeMap.find e.ACFG.start_node) v (cn, e))
 
        (fun values (cn, _) res ->
           try
@@ -246,7 +245,7 @@ let get_candidate_blocks cfg error_blocks exemplar =
                  (fun n -> n.GO.index = cn.GO.index)
                  error_blocks) &&
           not (Asto.ExpressionSet.is_empty
-                 (ACFG_ESF.NodeMap.find e.ACFG.start_node.GO.index v)))
+                 (ACFG_ESF.NodeMap.find e.ACFG.start_node v)))
 
        initial_value [])
     cfg exemplar.alloc
@@ -274,7 +273,7 @@ let filter_faults cfg exemplar blocks =
                  acc &&
                  not (ACFG.is_on_error_branch
                         HC.get_assignment_type_through_alias
-                        cfg cn end_node.GO.node)
+                        cfg cn (ACFG.KeyMap.find end_node cfg#nodes))
                | ACFG.Computation rs when
                    Asto.ExpressionSet.exists
                      (fun e ->

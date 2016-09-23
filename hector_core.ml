@@ -109,8 +109,7 @@ let get_assignment_type_through_alias cfg cn id =
       (ACFG_ExpressionSet_Fixpoint.get_backward_config
          (fun values (cn, e) ->
             let value' =
-              ACFG_ExpressionSet_Fixpoint.NodeMap.find
-                e.ACFG.end_node.GO.index values
+              ACFG_ExpressionSet_Fixpoint.NodeMap.find e.ACFG.end_node values
             in
             let value  = update_value value' cn in
             try
@@ -125,8 +124,7 @@ let get_assignment_type_through_alias cfg cn id =
               (Asto.Error Asto.Ambiguous)::res
             else
               Asto.ExpressionSet.fold (add_error_type n)
-                (ACFG_ExpressionSet_Fixpoint.NodeMap.find
-                   e.ACFG.end_node.GO.index v) res)
+                (ACFG_ExpressionSet_Fixpoint.NodeMap.find e.ACFG.end_node v) res)
          (fun v (cn, _) ->
             not (Asto.ExpressionSet.is_empty
                    (ACFG_ExpressionSet_Fixpoint.NodeMap.find cn.GO.index v)))
@@ -242,12 +240,11 @@ let get_nodes_leading_to_error_return cfg error_assignments =
              (*TODO is_testing_identifier is incorrect*)
              (* add complex if cases to prove it *)
              (fun _ (cn, e) res ->
-                let pred = e.ACFG.start_node in
+                let pred = ACFGOps.complete_node_of cfg e.ACFG.start_node in
                 let head = cn.GO.node in
                 let is_correct_branch =
                   ACFG.is_on_error_branch
-                    get_assignment_type_through_alias
-                    cfg pred head
+                    get_assignment_type_through_alias cfg pred head
                 in
                 let is_testing_identifier =
                   ACFG.test_if_header
