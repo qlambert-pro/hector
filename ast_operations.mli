@@ -50,6 +50,8 @@ val get_assignment_type:
 val function_name_of_expression:
   Ast_c.expression -> string option
 
+val unify_array_access: Ast_c.expression -> Ast_c.expression
+
 val expression_equal: Ast_c.expression -> Ast_c.expression -> bool
 val string_of_expression: Ast_c.expression -> string
 val expression_compare: Ast_c.expression -> Ast_c.expression -> int

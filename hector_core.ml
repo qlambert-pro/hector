@@ -366,7 +366,7 @@ let get_resource cfg relevant_resources cn =
   ACFG.apply_assignment_visitor
     (fun l _ _ ->
        if Asto.is_pointer l
-       then assigned_variable := Some l
+       then assigned_variable := Some (Asto.unify_array_access l)
        else ())
     cn.GO.node;
 

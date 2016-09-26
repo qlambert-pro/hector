@@ -183,8 +183,30 @@ let rec get_arguments expression =
     Some (expressions_of_arguments arguments)
   | _ -> None
 
+let rename_name n s =
+  match n with
+    RegularName (_, info_old') ->
+    let info_old = List.map (rewrap_str s) info_old' in
+    RegularName (s, info_old)
+  | _ -> n
+
+let rename_ident expression s =
+  let ((exp, info1), info2) = expression in
+  match exp with
+    Ident n -> ((Ident (rename_name n s), info1), info2)
+  | _ -> expression
+
+let unify_array_access expression =
+  let ((exp, info1), info2) = expression in
+  match exp with
+    ArrayAccess (e, s) ->
+    ((ArrayAccess (e, rename_ident s "token_index"), info1), info2)
+  | _ -> expression
+
 let resources_of_arguments = function
-    Some xs -> List.find_all is_pointer xs
+    Some xs ->
+    let resources = List.find_all is_pointer xs in
+    List.map unify_array_access resources
   | None    -> []
 
 let is_string e =
