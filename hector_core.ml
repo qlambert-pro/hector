@@ -160,7 +160,7 @@ let get_error_assignments cfg identifiers =
   t
 
 
-let add_branch_nodes_leading_to_return cfg returns nodes acc =
+let add_branch_nodes_leading_to_return cfg return nodes =
   let post_dominated index =
     let is_backedge e =
       match e.ACFG.edge_type with
@@ -187,11 +187,7 @@ let add_branch_nodes_leading_to_return cfg returns nodes acc =
     ACFG_Bool_Fixpoint.compute config cfg (ACFGOps.complete_node_of cfg index)
   in
 
-  ACFG.KeySet.fold
-    (fun return acc ->
-       let branch_nodes = post_dominated return in
-       ACFG.KeySet.union branch_nodes acc)
-    returns acc
+  post_dominated return
 
 
 let add_post_dominated cfg index acc =
@@ -203,62 +199,50 @@ let add_post_dominated cfg index acc =
   ACFG.KeySet.union post_dominated acc
 
 
-let get_nodes_leading_to_error_return cfg error_assignments =
+let get_subgraph_nodes cfg error_assignments subgraphs =
   let get_reachable_nodes ((index, node), identifier) error_type acc =
     let kill_reach _ (cn, _) =
       not (ACFG.is_killing_reach identifier cn.GO.node)
     in
-    match error_type with
-      Asto.Clear ->
-      let nodes =
-        ACFG_Bool_Fixpoint.compute
-          (ACFG_KeyFixPoint.get_basic_forward_config
-             kill_reach
-             (ACFG.KeySet.singleton index))
-          cfg (ACFGOps.complete_node_of cfg index)
-      in
-      let reachable_returns = ACFG.filter_returns cfg identifier nodes in
-      if reachable_returns != ACFG.KeySet.empty
-      then
-        let error_branch_nodes =
-          add_branch_nodes_leading_to_return
-            cfg reachable_returns nodes acc
+    let nodes =
+      match error_type with
+        Asto.Clear ->
+        let nodes =
+          ACFG_Bool_Fixpoint.compute
+            (ACFG_KeyFixPoint.get_basic_forward_config
+               kill_reach
+               (ACFG.KeySet.singleton index))
+            cfg (ACFGOps.complete_node_of cfg index)
         in
-        if ACFG.KeySet.mem index error_branch_nodes
-        then
-          add_post_dominated cfg index error_branch_nodes
-        else
-          error_branch_nodes
-      else
-        acc
-    | Asto.Ambiguous ->
-      let heads =
-        ACFG_Bool_Fixpoint.compute
-          (ACFG_Bool_Fixpoint.get_forward_config
-             (fun _ _ -> true)
+        add_post_dominated cfg index nodes
 
-             (*TODO is_testing_identifier is incorrect*)
-             (* add complex if cases to prove it *)
-             (fun _ (cn, e) res ->
-                let pred = ACFGOps.complete_node_of cfg e.ACFG.start_node in
-                let head = cn.GO.node in
-                let is_correct_branch =
-                  ACFG.is_on_error_branch
-                    get_assignment_type_through_alias cfg pred head
-                in
-                let is_testing_identifier =
-                  ACFG.test_if_header
-                    (Asto.is_testing_identifier identifier)
-                    false pred.GO.node
-                in
-                if is_correct_branch && is_testing_identifier
-                then ACFG.KeySet.add cn.GO.index res
-                else res)
+      | Asto.Ambiguous ->
+        let heads =
+          ACFG_Bool_Fixpoint.compute
+            (ACFG_Bool_Fixpoint.get_forward_config
+               (fun _ _ -> true)
 
-              kill_reach true ACFG.KeySet.empty)
-          cfg (ACFGOps.complete_node_of cfg index)
-      in
-      let nodes =
+               (*TODO is_testing_identifier is incorrect*)
+               (* add complex if cases to prove it *)
+               (fun _ (cn, e) res ->
+                  let pred = ACFGOps.complete_node_of cfg e.ACFG.start_node in
+                  let head = cn.GO.node in
+                  let is_correct_branch =
+                    ACFG.is_on_error_branch
+                      get_assignment_type_through_alias cfg pred head
+                  in
+                  let is_testing_identifier =
+                    ACFG.test_if_header
+                      (Asto.is_testing_identifier identifier)
+                      false pred.GO.node
+                  in
+                  if is_correct_branch && is_testing_identifier
+                  then ACFG.KeySet.add cn.GO.index res
+                  else res)
+
+               kill_reach true ACFG.KeySet.empty)
+            cfg (ACFGOps.complete_node_of cfg index)
+        in
         ACFG.KeySet.fold
           (fun index s ->
              ACFG.KeySet.union s
@@ -267,15 +251,21 @@ let get_nodes_leading_to_error_return cfg error_assignments =
                      kill_reach (ACFG.KeySet.singleton index))
                   cfg (ACFGOps.complete_node_of cfg index)))
           heads ACFG.KeySet.empty
-      in
-      let reachable_returns = ACFG.filter_returns cfg identifier nodes in
-      if reachable_returns != ACFG.KeySet.empty
-      then
-        add_branch_nodes_leading_to_return cfg reachable_returns nodes acc
-      else
-        acc
+    in
+    let reachable_returns = ACFG.filter_returns cfg identifier nodes in
+    ACFG.KeySet.fold
+      (fun k a ->
+         let new_nodes' =
+           if ACFG.KeyMap.mem k a
+           then ACFG.KeyMap.find k a
+           else ACFG.KeySet.empty
+         in
+         let new_nodes = ACFG.KeySet.union new_nodes' nodes in
+         ACFG.KeyMap.add k new_nodes a)
+      reachable_returns
+      acc
   in
-  Hashtbl.fold get_reachable_nodes error_assignments ACFG.KeySet.empty
+  Hashtbl.fold get_reachable_nodes error_assignments subgraphs
 
 
 let is_head cfg index node =
@@ -288,10 +278,12 @@ let is_head cfg index node =
        not (node.ACFG.is_error_handling))
     predecessors
 
-
-(*TODO optimise number of pass*)
-(*TODO replace as computed rather than store*)
 let annotate_error_handling cfg =
+  let all_nodes =
+    ACFGOps.fold_node cfg (fun k _ acc -> ACFG.KeySet.add k acc)
+      ACFG.KeySet.empty
+  in
+
   let error_returns, identifiers =
     ACFGOps.fold_node cfg
       (fun i node (error_returns, id_set) ->
@@ -307,29 +299,23 @@ let annotate_error_handling cfg =
          | _ -> (error_returns, id_set))
       (ACFG.KeySet.empty, [])
   in
+  let subgraphs' =
+    ACFG.KeySet.fold (fun k a -> ACFG.KeyMap.add k all_nodes a) error_returns
+      ACFG.KeyMap.empty
+  in
   let error_assignments = get_error_assignments cfg identifiers in
-  let error_branch_nodes =
-    get_nodes_leading_to_error_return cfg error_assignments
-  in
-  let nodes =
-    ACFGOps.fold_node cfg (fun k _ acc -> ACFG.KeySet.add k acc)
-      ACFG.KeySet.empty
-  in
+  let subgraphs = get_subgraph_nodes cfg error_assignments subgraphs' in
 
-  let error_return_post_dominated =
-    add_branch_nodes_leading_to_return cfg error_returns nodes
-      ACFG.KeySet.empty
-  in
-  ACFGOps.fold_node cfg
-    (fun index node () ->
-       if ACFG.KeySet.mem index error_branch_nodes ||
-          ACFG.KeySet.mem index error_return_post_dominated
-       then
-         cfg#replace_node
-           (index, {node with ACFG.is_error_handling = true})
-       else
-         ())
-    ()
+  ACFG.KeyMap.iter
+    (fun r n ->
+       let nodes = add_branch_nodes_leading_to_return cfg r n in
+       ACFG.KeySet.iter
+         (fun index ->
+            let node = ACFG.KeyMap.find index cfg#nodes in
+            cfg#replace_node (index,
+                              {node with ACFG.is_error_handling = true}))
+         nodes)
+    subgraphs
 
 let is_interprocedural c =
   let name = ACFG.get_function_call_name c in

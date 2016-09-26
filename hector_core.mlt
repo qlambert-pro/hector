@@ -79,14 +79,21 @@ let concat_get_error_assignements cfgs =
   in
   List.map Hashtbl.length errors_table
 
-let concat_get_nodes_leading_to_error_return cfgs =
+let concat_get_subgraph_nodes cfgs =
   let error_assignments =
     List.map
       (fun cfg -> get_error_assignments cfg (get_identifiers cfg))
       cfgs
   in
-  List.map2 get_nodes_leading_to_error_return cfgs error_assignments
-
+  let subgraphs =
+    List.map2
+      (fun cfg error_assignments ->
+         get_subgraph_nodes cfg error_assignments ACFG.KeyMap.empty)
+      cfgs error_assignments
+  in
+  List.map
+    (fun s -> ACFG.KeyMap.fold (fun _ v a -> ACFG.KeySet.union v a) s
+        ACFG.KeySet.empty) subgraphs
 
 (* **
  * this function expects indices to be valid
@@ -164,25 +171,29 @@ let () =
         " should return 5 nodes for " concat_get_error_assignements
         5 is_length;
       mk_cfg_test
-        "get_nodes_leading_to_error_return" "./tests/no_reachable_returns.c"
+        "get_subgraph_nodes" "./tests/no_reachable_returns.c"
         " should return the empty set for "
-        concat_get_nodes_leading_to_error_return 0 compare_with_size;
+        concat_get_subgraph_nodes 0 compare_with_size;
       mk_cfg_test
-        "get_nodes_leading_to_error_return" "./tests/simple_reachable_returns.c"
-        " should return a set of 2 element for "
-        concat_get_nodes_leading_to_error_return 2 compare_with_size;
+        "get_subgraph_nodes" "./tests/simple_reachable_returns.c"
+        " should return a set of 16 element for "
+        concat_get_subgraph_nodes 16 compare_with_size;
       mk_cfg_test
-        "get_nodes_leading_to_error_return" "./tests/reachable_returns.c"
-        " should return a set of 6 elements for "
-        concat_get_nodes_leading_to_error_return 6 compare_with_size;
+        "get_subgraph_nodes" "./tests/reachable_returns.c"
+        " should return a set of 23 elements for "
+        concat_get_subgraph_nodes 23 compare_with_size;
       mk_cfg_test
-        "get_nodes_leading_to_error_return" "./tests/more_complex.c"
-        " should return a set of 33 elements for "
-        concat_get_nodes_leading_to_error_return 33 compare_with_size;
+        "get_subgraph_nodes" "./tests/simple_resource.c"
+        " should return a set of 20 elements for "
+        concat_get_subgraph_nodes 20 compare_with_size;
       mk_cfg_test
-        "get_nodes_leading_to_error_return" "./tests/loop.c"
-        " should return a set of 13 elements for "
-        concat_get_nodes_leading_to_error_return 13 compare_with_size;
+        "get_subgraph_nodes" "./tests/more_complex.c"
+        " should return a set of 62 elements for "
+        concat_get_subgraph_nodes 62 compare_with_size;
+      mk_cfg_test
+        "get_subgraph_nodes" "./tests/loop.c"
+        " should return a set of 15 elements for "
+        concat_get_subgraph_nodes 15 compare_with_size;
       (*I am using the print_graph tool to figure out the indices*)
       mk_cfg_test
         "is_on_error_branch" "./tests/simple_reachable_returns.c"
