@@ -24,7 +24,7 @@ module Asto = Ast_operations
 type t = {
   error_constants:     Asto.StringSet.t;
   testing_functions:   Asto.StringSet.t;
-  assigning_functions: Asto.StringSet.t;
+  assigning_functions: (int * int) Asto.StringMap.t;
   contained_fields:    Asto.StringPairSet.t;
 }
 
@@ -53,11 +53,19 @@ let read_2_word_config filepath =
        (List.nth words 0, List.nth words 1))
     Asto.StringPairSet.add Asto.StringPairSet.empty
 
+let read_1_word_and_2_ints filepath =
+  read filepath
+    (fun s ->
+       let words = Str.split (Str.regexp " ") s in
+       (List.nth words 0,
+        (int_of_string (List.nth words 1), int_of_string (List.nth words 2))))
+    (fun (k, v) m -> Asto.StringMap.add k v m) Asto.StringMap.empty
+
 let get directory =
   let empty_config =
     {error_constants     =     Asto.StringSet.empty;
      testing_functions   =     Asto.StringSet.empty;
-     assigning_functions =     Asto.StringSet.empty;
+     assigning_functions =     Asto.StringMap.empty;
      contained_fields    = Asto.StringPairSet.empty;
     }
   in
@@ -88,9 +96,10 @@ let get directory =
 
     let config''' =
       if Sys.file_exists assigning_functions_filepath
-      then {config'' with
+      then
+        {config'' with
             assigning_functions =
-              read_1_word_config assigning_functions_filepath}
+              read_1_word_and_2_ints assigning_functions_filepath}
       else config''
     in
 

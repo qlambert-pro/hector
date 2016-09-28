@@ -297,12 +297,14 @@ let is_returning_resource resource cn =
 
 let get_assignment cn =
   let assignment = ref None in
-  let f l op r =
+  let f l' op r' =
     let op =
       if Asto.is_simple_assignment op
       then Simple
       else Algebraic
     in
+    let l = Asto.unify_contained_field l' in
+    let r = Asto.unify_contained_field r' in
     assignment :=
       Some {left_value = l;
             operator = op;

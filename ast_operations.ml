@@ -28,11 +28,12 @@ struct
 end
 
 module StringSet     = Set.Make(String)
+module StringMap     = Map.Make(String)
 module StringPairSet = Set.Make(StringPair)
 
 let error_constants     = ref StringSet.empty
 let testing_functions   = ref StringSet.empty
-let assigning_functions = ref StringSet.empty
+let assigning_functions = ref StringMap.empty
 let contained_fields    = ref StringPairSet.empty
 
 let set_error_constants     s = error_constants     := s
@@ -41,6 +42,7 @@ let set_assigning_functions s = assigning_functions := s
 let set_contained_fields    s = contained_fields    := s
 
 let string_of_expression = Pretty_print_c.string_of_expression
+let string_of_name = Ast_c.str_of_name
 
 let is_simple_assignment op =
   match unwrap op with
@@ -62,11 +64,16 @@ let rec is_pointer exp =
       (None, _) -> true
     | (Some (ftype, _), _) -> is_pointer_type ftype
 
+let expression_of_argument argument =
+  match unwrap argument with
+    Common.Left e -> Some e
+  | _             -> None
+
 let expressions_of_arguments arguments =
   let expressions_of_arguments_aux acc argument =
-    match unwrap argument with
-      Common.Left e -> e::acc
-    | _             -> acc
+    match expression_of_argument argument with
+      Some e -> e::acc
+    | None   -> acc
   in
   List.fold_left expressions_of_arguments_aux [] arguments
 
@@ -205,6 +212,55 @@ let rec unify_array_access expression =
     ((ArrayAccess (e, rename_ident s "token_index"), info1), info2)
   | _ -> expression
 
+let get_struct_name ((_, i), _) =
+  let (t, _) = !i in
+  let rec aux = function
+      (_, (Pointer t,_))
+    | (_, (TypeOfType t,_))  -> aux t
+    | (_, (StructUnionName (Struct, n),_))
+    | (_, (StructUnion (Struct, Some n, _),_)) -> Some n
+    | (_, (NoType,_))
+    | (_, (BaseType _,_))
+    | (_, (StructUnionName _,_))
+    | (_, (StructUnion _,_))
+    | (_, (Array _,_))
+    | (_, (Decimal _,_))
+    | (_, (FunctionType _,_))
+    | (_, (Enum _,_))
+    | (_, (EnumName _,_))
+    | (_, (TypeName _,_))
+    | (_, (ParenType _,_))
+    | (_, (TypeOfExpr _,_)) -> None 
+  in
+  match t with
+    Some (t, _) -> aux t
+  | None -> None
+
+let unify_contained_field expression =
+  let is_contained_field e n' =
+    let t = get_struct_name e in
+    let n = string_of_name n' in
+    match t with
+      Some t -> StringPairSet.mem (t, n) !contained_fields
+    | None   -> false
+  in
+  let rec aux expression f =
+    let ((exp, info1), info2) = expression in
+    match exp with
+      RecordAccess   (e, n) when is_contained_field e n -> f false e
+    | RecordPtAccess (e, n) when is_contained_field e n -> f false e
+    | Unary (e, GetRef) ->
+      aux e
+        (fun b e ->
+           if b
+           then f b ((Unary (e, GetRef), info1), info2)
+           else f b e)
+    | ParenExpr e ->
+      aux e (fun b e -> f b ((ParenExpr e, info1), info2))
+    | _ -> f true expression
+  in
+  aux expression (fun _ x -> x)
+
 let resources_of_arguments = function
     Some xs ->
     let resources = List.find_all is_pointer xs in
@@ -221,7 +277,19 @@ let is_string e =
 let apply_on_assignment f (expression, _) =
   match unwrap expression with
     Assignment (e1, op, e2) -> f e1 op e2
-  | e -> ()
+  | FunCall (e, arguments)
+    when StringMap.mem (string_of_expression e) !assigning_functions ->
+    let (left_value_index', right_value_index') =
+      StringMap.find (string_of_expression e) !assigning_functions
+    in
+    let left_value_index  = left_value_index'  - 1 in
+    let right_value_index = right_value_index' - 1 in
+    let l = expression_of_argument (List.nth arguments  left_value_index) in
+    let r = expression_of_argument (List.nth arguments right_value_index) in
+    (match (l, r) with
+       (Some l, Some r) -> f l (SimpleAssign, []) r
+     | _ -> ())
+  | _ -> ()
 
 let apply_on_funcall_side_effect f (expression, _) =
   match unwrap expression with
@@ -308,7 +376,12 @@ let rec is_testing_identifier identifier expression' =
     List.exists (is_testing_identifier identifier) arguments
   | _ -> expression_equal identifier expression'
 
-let string_of_name = Ast_c.str_of_name
+let is_global ((_, t'), _) =
+  let (t, _) = !t' in
+  match t with
+    Some (_, LocalVar _) -> false
+  | _ -> true
+
 let get_definition_name d = string_of_name d.Ast_c.f_name
 
 type 'a computation =

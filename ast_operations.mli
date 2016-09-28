@@ -20,12 +20,13 @@
  * *)
 
 module StringSet: Set.S     with type elt = string
+module StringMap: Map.S     with type key = string
 module StringPairSet: Set.S with type elt = string * string
 
-val set_error_constants:     StringSet.t     -> unit
-val set_testing_functions:   StringSet.t     -> unit
-val set_assigning_functions: StringSet.t     -> unit
-val set_contained_fields:    StringPairSet.t -> unit
+val set_error_constants:                 StringSet.t -> unit
+val set_testing_functions:               StringSet.t -> unit
+val set_assigning_functions: (int * int) StringMap.t -> unit
+val set_contained_fields:            StringPairSet.t -> unit
 
 type branch_side =
     Then
@@ -51,6 +52,7 @@ val function_name_of_expression:
   Ast_c.expression -> string option
 
 val unify_array_access: Ast_c.expression -> Ast_c.expression
+val unify_contained_field: Ast_c.expression -> Ast_c.expression
 
 val expression_equal: Ast_c.expression -> Ast_c.expression -> bool
 val string_of_expression: Ast_c.expression -> string
@@ -71,6 +73,8 @@ val is_pointer: Ast_c.expression -> bool
 val is_simple_assignment: Ast_c.assignOp -> bool
 val is_testing_identifier:
   Ast_c.expression -> Ast_c.expression -> bool
+
+val is_global: Ast_c.expression -> bool
 
 (* Side Effects *)
 val apply_on_assignment:

@@ -258,6 +258,27 @@ let killing_assignment assignment cn =
   | (None   , Some  _)
   | (None   , None   ) -> false
 
+let has_higher_scope cfg e = Asto.is_global e
+
+let is_assigning_to_higher_scope cfg aliases cn =
+  match cn.GO.node.ACFG.resource_handling_type with
+    ACFG.Assignment  a ->
+    let is_relevant_assignment =
+      match a.ACFG.right_value with
+        Asto.Value    _ -> false
+      | Asto.Variable e ->
+        Asto.ExpressionSet.exists (Asto.expression_equal e) aliases
+    in
+    a.ACFG.operator = ACFG.Simple &&
+    is_relevant_assignment &&
+    has_higher_scope cfg a.ACFG.left_value
+  | ACFG.Test        _
+  | ACFG.Allocation  _
+  | ACFG.Computation _
+  | ACFG.Unannotated
+  | ACFG.Release     _ -> false
+
+
 let get_candidate_blocks cfg error_blocks exemplar =
   let assignment = ref (ACFG.get_assignment exemplar.alloc.GO.node) in
   let initial_value =
@@ -293,7 +314,9 @@ let get_candidate_blocks cfg error_blocks exemplar =
                  error_blocks) &&
           not (Asto.ExpressionSet.is_empty
                  (ACFG_ESF.NodeMap.find e.ACFG.start_node v)) &&
-          not (is_handling_allocation_failure cfg aliases !assignment (cn, e)))
+          not (is_handling_allocation_failure cfg aliases !assignment
+                 (cn, e)) &&
+          not (is_assigning_to_higher_scope cfg aliases cn))
 
        initial_value [])
     cfg exemplar.alloc
@@ -315,8 +338,8 @@ let filter_faults cfg exemplar blocks =
                           exemplar.res (ACFG.Resource e))
                      rs ->
                  acc && not (ACFG.is_similar_statement exemplar.release cn)
-               | ACFG.Allocation _
                | ACFG.Assignment _
+               | ACFG.Allocation _
                | ACFG.Test _
                | ACFG.Unannotated
                | ACFG.Computation _ -> acc)
