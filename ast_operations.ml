@@ -306,12 +306,7 @@ let rec is_testing_identifier identifier expression' =
     List.exists (is_testing_identifier identifier) arguments
   | _ -> expression_equal identifier expression'
 
-let string_of_name = function
-    RegularName (n, _) -> n
-  | CppConcatenatedName _
-  | CppVariadicName _
-  | CppIdentBuilder _ -> "error: cpp stuff"
-
+let string_of_name = Ast_c.str_of_name
 let get_definition_name d = string_of_name d.Ast_c.f_name
 
 type 'a computation =
