@@ -196,10 +196,12 @@ let rename_ident expression s =
     Ident n -> ((Ident (rename_name n s), info1), info2)
   | _ -> expression
 
-let unify_array_access expression =
+let rec unify_array_access expression =
   let ((exp, info1), info2) = expression in
   match exp with
-    ArrayAccess (e, s) ->
+    Cast (t, e) -> ((Cast (t, unify_array_access e), info1), info2)
+  | ParenExpr e -> ((ParenExpr (unify_array_access e), info1), info2)
+  | ArrayAccess (e, s) ->
     ((ArrayAccess (e, rename_ident s "token_index"), info1), info2)
   | _ -> expression
 
