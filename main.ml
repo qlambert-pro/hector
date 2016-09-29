@@ -25,21 +25,16 @@ module Asto = Ast_operations
 module HC = Hector_core
 
 let analyze_file filename =
-  let (program, _) = Parse_c.parse_c_and_cpp false false filename in
-  let (functions', _) = Common.unzip program in
-  let functions'' = List.tl (List.rev functions') in
-  let functions =
-    List.map fst
-      (Type_annoter_c.annotate_program !Type_annoter_c.initial_env functions'')
-  in
+  let functions = Analyzer.function_data_of_toplevel filename in
   let releases = List.fold_left
       (fun acc f ->
-         if Analyzer.is_release f
-         then Asto.StringSet.add (Asto.get_name f) acc
-         else acc) Asto.StringSet.empty functions
+         if Analyzer.analyze_release f
+         then Asto.StringSet.add (Asto.get_name f.Analyzer.toplevel) acc
+         else acc)
+      Asto.StringSet.empty functions
   in
   HC.set_local_releases releases;
-  List.iter Analyzer.analyze_toplevel functions
+  List.iter Analyzer.analyze_omissions functions
 
 
 let verbose = ref false

@@ -19,5 +19,12 @@
  * Hector under other licenses.
  * *)
 
-val analyze_toplevel: Ast_c.toplevel -> unit
-val is_release: Ast_c.toplevel -> bool
+type function_data = {
+  toplevel: Ast_c.toplevel;
+  info: Ast_c.info;
+  cfg: Annotated_cfg.t;
+}
+
+val function_data_of_toplevel: string -> function_data list
+val analyze_omissions: function_data -> unit
+val analyze_release: function_data -> bool
