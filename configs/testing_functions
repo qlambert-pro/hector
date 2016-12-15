@@ -1,3 +1,6 @@
 likely
 unlikely
 IS_ERR
+IS_ERR_OR_NULL
+SHOST_TO_SAS_HA
+IS_ENABLED

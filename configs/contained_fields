@@ -1,2 +1,6 @@
 controller slot_list
 slot slot_list
+lpfc_sglq list
+iscsi_boot_kobj kobj
+iscsi_boot_kset kset
+iscsi_iface dev

@@ -1,1 +1,6 @@
 list_add 2 1
+list_add_tail 2 1
+ibmvfc_send_event 2 1
+kobject_init_and_add 1 1
+pci_set_drvdata 1 2
+ibmphp_add_resource 0 1
