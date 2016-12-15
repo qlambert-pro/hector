@@ -299,6 +299,7 @@ let get_candidate_blocks cfg error_blocks exemplar =
             let aliases = ACFG_ESF.NodeMap.find cn.GO.index values in
 
             if List.exists (fun b -> b.GO.index = cn.GO.index) error_blocks &&
+               not (e.ACFG.start_node == exemplar.alloc.GO.index) &&
                not (is_handling_allocation_failure cfg
                       aliases !assignment (cn, e)) &&
                not (is_releasing_resource cfg aliases cn) &&
