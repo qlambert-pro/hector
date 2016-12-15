@@ -24,6 +24,7 @@ module Asto = Ast_operations
 type t = {
   error_constants:     Asto.StringSet.t;
   testing_functions:   Asto.StringSet.t;
+  non_allocations:      Asto.StringSet.t;
   assigning_functions: (int * int) Asto.StringMap.t;
   contained_fields:    Asto.StringPairSet.t;
 }

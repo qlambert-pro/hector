@@ -210,6 +210,16 @@ let get_function_call_name n =
   Visitor_c.vk_node visitor n.GO.node.parser_node;
   !name
 
+let is_non_alloc n =
+  let name = ref false in
+  let visitor = {
+    Visitor_c.default_visitor_c with
+    Visitor_c.kexpr =
+      (fun (k, visitor) e -> name := Asto.is_non_alloc e)
+  }
+  in
+  Visitor_c.vk_node visitor n.GO.node.parser_node;
+  !name
 
 let is_void_resource = function
     Void _ -> true

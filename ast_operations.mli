@@ -25,6 +25,7 @@ module StringPairSet: Set.S with type elt = string * string
 
 val set_error_constants:                 StringSet.t -> unit
 val set_testing_functions:               StringSet.t -> unit
+val set_non_allocations:                 StringSet.t -> unit
 val set_assigning_functions: (int * int) StringMap.t -> unit
 val set_contained_fields:            StringPairSet.t -> unit
 
@@ -71,8 +72,8 @@ val is_string:  Ast_c.expression -> bool
 val is_pointer_type: Ast_c.fullType -> bool
 val is_pointer: Ast_c.expression -> bool
 val is_simple_assignment: Ast_c.assignOp -> bool
-val is_testing_identifier:
-  Ast_c.expression -> Ast_c.expression -> bool
+val is_testing_identifier: Ast_c.expression -> Ast_c.expression -> bool
+val is_non_alloc: Ast_c.expression -> bool
 
 val is_global: Ast_c.expression -> bool
 

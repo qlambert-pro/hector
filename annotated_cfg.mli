@@ -110,6 +110,7 @@ val test_if_header: (Ast_c.expression -> 'a) -> 'a -> node -> 'a
 val test_returned_expression: (Ast_c.expression -> 'a) -> 'a -> node -> 'a
 
 val is_assigning_variable: node GO.complete_node -> bool
+val is_non_alloc: node GO.complete_node -> bool
 val is_selection: node -> bool
 
 val annotate_resource: t -> node GO.complete_node -> resource_handling -> unit

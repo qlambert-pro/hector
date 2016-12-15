@@ -24,6 +24,7 @@ module Asto = Ast_operations
 type t = {
   error_constants:     Asto.StringSet.t;
   testing_functions:   Asto.StringSet.t;
+  non_allocations:      Asto.StringSet.t;
   assigning_functions: (int * int) Asto.StringMap.t;
   contained_fields:    Asto.StringPairSet.t;
 }
@@ -65,6 +66,7 @@ let get directory =
   let empty_config =
     {error_constants     =     Asto.StringSet.empty;
      testing_functions   =     Asto.StringSet.empty;
+     non_allocations     =     Asto.StringSet.empty;
      assigning_functions =     Asto.StringMap.empty;
      contained_fields    = Asto.StringPairSet.empty;
     }
@@ -75,6 +77,7 @@ let get directory =
   then
     let error_constants_filepath     = directory ^ "/error_constants"     in
     let testing_functions_filepath   = directory ^ "/testing_functions"   in
+    let non_allocations_filepath      = directory ^ "/non_allocations"      in
     let assigning_functions_filepath = directory ^ "/assigning_functions" in
     let contained_fields_filepath    = directory ^ "/contained_fields"    in
 
@@ -95,18 +98,25 @@ let get directory =
     in
 
     let config''' =
+      if Sys.file_exists non_allocations_filepath
+      then {config'' with
+            non_allocations =
+              read_1_word_config non_allocations_filepath}
+      else config''
+    in
+    let config'''' =
       if Sys.file_exists assigning_functions_filepath
       then
-        {config'' with
+        {config''' with
             assigning_functions =
               read_1_word_and_2_ints assigning_functions_filepath}
-      else config''
+      else config'''
     in
 
     if Sys.file_exists contained_fields_filepath
-    then {config''' with
+    then {config'''' with
           contained_fields = read_2_word_config contained_fields_filepath}
-    else config'''
+    else config''''
   else
     begin
       Printf.eprintf "warning: Empty config. Directory \"%s\" does not exists.\n%!"

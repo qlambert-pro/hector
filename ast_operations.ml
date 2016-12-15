@@ -33,11 +33,13 @@ module StringPairSet = Set.Make(StringPair)
 
 let error_constants     = ref StringSet.empty
 let testing_functions   = ref StringSet.empty
+let non_allocations     = ref StringSet.empty
 let assigning_functions = ref StringMap.empty
 let contained_fields    = ref StringPairSet.empty
 
 let set_error_constants     s = error_constants     := s
 let set_testing_functions   s = testing_functions   := s
+let set_non_allocations     s = non_allocations     := s
 let set_assigning_functions s = assigning_functions := s
 let set_contained_fields    s = contained_fields    := s
 
@@ -375,6 +377,17 @@ let rec is_testing_identifier identifier expression' =
     StringSet.exists (fun e -> (=) n (Some e)) !testing_functions &&
     List.exists (is_testing_identifier identifier) arguments
   | _ -> expression_equal identifier expression'
+
+let rec is_non_alloc expression' =
+  let (expression, _) = expression' in
+  match unwrap expression with
+    ParenExpr e
+  | Cast (_, e) -> is_non_alloc e
+  | Assignment (_, op, e) when is_simple_assignment op -> is_non_alloc e
+  | FunCall (e, args) ->
+    let n = identifier_name_of_expression e in
+    StringSet.exists (fun e -> (=) n (Some e)) !non_allocations
+  | _ -> false
 
 let is_global ((_, t'), _) =
   let (t, _) = !t' in

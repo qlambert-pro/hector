@@ -489,7 +489,8 @@ let annotate_resource cfg relevant_resources =
 
   let annotate_if_allocation r cfg cn =
     if ACFGO.is_first_reference cfg cn (ACFG.Resource r) &&
-       not (ACFG.is_assigning_variable cn)
+       not (ACFG.is_assigning_variable cn) &&
+       not (ACFG.is_non_alloc cn)
     then
       ACFG.annotate_resource cfg cn (ACFG.Allocation (ACFG.Resource r))
     else
