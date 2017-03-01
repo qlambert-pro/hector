@@ -26,3 +26,4 @@ IS_ENABLED
 to_tegra_msi
 msi_desc_to_pci_sysdata
 mutex_init
+con_log
