@@ -377,7 +377,8 @@ let get_resource cfg relevant_resources cn =
     ACFG.Allocation (ACFG.Void (Some r))
   | (Some r,  _, Some args) when
       Asto.ExpressionSet.exists (Asto.expression_equal r) relevant_resources &&
-      not (should_ignore args) ->
+      not (should_ignore args) &&
+      not (ACFG.is_non_alloc cn) ->
     ACFG.Allocation (ACFG.Resource r)
   | (     _, [r], Some args) when
       Asto.ExpressionSet.exists (Asto.expression_equal r) relevant_resources &&
