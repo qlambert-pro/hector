@@ -46,6 +46,10 @@ let set_contained_fields    s = contained_fields    := s
 let string_of_expression = Pretty_print_c.string_of_expression
 let string_of_name = Ast_c.str_of_name
 
+let fake_global_identifier =
+  let t = ref (None, NotTest) in
+  (((Ident (RegularName ("fake_global", []))), t), [])
+
 let is_simple_assignment op =
   match unwrap op with
     SimpleAssign -> true
@@ -286,8 +290,23 @@ let apply_on_assignment f (expression, _) =
     in
     let left_value_index  = left_value_index'  - 1 in
     let right_value_index = right_value_index' - 1 in
-    let l = expression_of_argument (List.nth arguments  left_value_index) in
-    let r = expression_of_argument (List.nth arguments right_value_index) in
+    let l, r =
+      if left_value_index < 0 || right_value_index < 0
+      then
+        if left_value_index < 0
+        then
+          let l = Some fake_global_identifier in
+          let r = expression_of_argument (List.nth arguments right_value_index) in
+          (l, r)
+        else
+          let l = expression_of_argument (List.nth arguments  left_value_index) in
+          let r = Some fake_global_identifier in
+          (l, r)
+      else
+        let l = expression_of_argument (List.nth arguments  left_value_index) in
+        let r = expression_of_argument (List.nth arguments right_value_index) in
+        (l, r)
+    in
     (match (l, r) with
        (Some l, Some r) -> f l (SimpleAssign, []) r
      | _ -> ())
