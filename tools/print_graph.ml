@@ -91,8 +91,10 @@ let print_graph filename g =
 let filename = Sys.argv.(1)
 let output   = Sys.argv.(2)
 
+let config_dir = ref ((Sys.getenv "HOME") ^ "/.hector.d")
+
 let () =
-  Parse_c.init_defs_builtins "/usr/local/lib/coccinelle/standard.h";
+  Parse_c.init_defs_builtins (!config_dir ^ "/standard.h");
   Flag_parsing_c.verbose_type := false;
   Flag_parsing_c.verbose_lexing := false;
   Flag_parsing_c.show_parsing_error := false;
