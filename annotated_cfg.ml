@@ -32,7 +32,9 @@ let resource_equal r1 r2 =
   match (r1, r2) with
     (Void     None, Void     None)
   | (Void (Some _), Void (Some _)) -> true
-  | (   Resource e1,    Resource e2) ->
+  | ( Resource e1',  Resource e2') ->
+    let e1 = Asto.unify_contained_field e1' in
+    let e2 = Asto.unify_contained_field e2' in
     Asto.expression_equal e1 e2
   | _ -> false
 
