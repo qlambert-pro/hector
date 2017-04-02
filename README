@@ -1,11 +1,18 @@
 If you read this before cloning the repository, clone it using:
-$ git clone --recursive https://scm.gforge.inria.fr/anonscm/git/ehc/hector.git
+$ git clone --recursive
 
 otherwise do
 
 $ cd coccinelle
 $ git submodule init
 $ git submodule update
+
+Before trying to compile make sure that the following libraries are installed
+on your system, the easiest way to do that is to use opam:
+
+ocamlfind
+menhir
+pcre
 
 To compile hector just run:
 
